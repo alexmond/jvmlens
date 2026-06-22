@@ -1,0 +1,5 @@
+name: jvmlens
+title: jvmlens
+version: true
+nav:
+  - modules/ROOT/nav.adoc

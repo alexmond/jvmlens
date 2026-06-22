@@ -1,0 +1,33 @@
+= Usage
+
+== Analyze an existing recording
+
+[source,bash]
+----
+java -jar target/jvmlens.jar analyze recording.jfr
+----
+
+The output is markdown: ranked hot paths (application-frame attributed),
+allocation sites, lock contention, GC pressure, and a one-line heuristic cause.
+
+== Producing a recording
+
+Any JFR recording works. To capture one with the built-in profiler:
+
+[source,bash]
+----
+java -XX:StartFlightRecording=duration=30s,filename=recording.jfr,settings=profile -jar your-app.jar
+----
+
+The `examples/` directory contains a planted-pathology workload (CPU hot path,
+memory leak, lock contention) for producing sample recordings.
+
+== Exit codes
+
+[cols="1,3"]
+|===
+| Code | Meaning
+
+| `0` | Summary produced
+| `2` | The JFR file could not be read
+|===

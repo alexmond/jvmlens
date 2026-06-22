@@ -1,0 +1,18 @@
+= Contributing
+
+== Build + quality gates
+
+[source,bash]
+----
+./mvnw clean package
+----
+
+The build enforces the house standard: `spring-javaformat` (run
+`./mvnw spring-javaformat:apply` to auto-fix), Checkstyle, PMD, and a JaCoCo
+line-coverage gate of 80%.
+
+== Conventions
+
+* Java is formatted in the Spring style (tabs, braces on every block).
+* The summarizer core (`Summarizer`) stays dependency-free — only
+  `jdk.jfr.consumer`.

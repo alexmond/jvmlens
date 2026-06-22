@@ -1,0 +1,8 @@
+= Changelog
+
+== 0.1.0 (unreleased)
+
+* Initial proof-of-concept, graduated from the incubator.
+* `analyze <file.jfr>` — summarize a JFR recording into LLM-ready markdown:
+  application-attributed hot paths, allocation sites, lock contention, GC
+  pressure, and a heuristic suspected cause.

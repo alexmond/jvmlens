@@ -1,0 +1,16 @@
+# Maven
+target/
+
+# JFR recordings / raw dumps (disposable, large)
+*.jfr
+raw-*.txt
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# OS
+.DS_Store

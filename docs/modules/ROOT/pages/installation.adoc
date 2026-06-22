@@ -1,0 +1,23 @@
+= Installation
+
+== Requirements
+
+* JDK 17 or newer (jvmlens reads JFR via `jdk.jfr.consumer`)
+
+== Build from source
+
+[source,bash]
+----
+git clone git@github.com:alexmond/jvmlens.git
+cd jvmlens
+./mvnw clean package
+----
+
+This produces a runnable jar at `target/jvmlens.jar`.
+
+== Run
+
+[source,bash]
+----
+java -jar target/jvmlens.jar analyze recording.jfr
+----

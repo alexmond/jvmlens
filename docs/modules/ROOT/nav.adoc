@@ -1,0 +1,5 @@
+* xref:index.adoc[Home]
+** xref:installation.adoc[Installation]
+** xref:usage.adoc[Usage]
+** xref:contributing.adoc[Contributing]
+** xref:CHANGELOG.adoc[Changelog]

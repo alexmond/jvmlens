@@ -1,0 +1,27 @@
+= jvmlens
+
+Turn JVM runtime evidence into a compact, *LLM-ready* diagnosis.
+
+Profiling a JVM is well-served for _humans_ — async-profiler, JFR, and the
+commercial GUIs all produce flamegraphs and recordings. None of those formats
+are built for an *LLM* to reason over: a `jfr print` dump of a short recording
+is hundreds of thousands of tokens and routinely overflows a model's context
+window. jvmlens reads a JFR recording and emits a few hundred tokens of ranked,
+source-attributed signal you can hand straight to a coding agent.
+
+[NOTE]
+====
+Early / proof-of-concept. CPU, allocation, lock-contention and GC signal from an
+existing `.jfr`. Live attach, async-profiler fidelity, JSON output and an MCP
+server are on the roadmap.
+====
+
+== Why
+
+A 20-second `profile`-settings recording of a hot loop dumps roughly *380K
+tokens* of raw `jfr print` — too big to paste. jvmlens turns the same recording
+into a *~400-token* summary that names the hot application method, the leaking
+allocation site, or the contended lock. For an LLM, the summary isn't just
+cheaper — for non-trivial recordings it's the only input that fits.
+
+See xref:installation.adoc[Installation] and xref:usage.adoc[Usage] to get started.

@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+<suppressions>
+    <!-- Project does not use Spring-style Apache license headers -->
+    <suppress checks="SpringHeader" files=".*\.java"/>
+
+    <!-- Project uses *Test naming convention, not *Tests -->
+    <suppress checks="SpringTestFileName" files=".*\.java"/>
+
+    <!-- Project does not require package-info.java files -->
+    <suppress checks="JavadocPackage" files=".*\.java"/>
+
+    <!-- Project uses JUnit 5 assertions, not AssertJ -->
+    <suppress checks="RegexpSinglelineJava" files=".*\.java"/>
+
+    <!-- Import ordering rules are handled by spring-javaformat:apply -->
+    <suppress checks="SpringImportOrder" files=".*\.java"/>
+
+    <!-- this.field style is not enforced in this project -->
+    <suppress checks="RequireThis" files=".*\.java"/>
+
+    <!-- Javadoc on all methods/variables/types not required -->
+    <suppress checks="JavadocMethod" files=".*\.java"/>
+    <suppress checks="JavadocStyle" files=".*\.java"/>
+    <suppress checks="JavadocVariable" files=".*\.java"/>
+    <suppress checks="JavadocType" files=".*\.java"/>
+    <suppress checks="SpringJavadoc" files=".*\.java"/>
+
+    <!-- Test files are exempt from size limits -->
+    <suppress checks="MethodLength" files=".*Test\.java"/>
+    <suppress checks="FileLength" files=".*Test\.java"/>
+
+    <!-- Test implementation helper files are exempt from method length limits -->
+    <suppress checks="MethodLength" files=".*/testimpl/.*\.java"/>
+</suppressions>
