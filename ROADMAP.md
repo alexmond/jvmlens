@@ -21,7 +21,11 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
 - [x] `profile <pid>` — live attach + timed JFR capture via the public
       FlightRecorder MXBean over a local management agent (no `jcmd`, no
       `--add-exports`). `-d/--duration`, `-s/--settings`, `-f/--format`, `-k/--keep`.
-- [ ] Continuous recording + **dump-on-trigger** (ring buffer → `JFR.dump`).
+- [~] Continuous recording + **dump-on-trigger** (ring buffer → `JFR.dump`).
+      Foundation shipped: `watch <pid>` runs a continuous JFR ring buffer and
+      dumps + summarizes a rolling window each interval (`-i`, `--max-age`, `-n`).
+      Still to do: condition-based triggers (latency / error / OOM) rather than
+      time-based snapshots.
 - [ ] Tune the summarizer against real workloads — now **driven by field-finding
       issues** from dogfooding (see `examples/experiments.md` + `scripts/field-finding.sh`).
       First inputs from jhelm: configurable application-package scoping

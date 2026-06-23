@@ -24,6 +24,23 @@ java -jar target/jvmlens.jar profile -d 30 -k run.jfr 12345  # keep the recordin
 
 `-w` / `--warmup` waits before recording so startup/JIT noise is skipped.
 
+== Continuous watch (rolling profile)
+
+`watch <pid>` keeps a continuous JFR ring buffer on the target and dumps + summarizes
+a rolling window every interval — the foundation of the production "dump-on-trigger"
+mode (condition-based triggers build on this):
+
+[source,bash]
+----
+java -jar target/jvmlens.jar watch 12345                          # every 30s, last 120s, forever
+java -jar target/jvmlens.jar watch -i 60 --max-age 300 12345      # every 60s, last 5min
+java -jar target/jvmlens.jar watch -n 5 -i 10 12345               # 5 snapshots, then stop
+----
+
+`-i` / `--interval` sets the dump cadence, `--max-age` the ring-buffer window, and
+`-n` / `--snapshots` a fixed count (`0` = until interrupted). Each snapshot is summarized
+with the same `-f` / `-a` / `-x` options as `analyze`.
+
 == Scoping application code
 
 By default a hot path is "application code" if it is outside the JDK and common
