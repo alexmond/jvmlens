@@ -1,0 +1,44 @@
+name: Field finding
+description: A requirement or gap in jvmlens surfaced by profiling a real project.
+title: "[field-finding] "
+labels: ["field-finding"]
+body:
+  - type: input
+    id: project
+    attributes:
+      label: Target project & workload
+      description: Which app was profiled, and what was it doing?
+      placeholder: "jhelm — `template` render of the grafana chart (cold CLI run)"
+    validations:
+      required: true
+  - type: dropdown
+    id: capture
+    attributes:
+      label: Capture mode
+      options:
+        - analyze <file.jfr> (offline recording)
+        - profile <pid> (live attach)
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary excerpt
+      description: Paste the relevant part of the jvmlens output (markdown or json).
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: gap
+    attributes:
+      label: The jvmlens gap
+      description: What was wrong, missing, or misleading in the summary — and what should it do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence (optional)
+      description: Sample counts, frame breakdowns, or anything that quantifies the gap.
+    validations:
+      required: false

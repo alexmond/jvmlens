@@ -28,7 +28,7 @@ public class Main {
 	}
 
 	private void dispatch(IFactory factory, JvmlensCommand root, String[] args) {
-		this.exitCode = new CommandLine(root, factory).execute(args);
+		this.exitCode = new CommandLine(root, factory).setCaseInsensitiveEnumValuesAllowed(true).execute(args);
 	}
 
 }

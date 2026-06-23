@@ -43,6 +43,7 @@
         <maven.compiler.target>17</maven.compiler.target>
 
         <picocli.version>4.7.7</picocli.version>
+        <mcp.version>0.10.0</mcp.version>
 
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
@@ -64,6 +65,11 @@
             <groupId>info.picocli</groupId>
             <artifactId>picocli-spring-boot-starter</artifactId>
             <version>${picocli.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>${mcp.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -195,6 +201,8 @@
                                     </limits>
                                     <excludes>
                                         <exclude>org.alexmond.jvmlens.Main</exclude>
+                                        <!-- MCP stdio transport front-end; verified by an end-to-end handshake test, not unit coverage -->
+                                        <exclude>org.alexmond.jvmlens.McpServerCommand</exclude>
                                     </excludes>
                                 </rule>
                             </rules>

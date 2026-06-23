@@ -6,65 +6,132 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedFrame;
 import jdk.jfr.consumer.RecordedStackTrace;
 import jdk.jfr.consumer.RecordingFile;
 
+import org.alexmond.jvmlens.ProfileSummary.Ranked;
+
 /**
- * The core of jvmlens: read a JFR recording and render a compact, LLM-targeted markdown
- * summary. A multi-megabyte {@code jfr print} dump collapses to roughly a few hundred
- * tokens of ranked, scoped, source-attributed signal.
+ * The core of jvmlens: read a JFR recording and reduce it to a compact, ranked,
+ * source-attributed {@link ProfileSummary}. A multi-megabyte {@code jfr print} dump
+ * collapses to roughly a few hundred tokens of signal.
  *
  * <p>
- * Dependency-free — uses only {@code jdk.jfr.consumer}.
+ * Dependency-free — uses only {@code jdk.jfr.consumer}. Rendering (markdown / JSON /
+ * prompt) lives in {@link Renderers}; what counts as application code is decided by
+ * {@link Scope}. Keep both free of framework deps so the planned MCP server can serve the
+ * same structured result.
  */
 public final class Summarizer {
 
-	/** Frames under these prefixes are runtime/library, not the app under study. */
-	private static final String[] RUNTIME = { "java.", "jdk.", "sun.", "com.sun.", "javax.", "jakarta." };
+	/** Output formats the CLI can request. */
+	public enum Format {
+
+		/** Compact markdown report (default). */
+		MARKDOWN,
+		/** Scoped JSON object with the same ranked signal. */
+		JSON,
+		/** Markdown wrapped in an LLM task instruction. */
+		PROMPT
+
+	}
+
+	/** How many rows each ranked section keeps. */
+	private static final int TOP_N = 5;
 
 	private Summarizer() {
 	}
 
 	/**
-	 * Summarize a JFR recording into LLM-ready markdown.
+	 * Summarize a JFR recording as markdown with the default scope.
 	 * @param file the {@code .jfr} recording to read
 	 * @return a compact markdown report
 	 * @throws IOException if the recording cannot be read
 	 */
 	public static String summarize(Path file) throws IOException {
-		Aggregates agg = new Aggregates();
+		return summarize(file, Format.MARKDOWN, Scope.defaults());
+	}
+
+	/**
+	 * Summarize a JFR recording in the requested format with the default scope.
+	 * @param file the {@code .jfr} recording to read
+	 * @param format the output format
+	 * @return the rendered report
+	 * @throws IOException if the recording cannot be read
+	 */
+	public static String summarize(Path file, Format format) throws IOException {
+		return summarize(file, format, Scope.defaults());
+	}
+
+	/**
+	 * Summarize a JFR recording in the requested format and application scope.
+	 * @param file the {@code .jfr} recording to read
+	 * @param format the output format
+	 * @param scope which frames count as application code
+	 * @return the rendered report
+	 * @throws IOException if the recording cannot be read
+	 */
+	public static String summarize(Path file, Format format, Scope scope) throws IOException {
+		ProfileSummary s = analyze(file, scope);
+		return switch (format) {
+			case MARKDOWN -> Renderers.markdown(s);
+			case JSON -> Renderers.json(s);
+			case PROMPT -> Renderers.prompt(s);
+		};
+	}
+
+	/**
+	 * Read a JFR recording into the render-agnostic structured summary, default scope.
+	 * @param file the {@code .jfr} recording to read
+	 * @return the structured summary
+	 * @throws IOException if the recording cannot be read
+	 */
+	public static ProfileSummary analyze(Path file) throws IOException {
+		return analyze(file, Scope.defaults());
+	}
+
+	/**
+	 * Read a JFR recording into the render-agnostic structured summary.
+	 * @param file the {@code .jfr} recording to read
+	 * @param scope which frames count as application code
+	 * @return the structured summary
+	 * @throws IOException if the recording cannot be read
+	 */
+	public static ProfileSummary analyze(Path file, Scope scope) throws IOException {
+		Aggregates agg = new Aggregates(scope);
 		try (RecordingFile rf = new RecordingFile(file)) {
 			while (rf.hasMoreEvents()) {
 				agg.add(rf.readEvent());
 			}
 		}
-		return agg.render(file);
+		return agg.toSummary(file);
 	}
 
-	/** First app frame (skipRuntime=true) or the deepest java frame (false). */
-	private static String frame(RecordedStackTrace st, boolean skipRuntime) {
+	/** The leaf (top-of-stack) java frame — the self-time view, runtime included. */
+	private static String leafFrame(RecordedStackTrace st) {
+		return firstFrame(st, (owner) -> true);
+	}
+
+	/** The first application frame walking down from the leaf, per {@code scope}. */
+	private static String appFrame(RecordedStackTrace st, Scope scope) {
+		return firstFrame(st, scope::isApplication);
+	}
+
+	private static String firstFrame(RecordedStackTrace st, Predicate<String> ownerMatches) {
 		if (st == null) {
 			return null;
 		}
 		return st.getFrames()
 			.stream()
 			.filter((f) -> f.isJavaFrame() && f.getMethod() != null)
-			.filter((f) -> !skipRuntime || !isRuntime(f.getMethod().getType().getName()))
+			.filter((f) -> ownerMatches.test(f.getMethod().getType().getName()))
 			.map((f) -> f.getMethod().getType().getName() + "." + f.getMethod().getName())
 			.findFirst()
 			.orElse(null);
-	}
-
-	private static boolean isRuntime(String owner) {
-		for (String p : RUNTIME) {
-			if (owner.startsWith(p)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private static String topFrames(RecordedStackTrace st, int n) {
@@ -87,21 +154,21 @@ public final class Summarizer {
 		return m.values().stream().mapToLong(Long::longValue).sum();
 	}
 
-	private static void section(StringBuilder md, String title, Map<String, Long> m, long total,
-			Map<String, String> stacks) {
-		md.append("## ").append(title).append('\n');
-		if (m.isEmpty() || total <= 0) {
-			md.append("- (none)\n\n");
-			return;
+	/**
+	 * Top-N rows of {@code m} as shares of {@code total}, newest-stack teaser attached.
+	 */
+	private static List<Ranked> ranked(Map<String, Long> m, long total, Map<String, String> stacks) {
+		List<Ranked> rows = new ArrayList<>();
+		if (total <= 0) {
+			return rows;
 		}
-		m.entrySet().stream().sorted(Map.Entry.<String, Long>comparingByValue().reversed()).limit(5).forEach((en) -> {
-			md.append(String.format("- `%s` — %.0f%%", en.getKey(), 100.0 * en.getValue() / total));
-			if (stacks != null && stacks.containsKey(en.getKey())) {
-				md.append("  (").append(stacks.get(en.getKey())).append(')');
-			}
-			md.append('\n');
-		});
-		md.append('\n');
+		m.entrySet()
+			.stream()
+			.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+			.limit(TOP_N)
+			.forEach((en) -> rows.add(new Ranked(en.getKey(), (double) en.getValue() / total,
+					(stacks != null) ? stacks.get(en.getKey()) : null)));
+		return rows;
 	}
 
 	private static String top(Map<String, Long> m) {
@@ -110,6 +177,8 @@ public final class Summarizer {
 
 	/** Mutable accumulator for the events of a single recording. */
 	private static final class Aggregates {
+
+		private final Scope scope;
 
 		private final Map<String, Long> cpuByApp = new HashMap<>();
 
@@ -135,6 +204,10 @@ public final class Summarizer {
 
 		private long gcPauseNanos;
 
+		private Aggregates(Scope scope) {
+			this.scope = scope;
+		}
+
 		private void add(RecordedEvent e) {
 			switch (e.getEventType().getName()) {
 				case "jdk.ExecutionSample" -> addExecution(e);
@@ -151,11 +224,11 @@ public final class Summarizer {
 
 		private void addExecution(RecordedEvent e) {
 			this.execSamples++;
-			String leaf = frame(e.getStackTrace(), false);
+			String leaf = leafFrame(e.getStackTrace());
 			if (leaf != null) {
 				this.cpuByLeaf.merge(leaf, 1L, Long::sum);
 			}
-			String app = frame(e.getStackTrace(), true);
+			String app = appFrame(e.getStackTrace(), this.scope);
 			if (app != null) {
 				this.cpuByApp.merge(app, 1L, Long::sum);
 				this.appStack.putIfAbsent(app, topFrames(e.getStackTrace(), 3));
@@ -168,7 +241,7 @@ public final class Summarizer {
 			if (e.hasField("objectClass") && e.getClass("objectClass") != null) {
 				this.allocByType.merge(e.getClass("objectClass").getName(), w, Long::sum);
 			}
-			String site = frame(e.getStackTrace(), true);
+			String site = appFrame(e.getStackTrace(), this.scope);
 			if (site != null) {
 				this.allocBySite.merge(site, w, Long::sum);
 			}
@@ -176,7 +249,7 @@ public final class Summarizer {
 
 		private void addLock(RecordedEvent e) {
 			long d = e.getDuration().toNanos();
-			String m = frame(e.getStackTrace(), true);
+			String m = appFrame(e.getStackTrace(), this.scope);
 			if (m != null) {
 				this.lockByMethod.merge(m, d, Long::sum);
 			}
@@ -190,34 +263,14 @@ public final class Summarizer {
 			this.gcPauseNanos += e.getDuration().toNanos();
 		}
 
-		private String render(Path file) {
-			StringBuilder md = new StringBuilder();
-			md.append("# JVM profile summary (")
-				.append(file.getFileName())
-				.append(")\n\nEvents: ")
-				.append(this.execSamples)
-				.append(" exec samples, ")
-				.append(this.allocByType.size())
-				.append(" alloc types, ")
-				.append(this.oldObjects)
-				.append(" old-object samples, ")
-				.append(this.gcPauses)
-				.append(" GC pauses (")
-				.append(this.gcPauseNanos / 1_000_000)
-				.append(" ms).\n\n");
-			section(md, "Top hot paths (application code, by sample share)", this.cpuByApp, this.execSamples,
-					this.appStack);
-			section(md, "Hot leaf methods (self-time, incl. runtime)", this.cpuByLeaf, this.execSamples, null);
-			section(md, "Top allocation sites (application code, by est. bytes)", this.allocBySite, this.allocBytes,
-					null);
-			section(md, "Top allocated types (by est. bytes)", this.allocByType, this.allocBytes, null);
-			section(md, "Lock contention (blocked time, by application method)", this.lockByMethod,
-					sum(this.lockByMethod), null);
-			if (!this.lockByMonitor.isEmpty()) {
-				section(md, "Contended monitors", this.lockByMonitor, sum(this.lockByMonitor), null);
-			}
-			md.append("## Suspected cause (heuristic)\n- ").append(heuristic()).append('\n');
-			return md.toString();
+		private ProfileSummary toSummary(Path file) {
+			return new ProfileSummary(file.getFileName().toString(), this.execSamples, this.allocByType.size(),
+					this.oldObjects, this.gcPauses, this.gcPauseNanos / 1_000_000,
+					ranked(this.cpuByApp, this.execSamples, this.appStack),
+					ranked(this.cpuByLeaf, this.execSamples, null), ranked(this.allocBySite, this.allocBytes, null),
+					ranked(this.allocByType, this.allocBytes, null),
+					ranked(this.lockByMethod, sum(this.lockByMethod), null),
+					ranked(this.lockByMonitor, sum(this.lockByMonitor), null), heuristic());
 		}
 
 		private String heuristic() {

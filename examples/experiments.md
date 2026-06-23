@@ -51,3 +51,45 @@ jfr print recording-cpu.jfr > raw-cpu.txt   # note: often too large to paste
 Summary wins (≥3× tokens or fewer turns) on ≥2 of 3 scenarios → the summarizer
 earns its place. If raw is already good on all 3 → reframe as a thin
 prompt-pack. (The compression result above already largely settles this.)
+
+## Field findings — dogfooding real projects
+
+Planted pathologies prove the summarizer on *known* answers. The harder test is
+**real projects**: point jvmlens at another app you own (jhelm, unitrack,
+venice-vr, …), see what the summary says, and feed every gap back here as a
+GitHub issue. This is the loop that drives the roadmap.
+
+**Protocol** (see `scripts/field-finding.sh`, which automates capture + filing):
+
+```bash
+# A) live attach to a running JVM (the workload, warm)
+java -jar jvmlens.jar profile -d 20 <pid> -f prompt
+
+# B) or capture a recording around a workload, then analyze
+java -XX:StartFlightRecording=filename=run.jfr,dumponexit=true,settings=profile -jar app.jar ...
+java -jar jvmlens.jar analyze run.jfr
+```
+
+For each run, file a `field-finding` issue with: the project + workload, a short
+excerpt of the summary, and **the jvmlens gap it exposed** (what was wrong,
+missing, or misleading). Perf bugs in the *target* go to that project; jvmlens
+*requirements* come back here.
+
+### Findings log
+
+- **2026-06-23 — jhelm (`template` render of the grafana chart, cold CLI run).**
+  A single fat-jar render produced only 71 exec samples, of which ~93 frame hits
+  were `org.springframework.boot.loader.*` and just 6 touched `org.alexmond.jhelm.*`.
+  Two jvmlens gaps, filed as issues:
+  1. App-frame attribution skips only `java./jdk./sun./…`, so framework packages
+     (Spring Boot loader, BouncyCastle) masquerade as "application code" and bury
+     the user's own packages. Needs configurable package scoping.
+     **Fixed (#1):** `Scope` broadens the default skip-list to common frameworks and
+     adds `-a/--app-package` (include) + `-x/--exclude`. Re-run: default now leads with
+     `HelmJavaApplication.main`; `-a org.alexmond` shows only jhelm/gotmpl4j code.
+  2. Short cold CLI runs profile startup/classloading, not the workload; the
+     summary should make sample-count adequacy visible and/or support steady-state
+     capture.
+     **Fixed (#2):** the markdown now emits a `⚠` caveat below a 200-sample
+     threshold (the grafana run flags "Only 71 execution samples"), and `profile`
+     gained `-w/--warmup` to skip startup before recording.

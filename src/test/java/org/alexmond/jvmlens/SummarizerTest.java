@@ -15,16 +15,65 @@ class SummarizerTest {
 
 	@Test
 	void summarizesCpuHotPath() throws Exception {
-		String md = record(() -> {
-			long end = System.nanoTime() + 2_000_000_000L;
-			while (System.nanoTime() < end) {
-				hotLoop();
-			}
-		});
-		assertThat(md).contains("# JVM profile summary");
-		assertThat(md).contains("Top hot paths");
-		assertThat(md).contains("SummarizerTest");
-		assertThat(md).contains("Suspected cause");
+		Path file = cpuRecording();
+		try {
+			String md = Summarizer.summarize(file);
+			assertThat(md).contains("# JVM profile summary");
+			assertThat(md).contains("Top hot paths");
+			assertThat(md).contains("SummarizerTest");
+			assertThat(md).contains("Suspected cause");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
+	void analyzeProducesStructuredSummary() throws Exception {
+		Path file = cpuRecording();
+		try {
+			ProfileSummary s = Summarizer.analyze(file);
+			assertThat(s.source()).isEqualTo(file.getFileName().toString());
+			assertThat(s.execSamples()).isPositive();
+			assertThat(s.hotPaths()).isNotEmpty();
+			assertThat(s.hotPaths().get(0).name()).contains("SummarizerTest");
+			assertThat(s.hotPaths().get(0).share()).isBetween(0.0, 1.0);
+			assertThat(s.cause()).isNotBlank();
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
+	void jsonFormatIsScopedAndStructured() throws Exception {
+		Path file = cpuRecording();
+		try {
+			String json = Summarizer.summarize(file, Summarizer.Format.JSON);
+			assertThat(json).startsWith("{");
+			assertThat(json).contains("\"source\":");
+			assertThat(json).contains("\"execSamples\":");
+			assertThat(json).contains("\"hotPaths\":");
+			assertThat(json).contains("\"share\":");
+			assertThat(json).contains("\"cause\":");
+			assertThat(json).contains("SummarizerTest");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
+	void promptFormatWrapsMarkdown() throws Exception {
+		Path file = cpuRecording();
+		try {
+			String prompt = Summarizer.summarize(file, Summarizer.Format.PROMPT);
+			assertThat(prompt).contains("JVM performance expert");
+			assertThat(prompt).contains("# JVM profile summary");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
 	}
 
 	@Test
@@ -60,6 +109,15 @@ class SummarizerTest {
 		assertThat(keep).isNotEmpty();
 	}
 
+	private static Path cpuRecording() throws Exception {
+		return recordFile(() -> {
+			long end = System.nanoTime() + 2_000_000_000L;
+			while (System.nanoTime() < end) {
+				hotLoop();
+			}
+		});
+	}
+
 	private static void hotLoop() {
 		double x = 0;
 		for (int i = 0; i < 50_000; i++) {
@@ -71,6 +129,16 @@ class SummarizerTest {
 	}
 
 	private static String record(Work work) throws Exception {
+		Path file = recordFile(work);
+		try {
+			return Summarizer.summarize(file);
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	private static Path recordFile(Work work) throws Exception {
 		Recording recording = new Recording();
 		recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(10));
 		recording.enable("jdk.ObjectAllocationSample");
@@ -82,9 +150,7 @@ class SummarizerTest {
 		Path file = Files.createTempFile("jvmlens-test", ".jfr");
 		recording.dump(file);
 		recording.close();
-		String md = Summarizer.summarize(file);
-		Files.deleteIfExists(file);
-		return md;
+		return file;
 	}
 
 	private interface Work {
