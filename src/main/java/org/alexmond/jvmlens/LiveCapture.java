@@ -37,11 +37,13 @@ final class LiveCapture {
 	 * @param durationSeconds how long to record
 	 * @param settings predefined JFR configuration name ({@code profile} or
 	 * {@code default})
+	 * @param warmupSeconds seconds to wait after attach before recording (skip startup)
 	 * @return the path of the captured recording (caller owns it)
 	 * @throws IOException if attach or capture fails
 	 * @throws InterruptedException if interrupted while recording
 	 */
-	static Path capture(String pid, int durationSeconds, String settings) throws IOException, InterruptedException {
+	static Path capture(String pid, int durationSeconds, String settings, int warmupSeconds)
+			throws IOException, InterruptedException {
 		VirtualMachine vm;
 		try {
 			vm = VirtualMachine.attach(pid);
@@ -55,7 +57,7 @@ final class LiveCapture {
 				MBeanServerConnection conn = connector.getMBeanServerConnection();
 				FlightRecorderMXBean fr = JMX.newMXBeanProxy(conn, new ObjectName(FLIGHT_RECORDER),
 						FlightRecorderMXBean.class);
-				return record(fr, durationSeconds, settings);
+				return record(fr, durationSeconds, settings, warmupSeconds);
 			}
 			catch (MalformedURLException | MalformedObjectNameException ex) {
 				throw new IOException("JFR management connection failed (" + ex.getMessage() + ")", ex);
@@ -66,8 +68,11 @@ final class LiveCapture {
 		}
 	}
 
-	private static Path record(FlightRecorderMXBean fr, int durationSeconds, String settings)
+	private static Path record(FlightRecorderMXBean fr, int durationSeconds, String settings, int warmupSeconds)
 			throws IOException, InterruptedException {
+		if (warmupSeconds > 0) {
+			Thread.sleep(warmupSeconds * 1000L);
+		}
 		long id = fr.newRecording();
 		try {
 			fr.setPredefinedConfiguration(id, settings);

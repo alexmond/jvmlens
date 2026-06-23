@@ -25,6 +25,10 @@ public class ProfileCommand implements Callable<Integer> {
 			description = "Recording duration in seconds (default: ${DEFAULT-VALUE}).")
 	int duration = 20;
 
+	@Option(names = { "-w", "--warmup" }, paramLabel = "<seconds>",
+			description = "Seconds to wait after attach before recording, to skip startup (default: ${DEFAULT-VALUE}).")
+	int warmup = 0;
+
 	@Option(names = { "-s", "--settings" }, paramLabel = "<settings>",
 			description = "JFR configuration: profile or default (default: ${DEFAULT-VALUE}).")
 	String settings = "profile";
@@ -55,9 +59,13 @@ public class ProfileCommand implements Callable<Integer> {
 			System.err.println("jvmlens: --duration must be positive: " + duration);
 			return 2;
 		}
+		if (warmup < 0) {
+			System.err.println("jvmlens: --warmup must not be negative: " + warmup);
+			return 2;
+		}
 		Path recording;
 		try {
-			recording = LiveCapture.capture(pid, duration, settings);
+			recording = LiveCapture.capture(pid, duration, settings, warmup);
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();

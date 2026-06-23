@@ -10,6 +10,38 @@ java -jar target/jvmlens.jar analyze recording.jfr
 The output is markdown: ranked hot paths (application-frame attributed),
 allocation sites, lock contention, GC pressure, and a one-line heuristic cause.
 
+== Live capture from a running JVM
+
+`profile <pid>` attaches to a running JVM, captures a timed JFR recording, and
+summarizes it — no pre-recorded `.jfr` needed:
+
+[source,bash]
+----
+java -jar target/jvmlens.jar profile 12345                 # 20s, markdown
+java -jar target/jvmlens.jar profile -d 30 -w 5 12345      # warm up 5s, record 30s
+java -jar target/jvmlens.jar profile -d 30 -k run.jfr 12345  # keep the recording
+----
+
+`-w` / `--warmup` waits before recording so startup/JIT noise is skipped.
+
+== Scoping application code
+
+By default a hot path is "application code" if it is outside the JDK and common
+frameworks (Spring, Apache, BouncyCastle, Jackson, logging, …). To focus on your
+own packages — or trim more noise — use `-a` / `--app-package` (include-only) and
+`-x` / `--exclude` (both repeatable, comma-separable); they apply to `analyze`
+and `profile` alike:
+
+[source,bash]
+----
+java -jar target/jvmlens.jar analyze -a org.alexmond recording.jfr
+java -jar target/jvmlens.jar analyze -x com.thirdparty recording.jfr
+----
+
+A summary built from very few execution samples is flagged with a `⚠` adequacy
+caveat — its hot-path shares are statistically noisy; record longer or under
+steady-state load.
+
 == Output formats
 
 `-f` / `--format` selects the rendering (case-insensitive); all three carry the
@@ -49,5 +81,6 @@ memory leak, lock contention) for producing sample recordings.
 | Code | Meaning
 
 | `0` | Summary produced
-| `2` | The JFR file could not be read
+| `2` | Bad arguments (unreadable JFR file, non-numeric pid, invalid duration/warmup)
+| `3` | Live capture failed (could not attach to the target JVM)
 |===

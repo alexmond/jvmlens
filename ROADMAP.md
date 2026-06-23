@@ -26,7 +26,8 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
       issues** from dogfooding (see `examples/experiments.md` + `scripts/field-finding.sh`).
       First inputs from jhelm: configurable application-package scoping
       (#1 — **done**, `Scope` + `-a/--app-package`/`-x/--exclude`) and
-      sample-count adequacy / steady-state capture (#2). Success metric is still
+      sample-count adequacy / steady-state capture (#2 — **done**, `⚠` low-sample
+      caveat + `profile --warmup`). Success metric is still
       *cheaper* (≥3× fewer tokens at equal accuracy) or *more accurate* vs raw JFR.
 
 ## Then — reach + fidelity (~weeks)

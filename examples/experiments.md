@@ -90,3 +90,6 @@ missing, or misleading). Perf bugs in the *target* go to that project; jvmlens
   2. Short cold CLI runs profile startup/classloading, not the workload; the
      summary should make sample-count adequacy visible and/or support steady-state
      capture.
+     **Fixed (#2):** the markdown now emits a `⚠` caveat below a 200-sample
+     threshold (the grafana run flags "Only 71 execution samples"), and `profile`
+     gained `-w/--warmup` to skip startup before recording.

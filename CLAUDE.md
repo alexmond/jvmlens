@@ -108,6 +108,7 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-06-23 — **dogfood** — real-project profiling feeds jvmlens gaps back as GitHub `field-finding` issues. Why: tuning is driven by field evidence, not guesses. See → `scripts/field-finding.sh`, issues #1/#2.
 - 2026-06-23 — **attribution** — field finding: framework pkgs (spring, bouncycastle) pass the runtime filter and bury user code; needs configurable app-package scoping. See → issue #1.
 - 2026-06-23 — **scope** — `Scope` defines application code: default skips JDK **+** common frameworks; `-a/--app-package` is include-only mode, `-x/--exclude` adds prefixes. Why: fixes #1 — validated on jhelm (default now leads with `HelmJavaApplication.main`, `-a org.alexmond` shows only the user's code). Auto-detect deferred.
+- 2026-06-23 — **adequacy** — markdown emits a `⚠` caveat below 200 exec samples; `profile` gained `-w/--warmup` to skip startup. Why: fixes #2 — short cold runs profile classloading, not the workload; the caveat stops the LLM trusting noisy shares.
 
 ### Historic (older than 14 days · see git log for the build-up)
 

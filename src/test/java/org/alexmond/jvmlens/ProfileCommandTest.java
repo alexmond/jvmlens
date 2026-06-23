@@ -26,6 +26,12 @@ class ProfileCommandTest {
 	}
 
 	@Test
+	void rejectsNegativeWarmup() {
+		int rc = new CommandLine(new ProfileCommand()).execute("--warmup", "-1", "12345");
+		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
 	void reportsCaptureFailureForNonJvmPid() {
 		// pid 1 (init) is not an attachable HotSpot JVM → capture fails with exit 3.
 		int rc = new CommandLine(new ProfileCommand()).execute("--duration", "1", "1");

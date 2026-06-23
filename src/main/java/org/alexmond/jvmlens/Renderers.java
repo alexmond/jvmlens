@@ -12,6 +12,9 @@ import org.alexmond.jvmlens.ProfileSummary.Ranked;
  */
 final class Renderers {
 
+	/** Below this many execution samples, hot-path shares are too noisy to trust. */
+	private static final int LOW_SAMPLE_THRESHOLD = 200;
+
 	private Renderers() {
 	}
 
@@ -31,6 +34,7 @@ final class Renderers {
 			.append(" GC pauses (")
 			.append(s.gcPauseMillis())
 			.append(" ms).\n\n");
+		appendAdequacy(md, s.execSamples());
 		mdSection(md, "Top hot paths (application code, by sample share)", s.hotPaths());
 		mdSection(md, "Hot leaf methods (self-time, incl. runtime)", s.hotLeaves());
 		mdSection(md, "Top allocation sites (application code, by est. bytes)", s.allocSites());
@@ -41,6 +45,22 @@ final class Renderers {
 		}
 		md.append("## Suspected cause (heuristic)\n- ").append(s.cause()).append('\n');
 		return md.toString();
+	}
+
+	/**
+	 * A caveat line when there are too few (or no) execution samples to attribute CPU.
+	 */
+	private static void appendAdequacy(StringBuilder md, long execSamples) {
+		if (execSamples == 0) {
+			md.append("> ⚠ No execution samples — CPU attribution unavailable; the recording may be too\n"
+					+ "> short or CPU sampling disabled.\n\n");
+		}
+		else if (execSamples < LOW_SAMPLE_THRESHOLD) {
+			md.append("> ⚠ Only ")
+				.append(execSamples)
+				.append(" execution samples — hot-path shares are statistically noisy;\n"
+						+ "> capture longer or under steady-state load (warm JVM, `profile --warmup`).\n\n");
+		}
 	}
 
 	private static void mdSection(StringBuilder md, String title, List<Ranked> rows) {

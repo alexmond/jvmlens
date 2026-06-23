@@ -29,6 +29,27 @@ class RenderersTest {
 	}
 
 	@Test
+	void markdownWarnsOnLowSampleCount() {
+		// sample() has 100 exec samples, below the 200 adequacy threshold.
+		assertThat(Renderers.markdown(sample())).contains("⚠ Only 100 execution samples");
+	}
+
+	@Test
+	void markdownWarnsWhenNoExecutionSamples() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 0, 1, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
+				List.of(), List.of(), "No dominant signal.");
+		assertThat(Renderers.markdown(s)).contains("No execution samples");
+	}
+
+	@Test
+	void markdownHasNoCaveatWhenSamplesAdequate() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 5000, 1, 0, 0, 0,
+				List.of(new Ranked("com.example.Svc.run", 1.0, null)), List.of(), List.of(), List.of(), List.of(),
+				List.of(), "CPU-bound.");
+		assertThat(Renderers.markdown(s)).doesNotContain("⚠");
+	}
+
+	@Test
 	void markdownOmitsMonitorSectionWhenEmpty() {
 		ProfileSummary s = new ProfileSummary("r.jfr", 1, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
 				List.of(), List.of(), "No dominant signal.");
