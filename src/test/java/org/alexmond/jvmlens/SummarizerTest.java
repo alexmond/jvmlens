@@ -83,7 +83,13 @@ class SummarizerTest {
 		String md = record(() -> {
 			long allocEnd = System.nanoTime() + 1_500_000_000L;
 			while (System.nanoTime() < allocEnd) {
-				keep.add(new byte[32 * 1024]);
+				byte[] block = new byte[16 * 1024];
+				block[0] = 1;
+				// Bounded retention (~16 MB): keep allocating to generate samples, but do
+				// not retain everything or a small CI heap OOMs (forked test JVM).
+				if (keep.size() < 1024) {
+					keep.add(block);
+				}
 			}
 			long lockEnd = System.nanoTime() + 1_500_000_000L;
 			Thread[] workers = new Thread[8];
