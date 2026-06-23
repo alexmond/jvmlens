@@ -32,8 +32,10 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
 
 ## Then — reach + fidelity (~weeks)
 
-- [ ] **MCP server** — same engine, *scoped/navigable* tools (overview →
-      drill → allocation sites), not a blob. ~1 week once the engine is stable.
+- [x] **MCP server** — `jvmlens mcp` (stdio) over the same engine, with *scoped,
+      navigable* tools (`overview` → `hot_paths`/`hot_leaves`/`allocations`/
+      `lock_contention`), not a blob. Tools accept `appPackages`/`exclude` scoping;
+      serves data only, never calls an LLM. Built on the MCP Java SDK.
 - [ ] async-profiler fidelity via ap-loader, behind the same interface.
 - [ ] Emit-local / user-chosen-model so egress-restricted (prod) shops can use it.
 

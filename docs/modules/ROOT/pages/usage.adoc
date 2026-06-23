@@ -42,6 +42,32 @@ A summary built from very few execution samples is flagged with a `⚠` adequacy
 caveat — its hot-path shares are statistically noisy; record longer or under
 steady-state load.
 
+== MCP server
+
+`jvmlens mcp` runs a https://modelcontextprotocol.io[Model Context Protocol] server
+over stdio, exposing the analysis as *scoped, navigable tools* so an agent pulls only
+the slice it needs (progressive disclosure) instead of one large blob:
+
+[cols="1,3"]
+|===
+| Tool | Returns
+
+| `overview` | Event counts, the heuristic cause, and which drill-down tool to use next.
+| `hot_paths` | Application-attributed hot call paths, by sample share.
+| `hot_leaves` | Leaf (self-time) hot methods, runtime included.
+| `allocations` | Top allocation sites and allocated types.
+| `lock_contention` | Lock contention by method and contended monitors.
+|===
+
+Every tool takes a `file` (path to a `.jfr`) plus optional `appPackages` / `exclude`
+scoping. The server only serves structured data — it never calls an LLM, so recordings
+never leave the host. Register it with an MCP client, e.g.:
+
+[source,json]
+----
+{ "mcpServers": { "jvmlens": { "command": "java", "args": ["-jar", "/path/to/jvmlens.jar", "mcp"] } } }
+----
+
 == Output formats
 
 `-f` / `--format` selects the rendering (case-insensitive); all three carry the

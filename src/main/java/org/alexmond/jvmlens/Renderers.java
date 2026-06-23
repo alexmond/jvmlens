@@ -63,6 +63,13 @@ final class Renderers {
 		}
 	}
 
+	/** One ranked section rendered on its own — the unit the MCP tools hand back. */
+	static String section(String title, List<Ranked> rows) {
+		StringBuilder md = new StringBuilder();
+		mdSection(md, title, rows);
+		return md.toString();
+	}
+
 	private static void mdSection(StringBuilder md, String title, List<Ranked> rows) {
 		md.append("## ").append(title).append('\n');
 		if (rows.isEmpty()) {
