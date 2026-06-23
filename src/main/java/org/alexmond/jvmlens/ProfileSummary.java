@@ -1,0 +1,39 @@
+package org.alexmond.jvmlens;
+
+import java.util.List;
+
+/**
+ * Render-agnostic result of summarizing a JFR recording. The {@link Summarizer} produces
+ * one of these; the renderers in {@link Renderers} turn it into markdown, JSON, or an LLM
+ * prompt. Keeping the structured form separate is what lets the (planned) MCP server
+ * serve the same scoped data the CLI prints.
+ *
+ * @param source the recording file name
+ * @param execSamples number of execution (CPU) samples seen
+ * @param allocTypes distinct allocated types seen
+ * @param oldObjects old-object (retained) samples seen
+ * @param gcPauses number of GC pause phases
+ * @param gcPauseMillis total GC pause time, milliseconds
+ * @param hotPaths hottest application-attributed call sites, by sample share
+ * @param hotLeaves hottest leaf methods (self-time, runtime included)
+ * @param allocSites top application allocation sites, by estimated bytes
+ * @param allocatedTypes top allocated types, by estimated bytes
+ * @param locks lock contention by application method, by blocked time
+ * @param monitors contended monitor classes, by blocked time
+ * @param cause one-line heuristic cause
+ */
+public record ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
+		long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
+		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause) {
+
+	/**
+	 * One ranked row.
+	 *
+	 * @param name the method or type name
+	 * @param share fraction (0..1) of the relevant total this row accounts for
+	 * @param stack optional call-stack teaser ({@code null} when not applicable)
+	 */
+	public record Ranked(String name, double share, String stack) {
+	}
+
+}

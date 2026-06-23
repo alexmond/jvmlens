@@ -10,8 +10,8 @@ window. jvmlens reads a JFR recording and emits a few hundred tokens of ranked,
 source-attributed signal you can hand straight to a coding agent.
 
 > Early / proof-of-concept. CPU, allocation, lock-contention and GC signal from
-> an existing `.jfr`. Live attach, async-profiler fidelity, JSON output and an
-> MCP server are on the roadmap.
+> an existing `.jfr`, rendered as markdown, JSON, or an LLM prompt. Live attach,
+> async-profiler fidelity, and an MCP server are on the roadmap.
 
 ## Why
 
@@ -30,8 +30,12 @@ mvn -q clean package
 ## Use
 
 ```bash
-# analyze an existing JFR recording
+# analyze an existing JFR recording (markdown by default)
 java -jar target/jvmlens.jar analyze recording.jfr
+
+# or emit scoped JSON / an LLM-ready prompt
+java -jar target/jvmlens.jar analyze -f json recording.jfr
+java -jar target/jvmlens.jar analyze -f prompt recording.jfr
 
 # or during development
 mvn -q spring-boot:run -Dspring-boot.run.arguments="analyze,recording.jfr"

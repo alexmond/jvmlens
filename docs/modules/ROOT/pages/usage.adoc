@@ -10,6 +10,26 @@ java -jar target/jvmlens.jar analyze recording.jfr
 The output is markdown: ranked hot paths (application-frame attributed),
 allocation sites, lock contention, GC pressure, and a one-line heuristic cause.
 
+== Output formats
+
+`-f` / `--format` selects the rendering (case-insensitive); all three carry the
+same ranked signal from one analysis pass:
+
+[cols="1,3"]
+|===
+| Format | Use
+
+| `md` (default) | Compact markdown — readable by humans and agents alike.
+| `json` | Scoped JSON object — for tooling, or the future MCP server, to consume.
+| `prompt` | The markdown wrapped in an LLM task instruction, ready to paste.
+|===
+
+[source,bash]
+----
+java -jar target/jvmlens.jar analyze --format json recording.jfr
+java -jar target/jvmlens.jar analyze -f prompt recording.jfr
+----
+
 == Producing a recording
 
 Any JFR recording works. To capture one with the built-in profiler:
