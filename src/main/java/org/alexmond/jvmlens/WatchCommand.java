@@ -35,6 +35,18 @@ public class WatchCommand implements Callable<Integer> {
 			description = "JFR configuration: profile or default (default: ${DEFAULT-VALUE}).")
 	String settings = "profile";
 
+	@Option(names = { "--on-gc-ms" }, paramLabel = "<ms>",
+			description = "Only emit a snapshot when window GC pause time reaches this many ms.")
+	long onGcMs;
+
+	@Option(names = { "--on-cpu-pct" }, paramLabel = "<pct>",
+			description = "Only emit when the top hot path reaches this sample share (0-100).")
+	int onCpuPct;
+
+	@Option(names = { "--on-old-objects" }, paramLabel = "<count>",
+			description = "Only emit when retained (old-object) samples reach this count.")
+	long onOldObjects;
+
 	@Option(names = { "-f", "--format" }, paramLabel = "<format>",
 			description = "Output format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}).")
 	Summarizer.Format format = Summarizer.Format.MARKDOWN;
@@ -58,16 +70,10 @@ public class WatchCommand implements Callable<Integer> {
 			return 2;
 		}
 		Scope scope = Scope.of(appPackages, excludePackages);
+		WatchTrigger trigger = new WatchTrigger(onGcMs, onCpuPct / 100.0, onOldObjects);
 		try {
-			LiveCapture.watch(pid, interval, maxAge, settings, snapshots, (snapshot, index) -> {
-				try {
-					System.out.println("=== snapshot " + index + " (last " + maxAge + "s) ===");
-					System.out.print(Summarizer.summarize(snapshot, format, scope));
-				}
-				finally {
-					Files.deleteIfExists(snapshot);
-				}
-			});
+			LiveCapture.watch(pid, interval, maxAge, settings, snapshots,
+					(snapshot, index) -> emit(snapshot, index, scope, trigger));
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();
@@ -78,6 +84,26 @@ public class WatchCommand implements Callable<Integer> {
 			return 3;
 		}
 		return 0;
+	}
+
+	private void emit(java.nio.file.Path snapshot, int index, Scope scope, WatchTrigger trigger) throws IOException {
+		try {
+			ProfileSummary summary = Summarizer.analyze(snapshot, scope);
+			if (trigger.active()) {
+				String reason = trigger.reason(summary);
+				if (reason == null) {
+					return; // window did not breach any threshold — stay quiet
+				}
+				System.out.println("=== TRIGGERED: " + reason + " (snapshot " + index + ") ===");
+			}
+			else {
+				System.out.println("=== snapshot " + index + " (last " + maxAge + "s) ===");
+			}
+			System.out.print(Summarizer.render(summary, format));
+		}
+		finally {
+			Files.deleteIfExists(snapshot);
+		}
 	}
 
 }
