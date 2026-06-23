@@ -14,3 +14,6 @@ raw-*.txt
 
 # OS
 .DS_Store
+
+# Claude Code local-only settings (permissions, machine-specific)
+.claude/settings.local.json

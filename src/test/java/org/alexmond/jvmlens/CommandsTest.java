@@ -27,6 +27,32 @@ class CommandsTest {
 	}
 
 	@Test
+	void analyzeAcceptsJsonFormatOption() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).setCaseInsensitiveEnumValuesAllowed(true)
+			.execute("--format", "json", file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isZero();
+	}
+
+	@Test
+	void analyzeRejectsUnknownFormat() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).execute("-f", "bogus", file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isEqualTo(2); // picocli usage error
+	}
+
+	@Test
+	void analyzeAcceptsAppPackageScopeOptions() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).execute("-a", "org.alexmond", "-x", "com.generated",
+				file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isZero();
+	}
+
+	@Test
 	void rootCommandPrintsUsageAndReturnsZero() {
 		int rc = new CommandLine(new JvmlensCommand()).execute();
 		assertThat(rc).isZero();

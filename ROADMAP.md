@@ -15,17 +15,27 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
 
 ## Next — finish the dev MVP (~weeks)
 
-- [ ] `profile.json` (scoped) + `prompt.md` outputs alongside the markdown.
-- [ ] `profile <pid>` — live attach + timed JFR capture (`jdk.jfr.Recording`).
+- [x] Scoped JSON + LLM-prompt outputs alongside the markdown — shipped as
+      `analyze -f md|json|prompt` over one `ProfileSummary` (dependency-free, JSON
+      hand-rolled). Sets up the MCP server's structured surface.
+- [x] `profile <pid>` — live attach + timed JFR capture via the public
+      FlightRecorder MXBean over a local management agent (no `jcmd`, no
+      `--add-exports`). `-d/--duration`, `-s/--settings`, `-f/--format`, `-k/--keep`.
 - [ ] Continuous recording + **dump-on-trigger** (ring buffer → `JFR.dump`).
-- [ ] Tune the summarizer against real workloads (unitrack / venice-vr); the
-      success metric is *cheaper* (≥3× fewer tokens at equal accuracy) or *more
-      accurate* (correct root cause in fewer turns) vs raw JFR.
+- [ ] Tune the summarizer against real workloads — now **driven by field-finding
+      issues** from dogfooding (see `examples/experiments.md` + `scripts/field-finding.sh`).
+      First inputs from jhelm: configurable application-package scoping
+      (#1 — **done**, `Scope` + `-a/--app-package`/`-x/--exclude`) and
+      sample-count adequacy / steady-state capture (#2 — **done**, `⚠` low-sample
+      caveat + `profile --warmup`). Success metric is still
+      *cheaper* (≥3× fewer tokens at equal accuracy) or *more accurate* vs raw JFR.
 
 ## Then — reach + fidelity (~weeks)
 
-- [ ] **MCP server** — same engine, *scoped/navigable* tools (overview →
-      drill → allocation sites), not a blob. ~1 week once the engine is stable.
+- [x] **MCP server** — `jvmlens mcp` (stdio) over the same engine, with *scoped,
+      navigable* tools (`overview` → `hot_paths`/`hot_leaves`/`allocations`/
+      `lock_contention`), not a blob. Tools accept `appPackages`/`exclude` scoping;
+      serves data only, never calls an LLM. Built on the MCP Java SDK.
 - [ ] async-profiler fidelity via ap-loader, behind the same interface.
 - [ ] Emit-local / user-chosen-model so egress-restricted (prod) shops can use it.
 
