@@ -10,9 +10,10 @@ window. jvmlens reads a JFR recording and emits a few hundred tokens of ranked,
 source-attributed signal you can hand straight to a coding agent.
 
 > Early / proof-of-concept. CPU, allocation, lock-contention and GC signal from
-> an existing `.jfr` or a live JVM (`profile <pid>`), rendered as markdown, JSON, or
-> an LLM prompt — or served to an agent over MCP (`jvmlens mcp`). async-profiler
-> fidelity and continuous dump-on-trigger are on the roadmap.
+> an existing `.jfr`, a live JVM (`profile <pid>`), or a continuous ring buffer
+> (`watch <pid>`), rendered as markdown, JSON, or an LLM prompt — or served to an
+> agent over MCP (`jvmlens mcp`). async-profiler fidelity and condition-based
+> dump-on-trigger are on the roadmap.
 
 ## Why
 

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import javax.management.JMX;
 import javax.management.MBeanServerConnection;
@@ -18,10 +19,11 @@ import com.sun.tools.attach.VirtualMachine;
 import jdk.management.jfr.FlightRecorderMXBean;
 
 /**
- * Attaches to a running JVM and captures a timed JFR recording through the platform
- * FlightRecorder MXBean. Uses only public, modular JDK APIs ({@code jdk.attach} and
- * {@code jdk.management.jfr}) — no internal {@code --add-exports} and no external
- * {@code jcmd} process, keeping the single-binary, headless positioning intact.
+ * Attaches to a running JVM and drives JFR through the platform FlightRecorder MXBean — a
+ * one-shot timed {@link #capture}, or a continuous ring-buffer {@link #watch} that dumps
+ * a rolling window on an interval. Uses only public, modular JDK APIs ({@code jdk.attach}
+ * and {@code jdk.management.jfr}) — no internal {@code --add-exports} and no external
+ * {@code jcmd} process, keeping the headless single-binary positioning intact.
  */
 final class LiveCapture {
 
@@ -44,6 +46,31 @@ final class LiveCapture {
 	 */
 	static Path capture(String pid, int durationSeconds, String settings, int warmupSeconds)
 			throws IOException, InterruptedException {
+		return withRecorder(pid, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
+	}
+
+	/**
+	 * Run a continuous ring-buffer recording on the target, dumping a rolling window to a
+	 * temp file every {@code intervalSeconds} and handing it to {@code sink}.
+	 * @param pid the target JVM process id
+	 * @param intervalSeconds seconds between snapshot dumps
+	 * @param maxAgeSeconds ring-buffer window kept on the target
+	 * @param settings predefined JFR configuration name
+	 * @param snapshots number of snapshots to take, or {@code <= 0} to run until
+	 * interrupted
+	 * @param sink receives each dumped snapshot (caller deletes it)
+	 * @throws IOException if attach or capture fails
+	 * @throws InterruptedException if interrupted while recording
+	 */
+	static void watch(String pid, int intervalSeconds, int maxAgeSeconds, String settings, int snapshots,
+			SnapshotSink sink) throws IOException, InterruptedException {
+		withRecorder(pid, (fr) -> {
+			watchLoop(fr, intervalSeconds, maxAgeSeconds, settings, snapshots, sink);
+			return null;
+		});
+	}
+
+	private static <T> T withRecorder(String pid, RecorderAction<T> action) throws IOException, InterruptedException {
 		VirtualMachine vm;
 		try {
 			vm = VirtualMachine.attach(pid);
@@ -57,7 +84,7 @@ final class LiveCapture {
 				MBeanServerConnection conn = connector.getMBeanServerConnection();
 				FlightRecorderMXBean fr = JMX.newMXBeanProxy(conn, new ObjectName(FLIGHT_RECORDER),
 						FlightRecorderMXBean.class);
-				return record(fr, durationSeconds, settings, warmupSeconds);
+				return action.run(fr);
 			}
 			catch (MalformedURLException | MalformedObjectNameException ex) {
 				throw new IOException("JFR management connection failed (" + ex.getMessage() + ")", ex);
@@ -86,6 +113,42 @@ final class LiveCapture {
 		finally {
 			fr.closeRecording(id);
 		}
+	}
+
+	private static void watchLoop(FlightRecorderMXBean fr, int intervalSeconds, int maxAgeSeconds, String settings,
+			int snapshots, SnapshotSink sink) throws IOException, InterruptedException {
+		long id = fr.newRecording();
+		try {
+			fr.setRecordingOptions(id, Map.of("maxAge", maxAgeSeconds + "s", "disk", "true"));
+			fr.setPredefinedConfiguration(id, settings);
+			fr.startRecording(id);
+			for (int taken = 0; snapshots <= 0 || taken < snapshots; taken++) {
+				Thread.sleep(intervalSeconds * 1000L);
+				Path out = Files.createTempFile("jvmlens-watch", ".jfr");
+				fr.copyTo(id, out.toString());
+				sink.accept(out, taken + 1);
+			}
+		}
+		finally {
+			fr.stopRecording(id);
+			fr.closeRecording(id);
+		}
+	}
+
+	/** Receives each dumped snapshot file (and its 1-based index) from {@link #watch}. */
+	@FunctionalInterface
+	interface SnapshotSink {
+
+		void accept(Path snapshot, int index) throws IOException;
+
+	}
+
+	/** An action against the target's FlightRecorder MXBean while attached. */
+	@FunctionalInterface
+	private interface RecorderAction<T> {
+
+		T run(FlightRecorderMXBean recorder) throws IOException, InterruptedException;
+
 	}
 
 }
