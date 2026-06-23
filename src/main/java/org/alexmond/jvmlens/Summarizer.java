@@ -76,7 +76,16 @@ public final class Summarizer {
 	 * @throws IOException if the recording cannot be read
 	 */
 	public static String summarize(Path file, Format format, Scope scope) throws IOException {
-		ProfileSummary s = analyze(file, scope);
+		return render(analyze(file, scope), format);
+	}
+
+	/**
+	 * Render an already-analyzed summary in the requested format.
+	 * @param s the structured summary
+	 * @param format the output format
+	 * @return the rendered report
+	 */
+	public static String render(ProfileSummary s, Format format) {
 		return switch (format) {
 			case MARKDOWN -> Renderers.markdown(s);
 			case JSON -> Renderers.json(s);
