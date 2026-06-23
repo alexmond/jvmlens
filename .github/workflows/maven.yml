@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: write        # dependency submission snapshot
+  checks: write          # publish test-results check run
+  pull-requests: write   # coverage comment on PRs
+
 jobs:
   build:
 
@@ -25,6 +30,7 @@ jobs:
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
+        continue-on-error: true   # reporting is decorative; the build is the gate
         with:
           files: |
             **/surefire-reports/TEST-*.xml
@@ -32,6 +38,7 @@ jobs:
       - name: Add coverage to PR
         id: jacoco
         uses: madrapps/jacoco-report@v1.7.2
+        continue-on-error: true   # reporting is decorative; the build is the gate
         with:
           paths: |
             ${{ github.workspace }}/target/site/jacoco/jacoco.xml
@@ -41,10 +48,11 @@ jobs:
 
       - name: Add coverage to PR
         uses: codecov/codecov-action@v5
+        continue-on-error: true   # reporting is decorative; the build is the gate
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ github.workspace }}/target/site/jacoco/jacoco.xml
-          fail_ci_if_error: true
+          fail_ci_if_error: false
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
@@ -66,3 +74,4 @@ jobs:
 
       - name: Submit Dependency Snapshot
         uses: advanced-security/maven-dependency-submission-action@v5
+        continue-on-error: true   # needs dependency-graph enabled; non-fatal on private repos
