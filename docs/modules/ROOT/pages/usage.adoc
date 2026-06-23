@@ -41,6 +41,26 @@ java -jar target/jvmlens.jar watch -n 5 -i 10 12345               # 5 snapshots,
 `-n` / `--snapshots` a fixed count (`0` = until interrupted). Each snapshot is summarized
 with the same `-f` / `-a` / `-x` options as `analyze`.
 
+=== Dump on trigger
+
+By default every interval is emitted. Pass any threshold and `watch` instead stays quiet
+and emits *only* when a window breaches it — the production "dump-on-trigger" mode:
+
+[cols="1,3"]
+|===
+| Option | Fires when
+
+| `--on-gc-ms <ms>` | total GC pause time in the window reaches `<ms>` (latency / memory pressure)
+| `--on-cpu-pct <pct>` | the top hot path reaches `<pct>` of samples (a hot loop)
+| `--on-old-objects <n>` | retained (old-object) samples reach `<n>` (suspected leak)
+|===
+
+[source,bash]
+----
+# emit a summary only when GC pauses exceed 200ms or a leak shows up
+java -jar target/jvmlens.jar watch --on-gc-ms 200 --on-old-objects 5 12345
+----
+
 == Scoping application code
 
 By default a hot path is "application code" if it is outside the JDK and common
