@@ -56,13 +56,17 @@ Events: 1738 exec samples, 8 alloc types, 2 old-object samples, 10 GC pauses (62
 `examples/Workload.java` is a planted-pathology workload (CPU hot path, a memory
 leak, lock contention) for producing sample recordings. See `examples/README.md`.
 
-## Roadmap
+## Design & roadmap
 
-- `profile <pid>` — live attach + timed capture (JFR), and continuous + dump-on-trigger
-- async-profiler fidelity (via ap-loader) behind the same interface
-- `profile.json` (scoped) + `prompt.md` outputs alongside the markdown
-- **MCP server** with scoped, navigable tools (progressive disclosure)
-- GraalVM native image for a single drop-into-CI binary
+This project graduated from a structured incubation; the design thinking and plan
+came with it so work can continue uninterrupted:
+
+- **[DESIGN.md](DESIGN.md)** — architecture (one engine, two front-ends), key
+  decisions (frame attribution, MCP scoped tools, capture modes, prod-vs-dev,
+  LLM egress), the v2 variable-snapshot direction, and competitive positioning.
+- **[ROADMAP.md](ROADMAP.md)** — staged plan with effort and the immediate next step.
+- **[examples/experiments.md](examples/experiments.md)** — how to validate
+  summary quality against the planted-pathology workload.
 
 ## License
 
