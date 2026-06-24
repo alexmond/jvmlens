@@ -44,8 +44,10 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
 - [x] ~~Remote profiling via JMX~~ — removed: JMX is fiddly (RMI ports/hostnames/
       containers), needs target start flags, and async can't use it. Remote = run jvmlens
       on the host (ssh/kubectl/docker exec → tiny summary back).
-- [ ] Remote querying without JMX: an MCP-over-HTTP endpoint, then an in-process agent
-      that embeds it (continuous profiling, container-native).
+- [~] Remote querying without JMX. Done: MCP `profile` tool captures a live pid, and the
+      MCP server is reachable remotely via stdio-over-ssh (no HTTP server, no ports). Next:
+      an in-process agent (continuous profiling, container-native), optionally an
+      MCP-over-HTTP endpoint for multi-client/long-lived sidecars.
 - [x] async-profiler fidelity via ap-loader — `profile --engine async` captures with
       async-profiler to JFR (native frames included; native frames excluded from the app
       view via `Scope`), consumed by the same summarizer. Local pid only.
