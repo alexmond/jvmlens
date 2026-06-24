@@ -1,0 +1,17 @@
+jvmlens is now profiling "{{ .Values.target.image }}" as a standalone deployment.
+
+The agent writes a fresh LLM-ready summary every interval to /agent/jvmlens.md.
+
+{{- if .Values.summary.enabled }}
+Read it over HTTP:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "jvmlens.fullname" . }} {{ .Values.summary.port }}:{{ .Values.summary.port }}
+  curl localhost:{{ .Values.summary.port }}/jvmlens.md
+{{- else }}
+Read it from the pod:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "jvmlens.fullname" . }} -c app -- cat /agent/jvmlens.md
+{{- end }}
+
+JAVA_TOOL_OPTIONS in use:
+  {{ include "jvmlens.javaToolOptions" . }}

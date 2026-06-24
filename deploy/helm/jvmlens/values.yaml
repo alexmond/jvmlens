@@ -1,0 +1,54 @@
+# jvmlens — standalone "profile a JVM workload" deployment.
+#
+# It runs your app image with the jvmlens agent attached and a tiny sidecar that
+# serves the rolling summary over HTTP. This is a SEPARATE release; it does not
+# touch your app's main deployment.
+
+replicaCount: 1
+
+# The JVM workload to profile. Default is the unitrack image, but point `target.image`
+# at any JVM app. Supply the app's own env/config via `env` / `envFrom` (e.g. reuse the
+# app release's ConfigMap/Secret) so it actually starts.
+target:
+  image: ghcr.io/alexmond/unitrack:latest
+  imagePullPolicy: IfNotPresent
+  args: []
+  # Plain env pairs for the app (DB URL, etc.).
+  env: []
+  #  - name: UNITRACK_DB_URL
+  #    value: jdbc:postgresql://unitrack-postgres:5432/unitrack
+  # Pull whole ConfigMaps/Secrets from the app's existing release.
+  envFrom: []
+  #  - configMapRef: { name: unitrack }
+  #  - secretRef: { name: unitrack }
+  port: 8080
+  resources: {}
+
+# The jvmlens agent. Distribute jvmlens-agent.jar as a tiny OCI image holding it at
+# /jvmlens-agent.jar (see deploy/agent-image/Dockerfile) and push it to your registry.
+agent:
+  image: ghcr.io/alexmond/jvmlens-agent:0.1.0
+  imagePullPolicy: IfNotPresent
+  # Appended after `-javaagent:/agent/jvmlens-agent.jar=`. See `jvmlens` agent docs.
+  options: "out=/agent/jvmlens.md,interval=300"
+  # Optional non-breaking variable snapshots: "pkg.Class#method;pkg.Other#m".
+  snapshot: ""
+
+# Tiny sidecar that serves the summary file over HTTP, so you can read the
+# LLM-ready report at http://<svc>:<port>/jvmlens.md without exec-ing into the pod.
+summary:
+  enabled: true
+  image: busybox:1.37
+  port: 8090
+
+service:
+  type: ClusterIP
+
+# The shared scratch volume holding the agent jar + the summary. fsGroup lets the
+# (non-root) app user write the summary into the dir the init container created.
+podSecurityContext:
+  fsGroup: 1000
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

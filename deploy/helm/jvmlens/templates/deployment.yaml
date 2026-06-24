@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jvmlens.fullname" . }}
+  labels:
+    {{- include "jvmlens.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "jvmlens.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "jvmlens.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Stage jvmlens-agent.jar into the shared scratch volume before the app starts.
+      initContainers:
+        - name: stage-agent
+          image: {{ .Values.agent.image | quote }}
+          imagePullPolicy: {{ .Values.agent.imagePullPolicy }}
+          command: ["sh", "-c", "cp /jvmlens-agent.jar /agent/jvmlens-agent.jar"]
+          volumeMounts:
+            - name: agent
+              mountPath: /agent
+      containers:
+        - name: app
+          image: {{ .Values.target.image | quote }}
+          imagePullPolicy: {{ .Values.target.imagePullPolicy }}
+          {{- with .Values.target.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.target.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            # Buildpacks/standard launchers honour JAVA_TOOL_OPTIONS — this attaches the agent.
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ include "jvmlens.javaToolOptions" . | quote }}
+            {{- with .Values.target.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.target.port }}
+          volumeMounts:
+            - name: agent
+              mountPath: /agent
+          resources:
+            {{- toYaml .Values.target.resources | nindent 12 }}
+        {{- if .Values.summary.enabled }}
+        # Serve /agent/jvmlens.md over HTTP so the rolling summary is readable without exec.
+        - name: summary
+          image: {{ .Values.summary.image | quote }}
+          command: ["httpd", "-f", "-p", "{{ .Values.summary.port }}", "-h", "/agent"]
+          ports:
+            - name: summary
+              containerPort: {{ .Values.summary.port }}
+          volumeMounts:
+            - name: agent
+              mountPath: /agent
+              readOnly: true
+        {{- end }}
+      volumes:
+        - name: agent
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
