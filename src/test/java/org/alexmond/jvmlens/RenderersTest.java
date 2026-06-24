@@ -63,6 +63,14 @@ class RenderersTest {
 	}
 
 	@Test
+	void markdownHumanizesAllocationBytes() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(),
+				List.of(new Ranked("com.example.Svc.alloc", 0.9, 2_000_000, null)), List.of(), List.of(), List.of(),
+				"cause", "com.example");
+		assertThat(Renderers.markdown(s)).contains("1.9 MB").doesNotContain("2000000 bytes");
+	}
+
+	@Test
 	void labelsSampledVsMeasuredSections() {
 		String md = Renderers.markdown(sample());
 		assertThat(md).contains("Top hot paths (application code, by sample share) [sampled]");
