@@ -13,7 +13,8 @@ source-attributed signal you can hand straight to a coding agent.
 > an existing `.jfr`, a live JVM (`profile <pid>`, JFR or async-profiler), or a
 > continuous ring buffer (`watch`), rendered as markdown, JSON, or an LLM prompt — or
 > served to an agent over MCP (`jvmlens mcp`), or run always-on as a Java agent
-> (`-javaagent:jvmlens-agent.jar`) that writes periodic summaries in-process. For remote
+> (`-javaagent:jvmlens-agent.jar`) that writes periodic summaries in-process — including
+> **variable snapshots** (`snapshot=Class#method`) for correctness questions. For remote
 > servers, run jvmlens on the host (e.g. MCP over `ssh`).
 
 ## Why
