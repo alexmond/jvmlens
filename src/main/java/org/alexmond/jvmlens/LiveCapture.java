@@ -16,6 +16,7 @@ import javax.management.remote.JMXServiceURL;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 import jdk.management.jfr.FlightRecorderMXBean;
+import one.profiler.AsyncProfilerLoader;
 
 /**
  * Drives JFR on a target JVM through the platform FlightRecorder MXBean — a one-shot
@@ -52,6 +53,33 @@ final class LiveCapture {
 	static Path captureRemote(String jmxUrl, int durationSeconds, String settings, int warmupSeconds)
 			throws IOException, InterruptedException {
 		return withRemote(jmxUrl, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
+	}
+
+	/**
+	 * Capture from a local JVM with async-profiler (higher fidelity: native frames),
+	 * written as JFR so the same {@link Summarizer} consumes it. Local pid only —
+	 * async-profiler loads a native agent into the target and cannot work over JMX.
+	 * @param pid the target JVM process id
+	 * @param durationSeconds how long to record
+	 * @param warmupSeconds seconds to wait before recording starts
+	 * @param event async-profiler event (e.g. {@code cpu}, {@code itimer}, {@code alloc})
+	 * @return the captured recording (caller owns it)
+	 * @throws IOException if the profiler fails or produces no data
+	 * @throws InterruptedException if interrupted during warmup
+	 */
+	static Path captureAsync(String pid, int durationSeconds, int warmupSeconds, String event)
+			throws IOException, InterruptedException {
+		if (warmupSeconds > 0) {
+			Thread.sleep(warmupSeconds * 1000L);
+		}
+		Path out = Files.createTempFile("jvmlens-async", ".jfr");
+		AsyncProfilerLoader.executeProfiler("-e", event, "-d", Integer.toString(durationSeconds), "-o", "jfr", "-f",
+				out.toString(), pid);
+		if (Files.size(out) == 0) {
+			Files.deleteIfExists(out);
+			throw new IOException("async-profiler produced no data (event=" + event + ", pid " + pid + ")");
+		}
+		return out;
 	}
 
 	/**
@@ -165,6 +193,16 @@ final class LiveCapture {
 			fr.stopRecording(id);
 			fr.closeRecording(id);
 		}
+	}
+
+	/** The capture engine: JDK Flight Recorder (default) or async-profiler. */
+	enum Engine {
+
+		/** JDK Flight Recorder — prod-safe, works locally and over remote JMX. */
+		JFR,
+		/** async-profiler — higher fidelity (native frames), local pid only. */
+		ASYNC
+
 	}
 
 	/** Receives each dumped snapshot file (and its 1-based index) from {@link #watch}. */

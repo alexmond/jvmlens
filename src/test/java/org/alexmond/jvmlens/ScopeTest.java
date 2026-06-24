@@ -35,6 +35,15 @@ class ScopeTest {
 	}
 
 	@Test
+	void treatsNativeFramesAsNonApplication() {
+		Scope s = Scope.defaults();
+		assertThat(s.isApplication("libjvm.so")).isFalse();
+		assertThat(s.isApplication("libjvm.so.PhaseIdealLoop")).isFalse();
+		assertThat(s.isApplication("G1CollectedHeap::humongous_obj_allocate")).isFalse();
+		assertThat(s.isApplication("org.alexmond.App")).isTrue();
+	}
+
+	@Test
 	void ofIsNullSafe() {
 		Scope s = Scope.of(null, null);
 		assertThat(s.includePackages()).isEmpty();

@@ -52,6 +52,15 @@ java -jar target/jvmlens.jar profile -d 30 -k run.jfr 12345  # keep the recordin
 
 `-w` / `--warmup` waits before recording so startup/JIT noise is skipped.
 
+`-e` / `--engine` selects the capture engine: `jfr` (default, prod-safe, also works over
+remote JMX) or `async` (async-profiler — higher fidelity, adds native frames; local
+`<pid>` only, and writes JFR so the same summarizer consumes it):
+
+[source,bash]
+----
+java -jar target/jvmlens.jar profile --engine async -d 30 12345
+----
+
 == Remote servers (JMX)
 
 For a JVM deployed on another host, `profile` and `watch` take `--jmx` instead of a
