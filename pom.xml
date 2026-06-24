@@ -98,6 +98,39 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- Secondary, self-contained jar for `-javaagent` / dynamic attach: the
+                 dependency-free engine + the in-process agent, with the agent manifest. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>agent-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>agent</classifier>
+                            <archive>
+                                <manifestEntries>
+                                    <Premain-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Premain-Class>
+                                    <Agent-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Agent-Class>
+                                    <Can-Redefine-Classes>false</Can-Redefine-Classes>
+                                    <Can-Retransform-Classes>false</Can-Retransform-Classes>
+                                </manifestEntries>
+                            </archive>
+                            <includes>
+                                <include>org/alexmond/jvmlens/agent/**</include>
+                                <include>org/alexmond/jvmlens/Summarizer*.class</include>
+                                <include>org/alexmond/jvmlens/Renderers*.class</include>
+                                <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
+                                <include>org/alexmond/jvmlens/Scope*.class</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>io.spring.javaformat</groupId>
                 <artifactId>spring-javaformat-maven-plugin</artifactId>
@@ -209,6 +242,8 @@
                                         <exclude>org.alexmond.jvmlens.Main</exclude>
                                         <!-- MCP stdio transport front-end; verified by an end-to-end handshake test, not unit coverage -->
                                         <exclude>org.alexmond.jvmlens.McpServerCommand</exclude>
+                                        <!-- Agent premain/daemon bootstrap; the snapshot logic is unit-tested -->
+                                        <exclude>org.alexmond.jvmlens.agent.JvmlensAgent</exclude>
                                     </excludes>
                                 </rule>
                             </rules>

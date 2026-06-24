@@ -134,6 +134,22 @@ A summary built from very few execution samples is flagged with a `⚠` adequacy
 caveat — its hot-path shares are statistically noisy; record longer or under
 steady-state load.
 
+== In-process agent
+
+For always-on profiling — especially in containers — load jvmlens as a Java agent. It
+keeps a continuous JFR ring buffer *inside* the target and writes a fresh LLM-ready
+summary to a file every interval. No attach, no JMX, nothing external:
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-app.jar
+----
+
+Options (comma-separated `key=value`): `out` (summary file), `interval` (seconds between
+summaries), `settings` (JFR config, default `profile`). The agent jar is the separate,
+dependency-free `jvmlens-agent.jar` artifact (it can also be attached dynamically via the
+`Agent-Class` entry).
+
 == MCP server
 
 `jvmlens mcp` runs a https://modelcontextprotocol.io[Model Context Protocol] server
