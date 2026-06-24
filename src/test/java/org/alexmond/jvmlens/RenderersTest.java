@@ -15,7 +15,8 @@ class RenderersTest {
 				List.of(new Ranked("com.example.Svc.run", 0.75, "com.example.Svc.run <- Main.main")),
 				List.of(new Ranked("java.lang.Math.sqrt", 0.40, null)), List.of(), List.of(),
 				List.of(new Ranked("com.example.Svc.lock", 1.0, null)),
-				List.of(new Ranked("com.example.Mutex", 1.0, null)), "CPU-bound — `com.example.Svc.run`.");
+				List.of(new Ranked("com.example.Mutex", 1.0, null)), "CPU-bound — `com.example.Svc.run`.",
+				"com.example");
 	}
 
 	@Test
@@ -29,6 +30,12 @@ class RenderersTest {
 	}
 
 	@Test
+	void surfacesDetectedAppPackageInMarkdownAndJson() {
+		assertThat(Renderers.markdown(sample())).contains("Application code under `com.example.*`.");
+		assertThat(Renderers.json(sample())).contains("\"appPackage\": \"com.example\"");
+	}
+
+	@Test
 	void markdownWarnsOnLowSampleCount() {
 		// sample() has 100 exec samples, below the 200 adequacy threshold.
 		assertThat(Renderers.markdown(sample())).contains("⚠ Only 100 execution samples");
@@ -37,7 +44,7 @@ class RenderersTest {
 	@Test
 	void markdownWarnsWhenNoExecutionSamples() {
 		ProfileSummary s = new ProfileSummary("r.jfr", 0, 1, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
-				List.of(), List.of(), "No dominant signal.");
+				List.of(), List.of(), "No dominant signal.", null);
 		assertThat(Renderers.markdown(s)).contains("No execution samples");
 	}
 
@@ -45,14 +52,14 @@ class RenderersTest {
 	void markdownHasNoCaveatWhenSamplesAdequate() {
 		ProfileSummary s = new ProfileSummary("r.jfr", 5000, 1, 0, 0, 0,
 				List.of(new Ranked("com.example.Svc.run", 1.0, null)), List.of(), List.of(), List.of(), List.of(),
-				List.of(), "CPU-bound.");
+				List.of(), "CPU-bound.", "com.example");
 		assertThat(Renderers.markdown(s)).doesNotContain("⚠");
 	}
 
 	@Test
 	void markdownOmitsMonitorSectionWhenEmpty() {
 		ProfileSummary s = new ProfileSummary("r.jfr", 1, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
-				List.of(), List.of(), "No dominant signal.");
+				List.of(), List.of(), "No dominant signal.", null);
 		assertThat(Renderers.markdown(s)).doesNotContain("Contended monitors");
 	}
 
@@ -71,7 +78,7 @@ class RenderersTest {
 	void jsonEscapesSpecialCharacters() {
 		String nasty = "a\"b\\c\nd\tef" + (char) 1;
 		ProfileSummary s = new ProfileSummary(nasty, 0, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
-				List.of(), List.of(), "ok");
+				List.of(), List.of(), "ok", null);
 		String json = Renderers.json(s);
 		assertThat(json).contains("\\\"").contains("\\\\").contains("\\n").contains("\\t").contains("\\u0001");
 	}

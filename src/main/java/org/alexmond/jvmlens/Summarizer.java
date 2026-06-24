@@ -184,6 +184,36 @@ public final class Summarizer {
 		return m.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
 	}
 
+	/** The most-sampled two-segment package among application frames, or {@code null}. */
+	private static String detectAppPackage(Map<String, Long> appByWeight) {
+		Map<String, Long> byPackage = new HashMap<>();
+		appByWeight.forEach((method, weight) -> {
+			String prefix = packagePrefix(method);
+			if (prefix != null) {
+				byPackage.merge(prefix, weight, Long::sum);
+			}
+		});
+		return top(byPackage);
+	}
+
+	/**
+	 * First two package segments of a {@code pkg.Class.method} name (e.g.
+	 * {@code org.alexmond}).
+	 */
+	private static String packagePrefix(String method) {
+		int beforeMethod = method.lastIndexOf('.');
+		if (beforeMethod < 0) {
+			return null;
+		}
+		String type = method.substring(0, beforeMethod);
+		int firstDot = type.indexOf('.');
+		if (firstDot < 0) {
+			return null;
+		}
+		int secondDot = type.indexOf('.', firstDot + 1);
+		return (secondDot < 0) ? type.substring(0, firstDot) : type.substring(0, secondDot);
+	}
+
 	/** Mutable accumulator for the events of a single recording. */
 	private static final class Aggregates {
 
@@ -279,7 +309,16 @@ public final class Summarizer {
 					ranked(this.cpuByLeaf, this.execSamples, null), ranked(this.allocBySite, this.allocBytes, null),
 					ranked(this.allocByType, this.allocBytes, null),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null),
-					ranked(this.lockByMonitor, sum(this.lockByMonitor), null), heuristic());
+					ranked(this.lockByMonitor, sum(this.lockByMonitor), null), heuristic(),
+					detectAppPackage(detectionWeights()));
+		}
+
+		/**
+		 * App frames to detect the package from: CPU samples, or allocation sites if no
+		 * CPU.
+		 */
+		private Map<String, Long> detectionWeights() {
+			return this.cpuByApp.isEmpty() ? this.allocBySite : this.cpuByApp;
 		}
 
 		private String heuristic() {

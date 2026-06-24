@@ -14,7 +14,7 @@ class WatchTriggerTest {
 		List<Ranked> hot = (topCpuShare > 0) ? List.of(new Ranked("com.example.Svc.run", topCpuShare, null))
 				: List.of();
 		return new ProfileSummary("r.jfr", 1000, 0, oldObjects, 1, gcMs, hot, List.of(), List.of(), List.of(),
-				List.of(), List.of(), "cause");
+				List.of(), List.of(), "cause", null);
 	}
 
 	@Test
