@@ -58,8 +58,11 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
 
 ## Later — v2 (separate validation; see DESIGN.md)
 
-- [ ] Variable-snapshot capture (ByteBuddy/JVMTI), non-breaking, condition-gated,
-      with debug-info detect-and-degrade and (for prod) PII redaction.
+- [~] Variable-snapshot capture (ByteBuddy), non-breaking. Done: the agent's
+      `snapshot=Class#method` instruments method entry and digests argument values
+      (distinct/null/range) into the summary; ByteBuddy is shaded+relocated into
+      `jvmlens-agent.jar`. Still to do: locals (need `-g`, detect-and-degrade),
+      condition-gating, and PII redaction for prod.
 
 ## Explicitly deferred
 

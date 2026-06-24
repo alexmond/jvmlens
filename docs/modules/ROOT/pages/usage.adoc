@@ -146,9 +146,33 @@ java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-
 ----
 
 Options (comma-separated `key=value`): `out` (summary file), `interval` (seconds between
-summaries), `settings` (JFR config, default `profile`). The agent jar is the separate,
-dependency-free `jvmlens-agent.jar` artifact (it can also be attached dynamically via the
-`Agent-Class` entry).
+summaries), `settings` (JFR config, default `profile`), and `snapshot` (see below). The
+agent jar is the separate `jvmlens-agent.jar` artifact (engine + agent + a relocated
+ByteBuddy); it can also be attached dynamically via the `Agent-Class` entry.
+
+=== Variable snapshots
+
+Beyond performance, the agent can answer *correctness* questions — what values flow
+through a method — without stopping the app. Add `snapshot=Class#method` (semicolon-separate
+several) and the agent instruments those methods and appends a **Variable snapshots** section
+to the summary: per call site, the call count and a per-argument digest (distinct values,
+null rate, numeric range):
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,snapshot='com.acme.OrderService#price;com.acme.Repo#find' -jar app.jar
+----
+
+[source]
+----
+## Variable snapshots
+### `com.acme.OrderService.price` — 1410658 calls
+- arg0: 3 distinct [STD, EXPRESS, FREE]
+- arg1: 10 distinct [...] (range 0..9)
+----
+
+Method arguments need no debug info; capturing locals (requires `-g`) and conditions/PII
+redaction are planned.
 
 == MCP server
 

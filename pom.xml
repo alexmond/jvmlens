@@ -78,6 +78,10 @@
             <version>${ap-loader.version}</version>
         </dependency>
         <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
@@ -87,6 +91,63 @@
     <build>
         <finalName>jvmlens</finalName>
         <plugins>
+            <!-- Build the `-javaagent` jar BEFORE Spring Boot repackages the main jar:
+                 a self-contained agent with the dependency-free engine + ByteBuddy
+                 (relocated) and the agent manifest. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>agent-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>agent</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>${project.groupId}:${project.artifactId}</include>
+                                    <include>net.bytebuddy:byte-buddy</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>${project.groupId}:${project.artifactId}</artifact>
+                                    <includes>
+                                        <include>org/alexmond/jvmlens/agent/**</include>
+                                        <include>org/alexmond/jvmlens/snapshot/**</include>
+                                        <include>org/alexmond/jvmlens/Summarizer*.class</include>
+                                        <include>org/alexmond/jvmlens/Renderers*.class</include>
+                                        <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
+                                        <include>org/alexmond/jvmlens/Scope*.class</include>
+                                    </includes>
+                                </filter>
+                            </filters>
+                            <relocations>
+                                <relocation>
+                                    <pattern>net.bytebuddy</pattern>
+                                    <shadedPattern>org.alexmond.jvmlens.shaded.bytebuddy</shadedPattern>
+                                </relocation>
+                            </relocations>
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Premain-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Premain-Class>
+                                        <Agent-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Agent-Class>
+                                        <Can-Redefine-Classes>true</Can-Redefine-Classes>
+                                        <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                                    </manifestEntries>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -95,39 +156,6 @@
                         <goals>
                             <goal>build-info</goal>
                         </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <!-- Secondary, self-contained jar for `-javaagent` / dynamic attach: the
-                 dependency-free engine + the in-process agent, with the agent manifest. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>agent-jar</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                        <configuration>
-                            <classifier>agent</classifier>
-                            <archive>
-                                <manifestEntries>
-                                    <Premain-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Premain-Class>
-                                    <Agent-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Agent-Class>
-                                    <Can-Redefine-Classes>false</Can-Redefine-Classes>
-                                    <Can-Retransform-Classes>false</Can-Retransform-Classes>
-                                </manifestEntries>
-                            </archive>
-                            <includes>
-                                <include>org/alexmond/jvmlens/agent/**</include>
-                                <include>org/alexmond/jvmlens/Summarizer*.class</include>
-                                <include>org/alexmond/jvmlens/Renderers*.class</include>
-                                <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
-                                <include>org/alexmond/jvmlens/Scope*.class</include>
-                            </includes>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -201,7 +229,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>${jacoco.agent.arg} -Xmx512m</argLine>
+                    <argLine>${jacoco.agent.arg} -Xmx512m -Djdk.attach.allowAttachSelf=true</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -244,6 +272,9 @@
                                         <exclude>org.alexmond.jvmlens.McpServerCommand</exclude>
                                         <!-- Agent premain/daemon bootstrap; the snapshot logic is unit-tested -->
                                         <exclude>org.alexmond.jvmlens.agent.JvmlensAgent</exclude>
+                                        <!-- Bytecode-instrumentation glue; verified by an integration test, not unit coverage -->
+                                        <exclude>org.alexmond.jvmlens.snapshot.SnapshotAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.snapshot.SnapshotCapture</exclude>
                                     </excludes>
                                 </rule>
                             </rules>
