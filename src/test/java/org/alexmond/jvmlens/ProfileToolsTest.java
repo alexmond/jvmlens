@@ -16,7 +16,8 @@ class ProfileToolsTest {
 				List.of(new Ranked("java.lang.Math.sqrt", 0.40, null)),
 				List.of(new Ranked("com.example.Svc.alloc", 0.9, null)), List.of(new Ranked("byte[]", 0.9, null)),
 				List.of(new Ranked("com.example.Svc.lock", 1.0, null)),
-				List.of(new Ranked("com.example.Mutex", 1.0, null)), "CPU-bound — `com.example.Svc.run`.");
+				List.of(new Ranked("com.example.Mutex", 1.0, null)), "CPU-bound — `com.example.Svc.run`.",
+				"com.example");
 	}
 
 	@Test

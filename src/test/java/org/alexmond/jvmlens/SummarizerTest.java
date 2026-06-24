@@ -39,6 +39,7 @@ class SummarizerTest {
 			assertThat(s.hotPaths().get(0).name()).contains("SummarizerTest");
 			assertThat(s.hotPaths().get(0).share()).isBetween(0.0, 1.0);
 			assertThat(s.cause()).isNotBlank();
+			assertThat(s.appPackage()).isEqualTo("org.alexmond");
 		}
 		finally {
 			Files.deleteIfExists(file);
