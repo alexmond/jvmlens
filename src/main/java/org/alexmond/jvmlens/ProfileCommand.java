@@ -38,6 +38,11 @@ public class ProfileCommand implements Callable<Integer> {
 			description = "JFR configuration: profile or default (default: ${DEFAULT-VALUE}).")
 	String settings = "profile";
 
+	@Option(names = { "-e", "--engine" }, paramLabel = "<engine>",
+			description = "Capture engine: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+					+ "async adds native frames but is local-pid only.")
+	LiveCapture.Engine engine = LiveCapture.Engine.JFR;
+
 	@Option(names = { "-k", "--keep" }, paramLabel = "<file>",
 			description = "Keep the captured recording at this path instead of deleting it.")
 	Path keep;
@@ -57,6 +62,10 @@ public class ProfileCommand implements Callable<Integer> {
 			System.err.println("jvmlens: <pid> must be numeric: " + pid);
 			return 2;
 		}
+		if (engine == LiveCapture.Engine.ASYNC && remote) {
+			System.err.println("jvmlens: --engine async requires a local <pid>, not --jmx");
+			return 2;
+		}
 		if (duration <= 0) {
 			System.err.println("jvmlens: --duration must be positive: " + duration);
 			return 2;
@@ -67,8 +76,15 @@ public class ProfileCommand implements Callable<Integer> {
 		}
 		Path recording;
 		try {
-			recording = remote ? LiveCapture.captureRemote(jmx, duration, settings, warmup)
-					: LiveCapture.capture(pid, duration, settings, warmup);
+			if (remote) {
+				recording = LiveCapture.captureRemote(jmx, duration, settings, warmup);
+			}
+			else if (engine == LiveCapture.Engine.ASYNC) {
+				recording = LiveCapture.captureAsync(pid, duration, warmup, "cpu");
+			}
+			else {
+				recording = LiveCapture.capture(pid, duration, settings, warmup);
+			}
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();

@@ -43,11 +43,22 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 	 * @return {@code true} if it is application code under this scope
 	 */
 	public boolean isApplication(String owner) {
+		if (isNative(owner)) {
+			return false;
+		}
 		if (!this.includePackages.isEmpty()) {
 			return startsWithAny(owner, this.includePackages);
 		}
 		return !startsWithAny(owner, RUNTIME) && !startsWithAny(owner, FRAMEWORKS)
 				&& !startsWithAny(owner, this.excludePackages);
+	}
+
+	/**
+	 * Native frames from async-profiler (e.g. {@code libjvm.so}, C++
+	 * {@code Class::method}).
+	 */
+	private static boolean isNative(String owner) {
+		return owner.contains("::") || owner.endsWith(".so") || owner.contains(".so.");
 	}
 
 	private static boolean startsWithAny(String owner, List<String> prefixes) {
