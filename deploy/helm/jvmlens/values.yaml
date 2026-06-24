@@ -6,11 +6,16 @@
 
 replicaCount: 1
 
-# The JVM workload to profile. Default is the unitrack image, but point `target.image`
+# Registry pull secret(s). The homelab Zot registry (registry.example.com:5000) needs `my-regcred`
+# in the target namespace — the same secret the unitrack release uses.
+imagePullSecrets:
+  - name: my-regcred
+
+# The JVM workload to profile. Default is the homelab unitrack image, but point `target.image`
 # at any JVM app. Supply the app's own env/config via `env` / `envFrom` (e.g. reuse the
 # app release's ConfigMap/Secret) so it actually starts.
 target:
-  image: ghcr.io/alexmond/unitrack:latest
+  image: registry.example.com:5000/unitrack:0.2.0-SNAPSHOT
   imagePullPolicy: IfNotPresent
   args: []
   # Plain env pairs for the app (DB URL, etc.).
@@ -24,10 +29,10 @@ target:
   port: 8080
   resources: {}
 
-# The jvmlens agent. Distribute jvmlens-agent.jar as a tiny OCI image holding it at
-# /jvmlens-agent.jar (see deploy/agent-image/Dockerfile) and push it to your registry.
+# The jvmlens agent. Build + push with scripts/deploy-agent.sh (tiny OCI image holding
+# jvmlens-agent.jar at /jvmlens-agent.jar; see deploy/agent-image/Dockerfile).
 agent:
-  image: ghcr.io/alexmond/jvmlens-agent:0.1.0
+  image: registry.example.com:5000/jvmlens-agent:0.1.0-SNAPSHOT
   imagePullPolicy: IfNotPresent
   # Appended after `-javaagent:/agent/jvmlens-agent.jar=`. See `jvmlens` agent docs.
   options: "out=/agent/jvmlens.md,interval=300"

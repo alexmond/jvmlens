@@ -10,31 +10,41 @@ shared `emptyDir`; the app container sets `JAVA_TOOL_OPTIONS=-javaagent:/agent/j
 (honoured by buildpacks and standard JVM launchers); the agent records in-process and
 writes the summary on an interval. No attach, no JMX.
 
-== 1. Publish the agent image
+== 1. Build & publish the agent image
+
+`scripts/deploy-agent.sh` builds the agent jar, wraps it in the tiny OCI image, and pushes
+it to the registry (default `registry.example.com:5000`, the homelab Zot). It mirrors unitrack's
+`deploy-k8s.sh` (podman/docker, `--tls-verify=false` for the self-signed wildcard):
 
 [source,bash]
 ----
-# from the jvmlens repo root, after a build:
-cp target/jvmlens-0.1.0-SNAPSHOT-agent.jar deploy/agent-image/jvmlens-agent.jar
-docker build -t <registry>/jvmlens-agent:0.1.0 deploy/agent-image
-docker push <registry>/jvmlens-agent:0.1.0   # e.g. your homelab zot registry
+podman login registry.example.com:5000      # once
+scripts/deploy-agent.sh              # → registry.example.com:5000/jvmlens-agent:<version>
 ----
 
 == 2. Deploy (separate release)
 
+One command builds, pushes, and installs the chart (point `--target-image` at the app):
+
 [source,bash]
 ----
-helm install unitrack-profiled deploy/helm/jvmlens \
-  --set agent.image=<registry>/jvmlens-agent:0.1.0 \
-  --set target.image=ghcr.io/alexmond/unitrack:latest \
+scripts/deploy-agent.sh --release unitrack-profiled --namespace unitrack \
+  --target-image registry.example.com:5000/unitrack:0.2.0-SNAPSHOT
+----
+
+Or `helm upgrade --install` directly for full control:
+
+[source,bash]
+----
+helm upgrade --install unitrack-profiled deploy/helm/jvmlens --namespace unitrack \
   --set-json 'target.envFrom=[{"configMapRef":{"name":"unitrack"}},{"secretRef":{"name":"unitrack"}}]' \
-  --set 'agent.options=out=/agent/jvmlens.md,interval=300' \
   --set 'agent.snapshot=org.alexmond.unitrack.web.ReportController#ingest'   # optional
 ----
 
-Reusing the app release's `ConfigMap`/`Secret` via `target.envFrom` is the simplest way to
-give the profiled copy the same DB/config as the real app. (It connects to the same
-database — run it read-mostly, or point it at a throwaway DB, if that matters.)
+Reusing the app release's `ConfigMap`/`Secret` via `target.envFrom` gives the profiled copy
+the same DB/config as the real app — it connects to the **same database**, so point it at a
+throwaway DB (or run it read-mostly) if that matters. The pull secret `my-regcred` must
+exist in the namespace (it already does in `unitrack`).
 
 == 3. Read the summary
 
