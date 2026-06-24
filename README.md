@@ -12,8 +12,9 @@ source-attributed signal you can hand straight to a coding agent.
 > Early / proof-of-concept. CPU, allocation, lock-contention and GC signal from
 > an existing `.jfr`, a live JVM (`profile <pid>`, JFR or async-profiler), or a
 > continuous ring buffer (`watch`), rendered as markdown, JSON, or an LLM prompt — or
-> served to an agent over MCP (`jvmlens mcp`). For remote servers, run jvmlens on the
-> host; a networked MCP endpoint and an in-process agent are on the roadmap.
+> served to an agent over MCP (`jvmlens mcp`), or run always-on as a Java agent
+> (`-javaagent:jvmlens-agent.jar`) that writes periodic summaries in-process. For remote
+> servers, run jvmlens on the host (e.g. MCP over `ssh`).
 
 ## Why
 
