@@ -4,12 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Callable;
 
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
@@ -27,27 +26,18 @@ public class ProfileCommand implements Callable<Integer> {
 
 	@Option(names = { "-w", "--warmup" }, paramLabel = "<seconds>",
 			description = "Seconds to wait after attach before recording, to skip startup (default: ${DEFAULT-VALUE}).")
-	int warmup = 0;
+	int warmup;
 
 	@Option(names = { "-s", "--settings" }, paramLabel = "<settings>",
 			description = "JFR configuration: profile or default (default: ${DEFAULT-VALUE}).")
 	String settings = "profile";
 
-	@Option(names = { "-f", "--format" }, paramLabel = "<format>",
-			description = "Output format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}).")
-	Summarizer.Format format = Summarizer.Format.MARKDOWN;
-
 	@Option(names = { "-k", "--keep" }, paramLabel = "<file>",
 			description = "Keep the captured recording at this path instead of deleting it.")
 	Path keep;
 
-	@Option(names = { "-a", "--app-package" }, paramLabel = "<prefix>", split = ",",
-			description = "Treat only these package prefixes as application code (repeatable).")
-	List<String> appPackages = new ArrayList<>();
-
-	@Option(names = { "-x", "--exclude" }, paramLabel = "<prefix>", split = ",",
-			description = "Extra package prefixes to treat as non-application code (repeatable).")
-	List<String> excludePackages = new ArrayList<>();
+	@Mixin
+	OutputOptions output;
 
 	@Override
 	public Integer call() throws Exception {
@@ -77,7 +67,7 @@ public class ProfileCommand implements Callable<Integer> {
 			return 3;
 		}
 		try {
-			System.out.print(Summarizer.summarize(recording, format, Scope.of(appPackages, excludePackages)));
+			System.out.print(Summarizer.summarize(recording, output.format, output.scope(), output.report));
 		}
 		finally {
 			finish(recording);

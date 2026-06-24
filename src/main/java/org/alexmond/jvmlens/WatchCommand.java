@@ -2,12 +2,12 @@ package org.alexmond.jvmlens;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
@@ -47,17 +47,8 @@ public class WatchCommand implements Callable<Integer> {
 			description = "Only emit when retained (old-object) samples reach this count.")
 	long onOldObjects;
 
-	@Option(names = { "-f", "--format" }, paramLabel = "<format>",
-			description = "Output format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}).")
-	Summarizer.Format format = Summarizer.Format.MARKDOWN;
-
-	@Option(names = { "-a", "--app-package" }, paramLabel = "<prefix>", split = ",",
-			description = "Treat only these package prefixes as application code (repeatable).")
-	List<String> appPackages = new ArrayList<>();
-
-	@Option(names = { "-x", "--exclude" }, paramLabel = "<prefix>", split = ",",
-			description = "Extra package prefixes to treat as non-application code (repeatable).")
-	List<String> excludePackages = new ArrayList<>();
+	@Mixin
+	OutputOptions output;
 
 	@Override
 	public Integer call() throws Exception {
@@ -69,7 +60,7 @@ public class WatchCommand implements Callable<Integer> {
 			System.err.println("jvmlens: --interval and --max-age must be positive");
 			return 2;
 		}
-		Scope scope = Scope.of(appPackages, excludePackages);
+		Scope scope = output.scope();
 		WatchTrigger trigger = new WatchTrigger(onGcMs, onCpuPct / 100.0, onOldObjects);
 		try {
 			LiveCapture.watch(pid, interval, maxAge, settings, snapshots,
@@ -86,7 +77,7 @@ public class WatchCommand implements Callable<Integer> {
 		return 0;
 	}
 
-	private void emit(java.nio.file.Path snapshot, int index, Scope scope, WatchTrigger trigger) throws IOException {
+	private void emit(Path snapshot, int index, Scope scope, WatchTrigger trigger) throws IOException {
 		try {
 			ProfileSummary summary = Summarizer.analyze(snapshot, scope);
 			if (trigger.active()) {
@@ -99,7 +90,7 @@ public class WatchCommand implements Callable<Integer> {
 			else {
 				System.out.println("=== snapshot " + index + " (last " + maxAge + "s) ===");
 			}
-			System.out.print(Summarizer.render(summary, format));
+			System.out.print(Summarizer.render(summary, output.format, output.report));
 		}
 		finally {
 			Files.deleteIfExists(snapshot);
