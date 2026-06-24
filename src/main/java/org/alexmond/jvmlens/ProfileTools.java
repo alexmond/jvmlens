@@ -24,24 +24,24 @@ final class ProfileTools {
 
 	/** Application-attributed hot call paths, by sample share. */
 	static String hotPaths(ProfileSummary s) {
-		return Renderers.section("Top hot paths (application code, by sample share)", s.hotPaths());
+		return Renderers.section("Top hot paths (application code, by sample share)", s.hotPaths(), "samples", false);
 	}
 
 	/** Leaf (self-time) hot methods, runtime included. */
 	static String hotLeaves(ProfileSummary s) {
-		return Renderers.section("Hot leaf methods (self-time, incl. runtime)", s.hotLeaves());
+		return Renderers.section("Hot leaf methods (self-time, incl. runtime)", s.hotLeaves(), "samples", false);
 	}
 
 	/** Allocation sites and allocated types, by estimated bytes. */
 	static String allocations(ProfileSummary s) {
-		return Renderers.section("Top allocation sites (application code, by est. bytes)", s.allocSites())
-				+ Renderers.section("Top allocated types (by est. bytes)", s.allocatedTypes());
+		return Renderers.section("Top allocation sites (application code, by est. bytes)", s.allocSites(), "bytes",
+				false) + Renderers.section("Top allocated types (by est. bytes)", s.allocatedTypes(), "bytes", false);
 	}
 
 	/** Lock contention by application method, plus the contended monitor classes. */
 	static String lockContention(ProfileSummary s) {
-		return Renderers.section("Lock contention (blocked time, by application method)", s.locks())
-				+ Renderers.section("Contended monitors", s.monitors());
+		return Renderers.section("Lock contention (blocked time, by application method)", s.locks(), "ms", true)
+				+ Renderers.section("Contended monitors", s.monitors(), "ms", true);
 	}
 
 }

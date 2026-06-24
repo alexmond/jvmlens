@@ -40,6 +40,22 @@ public final class Summarizer {
 
 	}
 
+	/** Which concern a report focuses on. */
+	public enum Report {
+
+		/** Everything. */
+		FULL,
+		/** Hot paths + leaf methods (sampled CPU). */
+		CPU,
+		/** Allocation sites + types. */
+		MEMORY,
+		/** Lock contention + contended monitors (measured wait). */
+		LOCKS,
+		/** GC pressure and the allocation that drives it. */
+		GC
+
+	}
+
 	/** How many rows each ranked section keeps. */
 	private static final int TOP_N = 5;
 
@@ -76,20 +92,44 @@ public final class Summarizer {
 	 * @throws IOException if the recording cannot be read
 	 */
 	public static String summarize(Path file, Format format, Scope scope) throws IOException {
-		return render(analyze(file, scope), format);
+		return summarize(file, format, scope, Report.FULL);
 	}
 
 	/**
-	 * Render an already-analyzed summary in the requested format.
+	 * Summarize a JFR recording in the requested format, scope, and report focus.
+	 * @param file the {@code .jfr} recording to read
+	 * @param format the output format
+	 * @param scope which frames count as application code
+	 * @param report which concern to focus the report on
+	 * @return the rendered report
+	 * @throws IOException if the recording cannot be read
+	 */
+	public static String summarize(Path file, Format format, Scope scope, Report report) throws IOException {
+		return render(analyze(file, scope), format, report);
+	}
+
+	/**
+	 * Render an already-analyzed summary in the requested format (full report).
 	 * @param s the structured summary
 	 * @param format the output format
 	 * @return the rendered report
 	 */
 	public static String render(ProfileSummary s, Format format) {
+		return render(s, format, Report.FULL);
+	}
+
+	/**
+	 * Render an already-analyzed summary in the requested format and report focus.
+	 * @param s the structured summary
+	 * @param format the output format
+	 * @param report which concern to focus the report on
+	 * @return the rendered report
+	 */
+	public static String render(ProfileSummary s, Format format, Report report) {
 		return switch (format) {
-			case MARKDOWN -> Renderers.markdown(s);
+			case MARKDOWN -> Renderers.report(s, report);
 			case JSON -> Renderers.json(s);
-			case PROMPT -> Renderers.prompt(s);
+			case PROMPT -> Renderers.promptOf(Renderers.report(s, report));
 		};
 	}
 
@@ -175,7 +215,7 @@ public final class Summarizer {
 			.stream()
 			.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
 			.limit(TOP_N)
-			.forEach((en) -> rows.add(new Ranked(en.getKey(), (double) en.getValue() / total,
+			.forEach((en) -> rows.add(new Ranked(en.getKey(), (double) en.getValue() / total, en.getValue(),
 					(stacks != null) ? stacks.get(en.getKey()) : null)));
 		return rows;
 	}

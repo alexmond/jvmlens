@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WatchTriggerTest {
 
 	private static ProfileSummary summary(long gcMs, double topCpuShare, long oldObjects) {
-		List<Ranked> hot = (topCpuShare > 0) ? List.of(new Ranked("com.example.Svc.run", topCpuShare, null))
+		List<Ranked> hot = (topCpuShare > 0) ? List.of(new Ranked("com.example.Svc.run", topCpuShare, 100, null))
 				: List.of();
 		return new ProfileSummary("r.jfr", 1000, 0, oldObjects, 1, gcMs, hot, List.of(), List.of(), List.of(),
 				List.of(), List.of(), "cause", null);

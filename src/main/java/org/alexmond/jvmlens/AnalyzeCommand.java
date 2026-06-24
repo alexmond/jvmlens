@@ -23,6 +23,10 @@ public class AnalyzeCommand implements Callable<Integer> {
 			description = "Output format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}).")
 	Summarizer.Format format = Summarizer.Format.MARKDOWN;
 
+	@Option(names = { "-r", "--report" }, paramLabel = "<report>",
+			description = "Report focus: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}).")
+	Summarizer.Report report = Summarizer.Report.FULL;
+
 	@Option(names = { "-a", "--app-package" }, paramLabel = "<prefix>", split = ",",
 			description = "Treat only these package prefixes as application code (repeatable).")
 	List<String> appPackages = new ArrayList<>();
@@ -37,7 +41,7 @@ public class AnalyzeCommand implements Callable<Integer> {
 			System.err.println("jvmlens: cannot read JFR file: " + file);
 			return 2;
 		}
-		System.out.print(Summarizer.summarize(file, format, Scope.of(appPackages, excludePackages)));
+		System.out.print(Summarizer.summarize(file, format, Scope.of(appPackages, excludePackages), report));
 		return 0;
 	}
 

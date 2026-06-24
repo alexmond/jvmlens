@@ -44,6 +44,15 @@ class CommandsTest {
 	}
 
 	@Test
+	void analyzeAcceptsReportFocusOption() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).setCaseInsensitiveEnumValuesAllowed(true)
+			.execute("--report", "cpu", file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isZero();
+	}
+
+	@Test
 	void analyzeAcceptsAppPackageScopeOptions() throws Exception {
 		Path file = tinyRecording();
 		int rc = new CommandLine(new AnalyzeCommand()).execute("-a", "org.alexmond", "-x", "com.generated",

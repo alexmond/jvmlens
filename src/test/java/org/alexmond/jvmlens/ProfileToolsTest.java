@@ -12,11 +12,12 @@ class ProfileToolsTest {
 
 	private static ProfileSummary sample() {
 		return new ProfileSummary("rec.jfr", 1000, 2, 0, 4, 12,
-				List.of(new Ranked("com.example.Svc.run", 0.75, "com.example.Svc.run <- Main.main")),
-				List.of(new Ranked("java.lang.Math.sqrt", 0.40, null)),
-				List.of(new Ranked("com.example.Svc.alloc", 0.9, null)), List.of(new Ranked("byte[]", 0.9, null)),
-				List.of(new Ranked("com.example.Svc.lock", 1.0, null)),
-				List.of(new Ranked("com.example.Mutex", 1.0, null)), "CPU-bound — `com.example.Svc.run`.",
+				List.of(new Ranked("com.example.Svc.run", 0.75, 750, "com.example.Svc.run <- Main.main")),
+				List.of(new Ranked("java.lang.Math.sqrt", 0.40, 400, null)),
+				List.of(new Ranked("com.example.Svc.alloc", 0.9, 900, null)),
+				List.of(new Ranked("byte[]", 0.9, 900, null)),
+				List.of(new Ranked("com.example.Svc.lock", 1.0, 5, null)),
+				List.of(new Ranked("com.example.Mutex", 1.0, 5, null)), "CPU-bound — `com.example.Svc.run`.",
 				"com.example");
 	}
 
