@@ -1,0 +1,195 @@
+= Profiling another project with jvmlens
+
+A task-oriented guide for adopting jvmlens in *any other* JVM project. The worked
+example is a project called **builder** — substitute your own jar, pid, and package
+prefix. "Profile builder from builder" just means running the jvmlens jar from inside
+the builder checkout against the builder process.
+
+NOTE: This mirrors the repository's
+https://github.com/alexmond/jvmlens/blob/main/INTEGRATING.md[INTEGRATING.md], which
+is the portable copy-paste version you can hand to another repo. For the full flag
+reference see xref:usage.adoc[Usage].
+
+== What you need first
+
+jvmlens is **not yet on Maven Central** — build the two jars once and copy them where
+you need them. Java 17+.
+
+[source,bash]
+----
+git clone https://github.com/alexmond/jvmlens && cd jvmlens
+./mvnw -q clean package
+#   target/jvmlens.jar                  <- CLI + MCP server (analyze/profile/watch/mcp)
+#   target/jvmlens-<version>-agent.jar  <- the in-process -javaagent jar
+----
+
+Nothing about jvmlens needs to be a dependency of your build — it consumes JFR, which
+the JDK already produces. jvmlens never calls an LLM and never ships your recording
+anywhere; every path below runs locally.
+
+== Pick your path
+
+[cols="2,2,1"]
+|===
+| You have… | You want… | Path
+
+| A `.jfr` file already | A one-shot summary | *A* — `analyze`
+| A running JVM (local or one `ssh`/`kubectl exec` away) | An on-demand snapshot | *B* — `profile <pid>`
+| A long-running service / CI job / container | Continuous summaries, zero attach | *C* — `-javaagent`
+| A coding agent that should fetch profiles itself | Profiling exposed as tools | *D* — `mcp`
+| A k8s workload | A sidecar that doesn't touch your app's chart | *E* — Helm
+|===
+
+Paths compose — run the agent (C) in k8s (E), or point an MCP client (D) at a remote
+host over `ssh`.
+
+== Path A — analyze a recording
+
+[source,bash]
+----
+java -jar tools/jvmlens.jar analyze builder-run.jfr            # markdown (default)
+java -jar tools/jvmlens.jar analyze -r cpu builder-run.jfr     # focus: cpu|memory|locks|gc
+java -jar tools/jvmlens.jar analyze -f prompt builder-run.jfr  # wrapped as an LLM task
+----
+
+Capture a recording around a builder workload:
+
+[source,bash]
+----
+java -XX:StartFlightRecording=duration=30s,filename=builder-run.jfr,settings=profile \
+     -jar build/libs/builder.jar build ./big-project
+----
+
+== Path B — profile a running process
+
+`profile <pid>` attaches to a live JVM, records a timed window, and summarizes it — no
+pre-recorded file, no JMX, no start-up flags on the target.
+
+[source,bash]
+----
+PID=$(pgrep -f 'builder.jar' | head -1)
+java -jar tools/jvmlens.jar profile "$PID"                  # 20s, markdown
+java -jar tools/jvmlens.jar profile -d 30 -w 5 "$PID"      # skip 5s startup, record 30s
+java -jar tools/jvmlens.jar profile -e async -d 30 "$PID"  # native frames (local pid only)
+----
+
+Remote builder — run jvmlens *on the host*; only the few-hundred-token summary travels
+back:
+
+[source,bash]
+----
+ssh build-host    'java -jar jvmlens.jar profile $(pgrep -f builder.jar) -f prompt'
+kubectl exec builder-pod -- java -jar /tools/jvmlens.jar profile 1 -r cpu
+----
+
+Use `-w`/`--warmup` to measure the steady-state build, not classloading. A `⚠`
+adequacy caveat means too few samples — record longer or under load.
+
+== Path C — always-on, in-process (agent)
+
+The agent keeps a JFR ring buffer *inside* builder and writes a fresh summary every
+interval — no attach.
+
+[source,bash]
+----
+java -javaagent:tools/jvmlens-<version>-agent.jar=out=/var/log/builder-profile.md,interval=60 \
+     -jar build/libs/builder.jar
+----
+
+[cols="1,3,1"]
+|===
+| Key | Meaning | Default
+
+| `out` | File the rolling summary is written to | `jvmlens-summary.md`
+| `interval` | Seconds between summaries | `60`
+| `settings` | JFR config: `profile` or `default` | `profile`
+| `snapshot` | `Class#method` to capture argument digests for (`;`-separate several) | —
+|===
+
+In containers, set it via the JVM-standard env var (honoured by buildpacks and
+`java -jar` alike):
+
+[source,bash]
+----
+JAVA_TOOL_OPTIONS=-javaagent:/agent/jvmlens-agent.jar=out=/agent/builder.md,interval=60
+----
+
+== Path D — MCP for coding agents
+
+`jvmlens mcp` runs a Model Context Protocol server over stdio, exposing scoped,
+navigable tools (`overview` → `hot_paths` / `hot_leaves` / `allocations` /
+`lock_contention`) plus a live `profile` tool. It serves data only — never calls an
+LLM, so recordings stay on the host.
+
+[source,json]
+----
+{ "mcpServers": {
+  "jvmlens": { "command": "java", "args": ["-jar", "/abs/path/builder/tools/jvmlens.jar", "mcp"] }
+} }
+----
+
+Remote builder, no extra ports — the client launches jvmlens over `ssh`:
+
+[source,json]
+----
+{ "mcpServers": {
+  "builder-prod": { "command": "ssh", "args": ["build-host", "java", "-jar", "jvmlens.jar", "mcp"] }
+} }
+----
+
+== Path E — Kubernetes sidecar
+
+`deploy/helm/jvmlens` is a *standalone* chart: it runs your image with the agent
+attached as a separate release, so your app's own chart is untouched.
+
+[source,bash]
+----
+scripts/deploy-agent.sh --release builder-profiled --namespace builder \
+  --target-image my-registry/builder:1.0
+----
+
+CAUTION: if the profiled copy reuses your app's `envFrom` it hits the **same
+database** — point it at a throwaway DB or run read-only. See
+`deploy/helm/jvmlens/README.md`.
+
+== Scoping: make *your* code lead
+
+For a foreign project the single most useful knob — restrict attribution to your
+packages so framework frames don't bury your code. Works on `analyze` and `profile`:
+
+[source,bash]
+----
+java -jar tools/jvmlens.jar analyze -a com.example.builder builder-run.jfr   # include-only
+java -jar tools/jvmlens.jar analyze -x com.thirdparty       builder-run.jfr   # exclude more
+----
+
+Both flags are repeatable and comma-separable; the MCP tools accept the same as
+`appPackages` / `exclude`.
+
+== A drop-in recipe and CLAUDE.md snippet
+
+A tiny `tools/profile.sh` your team and agents can run without remembering flags:
+
+[source,bash]
+----
+#!/usr/bin/env bash
+set -euo pipefail
+JVMLENS=${JVMLENS:-tools/jvmlens.jar}
+PID=$(pgrep -f 'builder.jar' | head -1) || { echo "builder not running"; exit 1; }
+exec java -jar "$JVMLENS" profile "$PID" -d "${DURATION:-20}" -w "${WARMUP:-3}" \
+  -a "${APP_PKG:-com.example.builder}" -f "${FORMAT:-prompt}"
+----
+
+Paste into the target project's `CLAUDE.md` so its coding agents know the workflow:
+
+[source,markdown]
+----
+## Profiling (jvmlens)
+
+- The jar lives at `tools/jvmlens.jar` (built from github.com/alexmond/jvmlens; Java 17+).
+- One-shot, running JVM: `./tools/profile.sh`.
+- From a .jfr file: `java -jar tools/jvmlens.jar analyze <file.jfr> -a com.example.builder`.
+- Focus a concern: add `-r cpu|memory|locks|gc`.
+- Always scope with `-a com.example.builder` so our code leads, not framework frames.
+- A `⚠` caveat means too few samples — record longer or under load.
+----
