@@ -149,15 +149,24 @@ the slice it needs (progressive disclosure) instead of one large blob:
 | `hot_leaves` | Leaf (self-time) hot methods, runtime included.
 | `allocations` | Top allocation sites and allocated types.
 | `lock_contention` | Lock contention by method and contended monitors.
+| `profile` | Capture a **live** local JVM by `pid` (`engine` jfr/async, `report` focus) and summarize it.
 |===
 
-Every tool takes a `file` (path to a `.jfr`) plus optional `appPackages` / `exclude`
-scoping. The server only serves structured data — it never calls an LLM, so recordings
-never leave the host. Register it with an MCP client, e.g.:
+The drill-down tools take a `file` (path to a `.jfr`); `profile` takes a `pid`. All accept
+optional `appPackages` / `exclude` scoping. The server only serves structured data — it
+never calls an LLM, so recordings never leave the host. Register it with an MCP client:
 
 [source,json]
 ----
 { "mcpServers": { "jvmlens": { "command": "java", "args": ["-jar", "/path/to/jvmlens.jar", "mcp"] } } }
+----
+
+For a **remote** server, point the MCP client at the host's access channel — no JMX, no
+extra ports:
+
+[source,json]
+----
+{ "mcpServers": { "prod": { "command": "ssh", "args": ["prod-host", "java", "-jar", "jvmlens.jar", "mcp"] } } }
 ----
 
 == Output formats
