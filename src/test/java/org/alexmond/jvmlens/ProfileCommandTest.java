@@ -65,6 +65,34 @@ class ProfileCommandTest {
 	}
 
 	@Test
+	void rejectsAsyncEngineWithJmx() {
+		int rc = new CommandLine(new ProfileCommand()).setCaseInsensitiveEnumValuesAllowed(true)
+			.execute("--engine", "async", "--jmx", "127.0.0.1:9");
+		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
+	void capturesWithAsyncProfilerEngine() throws Exception {
+		Process target = startBusyJvm();
+		Path recording = null;
+		try {
+			// itimer needs no perf_event access, so this is CI-safe regardless of
+			// paranoid level.
+			recording = LiveCapture.captureAsync(String.valueOf(target.pid()), 3, 0, "itimer");
+			ProfileSummary s = Summarizer.analyze(recording);
+			assertThat(s.execSamples()).isPositive();
+			assertThat(Renderers.markdown(s)).contains("BusyMain");
+		}
+		finally {
+			if (recording != null) {
+				Files.deleteIfExists(recording);
+			}
+			target.destroyForcibly();
+			target.waitFor();
+		}
+	}
+
+	@Test
 	void reportsCaptureFailureForNonJvmPid() {
 		// pid 1 (init) is not an attachable HotSpot JVM → capture fails with exit 3.
 		int rc = new CommandLine(new ProfileCommand()).execute("--duration", "1", "1");

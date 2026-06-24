@@ -43,8 +43,9 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
       serves data only, never calls an LLM. Built on the MCP Java SDK.
 - [x] Remote profiling — `profile`/`watch --jmx <url|host:port>` drives JFR over a
       remote JMX connection (no agent install; remote JVM started with JMX remote flags).
-- [ ] async-profiler fidelity via ap-loader, behind the same interface. **Spike: GO** —
-      ap-loader runs here, emits JFR the summarizer reads unchanged, adds native frames.
+- [x] async-profiler fidelity via ap-loader — `profile --engine async` captures with
+      async-profiler to JFR (native frames included; native frames excluded from the app
+      view via `Scope`), consumed by the same summarizer. Local pid only.
 - [ ] Emit-local / user-chosen-model so egress-restricted (prod) shops can use it.
 
 ## Later — v2 (separate validation; see DESIGN.md)
