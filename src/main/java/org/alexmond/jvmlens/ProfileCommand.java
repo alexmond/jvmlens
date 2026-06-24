@@ -17,14 +17,8 @@ import picocli.CommandLine.Parameters;
 		description = "Attach to a running JVM, capture a timed JFR recording, and summarize it.")
 public class ProfileCommand implements Callable<Integer> {
 
-	@Parameters(index = "0", arity = "0..1", paramLabel = "<pid>",
-			description = "Process ID of a local target JVM (omit when using --jmx).")
+	@Parameters(index = "0", paramLabel = "<pid>", description = "Process ID of the target JVM.")
 	String pid;
-
-	@Option(names = { "--jmx" }, paramLabel = "<url>",
-			description = "Remote JMX URL of the target JVM, e.g. service:jmx:rmi:///jndi/rmi://host:7091/jmxrmi "
-					+ "(host:port also accepted). The remote JVM must be started with JMX remote enabled.")
-	String jmx;
 
 	@Option(names = { "-d", "--duration" }, paramLabel = "<seconds>",
 			description = "Recording duration in seconds (default: ${DEFAULT-VALUE}).")
@@ -52,18 +46,8 @@ public class ProfileCommand implements Callable<Integer> {
 
 	@Override
 	public Integer call() throws Exception {
-		boolean remote = jmx != null && !jmx.isEmpty();
-		boolean local = pid != null && !pid.isEmpty();
-		if (remote == local) {
-			System.err.println("jvmlens: specify exactly one of <pid> or --jmx");
-			return 2;
-		}
-		if (local && !pid.chars().allMatch(Character::isDigit)) {
+		if (pid == null || pid.isEmpty() || !pid.chars().allMatch(Character::isDigit)) {
 			System.err.println("jvmlens: <pid> must be numeric: " + pid);
-			return 2;
-		}
-		if (engine == LiveCapture.Engine.ASYNC && remote) {
-			System.err.println("jvmlens: --engine async requires a local <pid>, not --jmx");
 			return 2;
 		}
 		if (duration <= 0) {
@@ -76,15 +60,8 @@ public class ProfileCommand implements Callable<Integer> {
 		}
 		Path recording;
 		try {
-			if (remote) {
-				recording = LiveCapture.captureRemote(jmx, duration, settings, warmup);
-			}
-			else if (engine == LiveCapture.Engine.ASYNC) {
-				recording = LiveCapture.captureAsync(pid, duration, warmup, "cpu");
-			}
-			else {
-				recording = LiveCapture.capture(pid, duration, settings, warmup);
-			}
+			recording = (engine == LiveCapture.Engine.ASYNC) ? LiveCapture.captureAsync(pid, duration, warmup, "cpu")
+					: LiveCapture.capture(pid, duration, settings, warmup);
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();

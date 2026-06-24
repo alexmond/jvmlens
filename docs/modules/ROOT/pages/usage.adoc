@@ -61,35 +61,23 @@ remote JMX) or `async` (async-profiler — higher fidelity, adds native frames; 
 java -jar target/jvmlens.jar profile --engine async -d 30 12345
 ----
 
-== Remote servers (JMX)
+== Remote servers (run on the host)
 
-For a JVM deployed on another host, `profile` and `watch` take `--jmx` instead of a
-local `<pid>` and drive JFR over a remote JMX connection — no agent to install, just the
-platform FlightRecorder MXBean.
-
-**Start command** — the remote JVM must be launched with JMX remote enabled:
-
-[source,bash]
-----
-java -Dcom.sun.management.jmxremote \
-     -Dcom.sun.management.jmxremote.port=7091 \
-     -Dcom.sun.management.jmxremote.rmi.port=7091 \
-     -Dcom.sun.management.jmxremote.authenticate=false \
-     -Dcom.sun.management.jmxremote.ssl=false \
-     -Djava.rmi.server.hostname=<host-or-ip> \
-     -jar your-app.jar
-----
-
-Then query it remotely (full `service:jmx:...` URL or a `host:port` shorthand):
+For a JVM deployed elsewhere, run jvmlens *on that host* through the access channel you
+already have and let it ship back the compact summary — no JMX ports, no extra start
+flags, works on any running JVM (and `--engine async` works too, since the profiler is
+local to the target):
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar profile --jmx my-server:7091 -d 30
-java -jar target/jvmlens.jar watch   --jmx my-server:7091 --on-gc-ms 200
+ssh prod-host        'java -jar jvmlens.jar profile <pid> -f prompt'
+kubectl exec pod --   java -jar jvmlens.jar profile 1 --engine async -f prompt
+docker exec ctr       java -jar jvmlens.jar watch 1 --on-gc-ms 200
 ----
 
-NOTE: the example disables auth/TLS for brevity; secure the JMX endpoint (auth, TLS, or
-an SSH tunnel) for anything beyond a trusted network.
+This plays to jvmlens's strength: the output is a few hundred tokens, so there is nothing
+heavy to move over the network. (A networked MCP endpoint and an in-process agent are on
+the roadmap for always-on remote querying.)
 
 == Continuous watch (rolling profile)
 
