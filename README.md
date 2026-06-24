@@ -59,6 +59,14 @@ Events: 1738 exec samples, 8 alloc types, 2 old-object samples, 10 GC pauses (62
 - CPU-bound — `com.example.OrderService.reprice` accounts for the majority of samples.
 ```
 
+## Use it from another project
+
+Want to profile a *different* JVM project (say `builder`) with jvmlens?
+**[INTEGRATING.md](INTEGRATING.md)** is a portable, copy-paste guide: a decision
+table over the integration paths (analyze a `.jfr`, attach to a running pid, the
+always-on `-javaagent`, an MCP server for coding agents, a Kubernetes sidecar), a
+drop-in `profile.sh`, and a CLAUDE.md snippet to paste into the target project.
+
 ## Try it end-to-end
 
 `examples/Workload.java` is a planted-pathology workload (CPU hot path, a memory
