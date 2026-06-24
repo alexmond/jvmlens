@@ -1,7 +1,6 @@
 package org.alexmond.jvmlens;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -19,11 +18,12 @@ import com.sun.tools.attach.VirtualMachine;
 import jdk.management.jfr.FlightRecorderMXBean;
 
 /**
- * Attaches to a running JVM and drives JFR through the platform FlightRecorder MXBean — a
- * one-shot timed {@link #capture}, or a continuous ring-buffer {@link #watch} that dumps
- * a rolling window on an interval. Uses only public, modular JDK APIs ({@code jdk.attach}
- * and {@code jdk.management.jfr}) — no internal {@code --add-exports} and no external
- * {@code jcmd} process, keeping the headless single-binary positioning intact.
+ * Drives JFR on a target JVM through the platform FlightRecorder MXBean — a one-shot
+ * timed {@link #capture}, or a continuous ring-buffer {@link #watch} that dumps a rolling
+ * window on an interval. The target is reached either by <em>local attach</em> (by pid,
+ * via {@code jdk.attach}) or by connecting to a <em>remote JMX</em> service URL. Uses
+ * only public, modular JDK APIs — no internal {@code --add-exports} and no external
+ * {@code jcmd}.
  */
 final class LiveCapture {
 
@@ -33,44 +33,60 @@ final class LiveCapture {
 	}
 
 	/**
-	 * Capture a {@code durationSeconds} JFR recording from the target JVM into a temp
-	 * file.
+	 * Capture a timed recording from a local JVM (attach by pid) into a temp file.
 	 * @param pid the target JVM process id
 	 * @param durationSeconds how long to record
 	 * @param settings predefined JFR configuration name ({@code profile} or
 	 * {@code default})
 	 * @param warmupSeconds seconds to wait after attach before recording (skip startup)
-	 * @return the path of the captured recording (caller owns it)
+	 * @return the captured recording (caller owns it)
 	 * @throws IOException if attach or capture fails
 	 * @throws InterruptedException if interrupted while recording
 	 */
 	static Path capture(String pid, int durationSeconds, String settings, int warmupSeconds)
 			throws IOException, InterruptedException {
-		return withRecorder(pid, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
+		return withLocal(pid, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
+	}
+
+	/** Capture a timed recording from a remote JVM reached over a JMX service URL. */
+	static Path captureRemote(String jmxUrl, int durationSeconds, String settings, int warmupSeconds)
+			throws IOException, InterruptedException {
+		return withRemote(jmxUrl, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
 	}
 
 	/**
-	 * Run a continuous ring-buffer recording on the target, dumping a rolling window to a
-	 * temp file every {@code intervalSeconds} and handing it to {@code sink}.
+	 * Continuously record a local JVM, dumping a rolling window to {@code sink} each
+	 * interval.
 	 * @param pid the target JVM process id
 	 * @param intervalSeconds seconds between snapshot dumps
 	 * @param maxAgeSeconds ring-buffer window kept on the target
 	 * @param settings predefined JFR configuration name
-	 * @param snapshots number of snapshots to take, or {@code <= 0} to run until
-	 * interrupted
+	 * @param snapshots number of snapshots, or {@code <= 0} to run until interrupted
 	 * @param sink receives each dumped snapshot (caller deletes it)
 	 * @throws IOException if attach or capture fails
 	 * @throws InterruptedException if interrupted while recording
 	 */
 	static void watch(String pid, int intervalSeconds, int maxAgeSeconds, String settings, int snapshots,
 			SnapshotSink sink) throws IOException, InterruptedException {
-		withRecorder(pid, (fr) -> {
+		withLocal(pid, (fr) -> {
 			watchLoop(fr, intervalSeconds, maxAgeSeconds, settings, snapshots, sink);
 			return null;
 		});
 	}
 
-	private static <T> T withRecorder(String pid, RecorderAction<T> action) throws IOException, InterruptedException {
+	/**
+	 * Continuously record a remote JVM (over JMX), dumping a rolling window each
+	 * interval.
+	 */
+	static void watchRemote(String jmxUrl, int intervalSeconds, int maxAgeSeconds, String settings, int snapshots,
+			SnapshotSink sink) throws IOException, InterruptedException {
+		withRemote(jmxUrl, (fr) -> {
+			watchLoop(fr, intervalSeconds, maxAgeSeconds, settings, snapshots, sink);
+			return null;
+		});
+	}
+
+	private static <T> T withLocal(String pid, RecorderAction<T> action) throws IOException, InterruptedException {
 		VirtualMachine vm;
 		try {
 			vm = VirtualMachine.attach(pid);
@@ -78,20 +94,36 @@ final class LiveCapture {
 		catch (AttachNotSupportedException ex) {
 			throw new IOException("cannot attach to JVM " + pid + " (" + ex.getMessage() + ")", ex);
 		}
-		try {
-			String address = vm.startLocalManagementAgent();
-			try (JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(address))) {
-				MBeanServerConnection conn = connector.getMBeanServerConnection();
-				FlightRecorderMXBean fr = JMX.newMXBeanProxy(conn, new ObjectName(FLIGHT_RECORDER),
-						FlightRecorderMXBean.class);
-				return action.run(fr);
-			}
-			catch (MalformedURLException | MalformedObjectNameException ex) {
-				throw new IOException("JFR management connection failed (" + ex.getMessage() + ")", ex);
-			}
+		try (JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(vm.startLocalManagementAgent()))) {
+			return runWith(connector.getMBeanServerConnection(), action);
 		}
 		finally {
 			vm.detach();
+		}
+	}
+
+	private static <T> T withRemote(String jmxUrl, RecorderAction<T> action) throws IOException, InterruptedException {
+		try (JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(serviceUrl(jmxUrl)))) {
+			return runWith(connector.getMBeanServerConnection(), action);
+		}
+	}
+
+	/**
+	 * Accept a full {@code service:jmx:...} URL, or expand a {@code host:port} shorthand.
+	 */
+	private static String serviceUrl(String target) {
+		return target.startsWith("service:jmx:") ? target : "service:jmx:rmi:///jndi/rmi://" + target + "/jmxrmi";
+	}
+
+	private static <T> T runWith(MBeanServerConnection conn, RecorderAction<T> action)
+			throws IOException, InterruptedException {
+		try {
+			FlightRecorderMXBean fr = JMX.newMXBeanProxy(conn, new ObjectName(FLIGHT_RECORDER),
+					FlightRecorderMXBean.class);
+			return action.run(fr);
+		}
+		catch (MalformedObjectNameException ex) {
+			throw new IOException("JFR management bean unavailable (" + ex.getMessage() + ")", ex);
 		}
 	}
 
@@ -143,7 +175,7 @@ final class LiveCapture {
 
 	}
 
-	/** An action against the target's FlightRecorder MXBean while attached. */
+	/** An action against the target's FlightRecorder MXBean while connected. */
 	@FunctionalInterface
 	private interface RecorderAction<T> {
 

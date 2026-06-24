@@ -16,8 +16,13 @@ import picocli.CommandLine.Parameters;
 		description = "Continuously record a running JVM (JFR ring buffer) and summarize a rolling window each interval.")
 public class WatchCommand implements Callable<Integer> {
 
-	@Parameters(index = "0", paramLabel = "<pid>", description = "Process ID of the target JVM.")
+	@Parameters(index = "0", arity = "0..1", paramLabel = "<pid>",
+			description = "Process ID of a local target JVM (omit when using --jmx).")
 	String pid;
+
+	@Option(names = { "--jmx" }, paramLabel = "<url>",
+			description = "Remote JMX URL of the target JVM (or host:port). The remote JVM must have JMX remote enabled.")
+	String jmx;
 
 	@Option(names = { "-i", "--interval" }, paramLabel = "<seconds>",
 			description = "Seconds between snapshot summaries (default: ${DEFAULT-VALUE}).")
@@ -52,7 +57,13 @@ public class WatchCommand implements Callable<Integer> {
 
 	@Override
 	public Integer call() throws Exception {
-		if (pid == null || pid.isEmpty() || !pid.chars().allMatch(Character::isDigit)) {
+		boolean remote = jmx != null && !jmx.isEmpty();
+		boolean local = pid != null && !pid.isEmpty();
+		if (remote == local) {
+			System.err.println("jvmlens: specify exactly one of <pid> or --jmx");
+			return 2;
+		}
+		if (local && !pid.chars().allMatch(Character::isDigit)) {
 			System.err.println("jvmlens: <pid> must be numeric: " + pid);
 			return 2;
 		}
@@ -62,9 +73,14 @@ public class WatchCommand implements Callable<Integer> {
 		}
 		Scope scope = output.scope();
 		WatchTrigger trigger = new WatchTrigger(onGcMs, onCpuPct / 100.0, onOldObjects);
+		LiveCapture.SnapshotSink sink = (snapshot, index) -> emit(snapshot, index, scope, trigger);
 		try {
-			LiveCapture.watch(pid, interval, maxAge, settings, snapshots,
-					(snapshot, index) -> emit(snapshot, index, scope, trigger));
+			if (remote) {
+				LiveCapture.watchRemote(jmx, interval, maxAge, settings, snapshots, sink);
+			}
+			else {
+				LiveCapture.watch(pid, interval, maxAge, settings, snapshots, sink);
+			}
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();
