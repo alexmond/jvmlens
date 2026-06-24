@@ -19,12 +19,12 @@ import jdk.management.jfr.FlightRecorderMXBean;
 import one.profiler.AsyncProfilerLoader;
 
 /**
- * Drives JFR on a target JVM through the platform FlightRecorder MXBean — a one-shot
- * timed {@link #capture}, or a continuous ring-buffer {@link #watch} that dumps a rolling
- * window on an interval. The target is reached either by <em>local attach</em> (by pid,
- * via {@code jdk.attach}) or by connecting to a <em>remote JMX</em> service URL. Uses
- * only public, modular JDK APIs — no internal {@code --add-exports} and no external
- * {@code jcmd}.
+ * Drives JFR on a local target JVM through the platform FlightRecorder MXBean — a
+ * one-shot timed {@link #capture}, a continuous ring-buffer {@link #watch}, or a
+ * higher-fidelity {@link #captureAsync} via async-profiler. The target is reached by
+ * <em>local attach</em> (by pid, via {@code jdk.attach}); to reach a remote server, run
+ * jvmlens on that host. Uses only public, modular JDK APIs — no internal
+ * {@code --add-exports} and no {@code jcmd}.
  */
 final class LiveCapture {
 
@@ -47,12 +47,6 @@ final class LiveCapture {
 	static Path capture(String pid, int durationSeconds, String settings, int warmupSeconds)
 			throws IOException, InterruptedException {
 		return withLocal(pid, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
-	}
-
-	/** Capture a timed recording from a remote JVM reached over a JMX service URL. */
-	static Path captureRemote(String jmxUrl, int durationSeconds, String settings, int warmupSeconds)
-			throws IOException, InterruptedException {
-		return withRemote(jmxUrl, (fr) -> record(fr, durationSeconds, settings, warmupSeconds));
 	}
 
 	/**
@@ -102,18 +96,6 @@ final class LiveCapture {
 		});
 	}
 
-	/**
-	 * Continuously record a remote JVM (over JMX), dumping a rolling window each
-	 * interval.
-	 */
-	static void watchRemote(String jmxUrl, int intervalSeconds, int maxAgeSeconds, String settings, int snapshots,
-			SnapshotSink sink) throws IOException, InterruptedException {
-		withRemote(jmxUrl, (fr) -> {
-			watchLoop(fr, intervalSeconds, maxAgeSeconds, settings, snapshots, sink);
-			return null;
-		});
-	}
-
 	private static <T> T withLocal(String pid, RecorderAction<T> action) throws IOException, InterruptedException {
 		VirtualMachine vm;
 		try {
@@ -128,19 +110,6 @@ final class LiveCapture {
 		finally {
 			vm.detach();
 		}
-	}
-
-	private static <T> T withRemote(String jmxUrl, RecorderAction<T> action) throws IOException, InterruptedException {
-		try (JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(serviceUrl(jmxUrl)))) {
-			return runWith(connector.getMBeanServerConnection(), action);
-		}
-	}
-
-	/**
-	 * Accept a full {@code service:jmx:...} URL, or expand a {@code host:port} shorthand.
-	 */
-	private static String serviceUrl(String target) {
-		return target.startsWith("service:jmx:") ? target : "service:jmx:rmi:///jndi/rmi://" + target + "/jmxrmi";
 	}
 
 	private static <T> T runWith(MBeanServerConnection conn, RecorderAction<T> action)
@@ -198,7 +167,7 @@ final class LiveCapture {
 	/** The capture engine: JDK Flight Recorder (default) or async-profiler. */
 	enum Engine {
 
-		/** JDK Flight Recorder — prod-safe, works locally and over remote JMX. */
+		/** JDK Flight Recorder — the prod-safe default. */
 		JFR,
 		/** async-profiler — higher fidelity (native frames), local pid only. */
 		ASYNC
