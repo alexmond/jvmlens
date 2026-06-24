@@ -17,8 +17,14 @@ import picocli.CommandLine.Parameters;
 		description = "Attach to a running JVM, capture a timed JFR recording, and summarize it.")
 public class ProfileCommand implements Callable<Integer> {
 
-	@Parameters(index = "0", paramLabel = "<pid>", description = "Process ID of the target JVM.")
+	@Parameters(index = "0", arity = "0..1", paramLabel = "<pid>",
+			description = "Process ID of a local target JVM (omit when using --jmx).")
 	String pid;
+
+	@Option(names = { "--jmx" }, paramLabel = "<url>",
+			description = "Remote JMX URL of the target JVM, e.g. service:jmx:rmi:///jndi/rmi://host:7091/jmxrmi "
+					+ "(host:port also accepted). The remote JVM must be started with JMX remote enabled.")
+	String jmx;
 
 	@Option(names = { "-d", "--duration" }, paramLabel = "<seconds>",
 			description = "Recording duration in seconds (default: ${DEFAULT-VALUE}).")
@@ -41,7 +47,13 @@ public class ProfileCommand implements Callable<Integer> {
 
 	@Override
 	public Integer call() throws Exception {
-		if (pid == null || pid.isEmpty() || !pid.chars().allMatch(Character::isDigit)) {
+		boolean remote = jmx != null && !jmx.isEmpty();
+		boolean local = pid != null && !pid.isEmpty();
+		if (remote == local) {
+			System.err.println("jvmlens: specify exactly one of <pid> or --jmx");
+			return 2;
+		}
+		if (local && !pid.chars().allMatch(Character::isDigit)) {
 			System.err.println("jvmlens: <pid> must be numeric: " + pid);
 			return 2;
 		}
@@ -55,7 +67,8 @@ public class ProfileCommand implements Callable<Integer> {
 		}
 		Path recording;
 		try {
-			recording = LiveCapture.capture(pid, duration, settings, warmup);
+			recording = remote ? LiveCapture.captureRemote(jmx, duration, settings, warmup)
+					: LiveCapture.capture(pid, duration, settings, warmup);
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();

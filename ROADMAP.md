@@ -41,7 +41,10 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
       navigable* tools (`overview` → `hot_paths`/`hot_leaves`/`allocations`/
       `lock_contention`), not a blob. Tools accept `appPackages`/`exclude` scoping;
       serves data only, never calls an LLM. Built on the MCP Java SDK.
-- [ ] async-profiler fidelity via ap-loader, behind the same interface.
+- [x] Remote profiling — `profile`/`watch --jmx <url|host:port>` drives JFR over a
+      remote JMX connection (no agent install; remote JVM started with JMX remote flags).
+- [ ] async-profiler fidelity via ap-loader, behind the same interface. **Spike: GO** —
+      ap-loader runs here, emits JFR the summarizer reads unchanged, adds native frames.
 - [ ] Emit-local / user-chosen-model so egress-restricted (prod) shops can use it.
 
 ## Later — v2 (separate validation; see DESIGN.md)
