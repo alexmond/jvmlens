@@ -16,6 +16,9 @@ class ScopeTest {
 		assertThat(s.isApplication("org.springframework.boot.loader.zip.ZipString")).isFalse();
 		assertThat(s.isApplication("org.bouncycastle.math.ec.LongArray")).isFalse();
 		assertThat(s.isApplication("com.fasterxml.jackson.databind.ObjectMapper")).isFalse();
+		assertThat(s.isApplication("org.thymeleaf.engine.AbstractTemplateEvent")).isFalse();
+		assertThat(s.isApplication("org.hibernate.loader.Loader")).isFalse();
+		assertThat(s.isApplication("groovy.lang.MetaClassImpl")).isFalse();
 	}
 
 	@Test

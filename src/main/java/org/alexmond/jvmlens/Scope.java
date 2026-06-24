@@ -20,7 +20,9 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 
 	/** Common third-party frameworks — not the user's code by default. */
 	private static final List<String> FRAMEWORKS = List.of("org.springframework.", "org.apache.", "org.bouncycastle.",
-			"com.fasterxml.", "org.slf4j.", "ch.qos.logback.", "org.yaml.", "io.micrometer.", "io.netty.", "reactor.");
+			"com.fasterxml.", "org.slf4j.", "ch.qos.logback.", "org.yaml.", "io.micrometer.", "io.netty.", "reactor.",
+			"org.hibernate.", "jakarta.", "org.thymeleaf.", "org.unbescape.", "org.flywaydb.", "com.zaxxer.",
+			"org.postgresql.", "org.h2.", "groovy.", "org.codehaus.groovy.");
 
 	/** The default scope: skip JDK + common frameworks, with no explicit includes. */
 	public static Scope defaults() {
