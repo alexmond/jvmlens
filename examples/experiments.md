@@ -42,9 +42,32 @@ jfr print recording-cpu.jfr > raw-cpu.txt   # note: often too large to paste
 - **Correctness:** the v0.2 summarizer names the planted bug on all three
   scenarios (cpu → `expensiveHashLoop`, alloc → `handleUpload` + GC pressure,
   lock → `criticalSection`).
-- **Still open:** the blind *turn-count* A/B (summary vs raw into fresh LLM
-  sessions, scoring turns) — owner-run. `lock` (~5K tokens raw) is the clean
-  head-to-head since raw fits there.
+
+## Blind A/B — settled (2026-06-24)
+
+Ran the turn-count / token A/B by handing the artifact to **fresh, isolated LLM
+sessions** (no source, no answer key, one file each) and scoring whether they
+named the planted method. 8 blind sessions total.
+
+| Scenario | Input | Sessions | Named planted bug | Self-reported sufficiency |
+|---|---|---|---|---|
+| lock  | summary (351 tok)   | 3/3 | `criticalSection` + Object-monitor | all "direct" |
+| lock  | raw events (1928 tok)| 3/3 | `criticalSection` + Object-monitor | all "direct" |
+| cpu   | summary (322 tok)   | 1/1 | `expensiveHashLoop` (SHA hashing)  | "direct" |
+| alloc | summary (322 tok)   | 1/1 | `handleUpload` + GC pressure/leak  | "direct" |
+
+- **Accuracy: 8/8** named the exact planted method with high confidence.
+- **`lock` is the fair head-to-head** (raw fits if filtered to signal events).
+  Charitable raw = `jfr print --events jdk.JavaMonitorEnter,jdk.ThreadPark`
+  (~1928 tok; the *unfiltered* short-lock raw is ~194K tok, still near overflow).
+  Summary (351 tok) produced the **same diagnosis, same confidence, same
+  "direct" sufficiency at 5.5× fewer input tokens** — and ~10% less end-to-end
+  reasoning per session. Summary sessions dismissed the 8 noisy exec-samples as
+  startup noise; raw sessions had to reconstruct the same conclusion from 16
+  hand-off events.
+- **Decision rule met on 3/3:** cpu (~3000× fewer tokens, raw unusable), alloc
+  (raw unusable), lock (5.5× fewer at equal accuracy). The summarizer earns its
+  place. Reproduce via the recordings + blind protocol in `target/exp/`.
 
 ## Decision rule
 
