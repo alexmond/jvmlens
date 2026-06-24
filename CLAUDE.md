@@ -45,37 +45,70 @@ record-then-analyze recipe and `examples/experiments.md` for the quality methodo
 
 ## Architecture: one engine, thin front-ends
 
-The deliberate split (kept this way so the planned MCP server reuses the engine):
+The whole design: a dependency-free **engine** plus thin front-ends, where *every capture
+path produces JFR consumed by the same engine*.
 
-- **`Summarizer`** — the engine, and the only place real work happens. **Dependency-free
-  by design**: uses only `jdk.jfr.consumer`, no Spring/picocli. `analyze(Path)` reduces a
-  recording (via the inner `Aggregates`) to a render-agnostic **`ProfileSummary`** record;
-  `Renderers` turns that into markdown/JSON/prompt. Keep both free of framework deps so the
-  planned MCP server can serve the same `ProfileSummary`. JSON is hand-rolled for that reason.
-- **`Main`** — Spring Boot entrypoint; wires picocli into Spring (`IFactory`) and bridges
-  picocli's exit code to Spring's `ExitCodeGenerator`.
-- **`JvmlensCommand`** — picocli root command (`jvmlens`), prints usage; holds subcommands.
-- **`AnalyzeCommand`** — the `analyze <file.jfr>` subcommand; validates the file, calls
-  `Summarizer.summarize`, prints to stdout. Returns exit 2 on unreadable file.
+- **Engine** (no Spring/picocli, only `jdk.jfr.consumer`): `Summarizer.analyze(Path, Scope)`
+  reduces a recording (via inner `Aggregates`) to the render-agnostic **`ProfileSummary`**
+  record; `Renderers` turns it into markdown / JSON (hand-rolled) / prompt, and into focused
+  reports (`Report`: full/cpu/memory/locks/gc). `Scope` decides what counts as application
+  code. Keep the engine framework-free so all front-ends reuse it.
+- **CLI** (`Main` wires picocli into Spring; `JvmlensCommand` is the root):
+  - `analyze <file.jfr>` — offline.
+  - `profile <pid>` — local attach via `jdk.attach` + `jdk.management.jfr` MXBean
+    (`LiveCapture`); `--engine async` uses ap-loader (native frames); `-w/--warmup`, `-k/--keep`.
+  - `watch <pid>` — continuous JFR ring buffer; periodic, or dump-on-trigger via `WatchTrigger`
+    (`--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects`).
+  - `mcp` — stdio MCP server (`McpServerCommand`) exposing `ProfileTools` as scoped tools
+    (overview → hot_paths/hot_leaves/allocations/lock_contention) **plus a live `profile`
+    tool**; reach a remote host via stdio-over-ssh. Serves data only, never calls an LLM.
+  - Shared output options (`-f/--format`, `-r/--report`, `-a/--app-package`, `-x/--exclude`)
+    live in one `OutputOptions` `@Mixin`.
+- **Agent** — `jvmlens-agent.jar` (`agent.JvmlensAgent`, Premain/Agent-Class) runs in-process,
+  writing periodic summaries to a file; `snapshot=Class#method` captures **variable snapshots**
+  (ByteBuddy advice → `snapshot.*`). The v2 (correctness) axis.
+- **Deploy** — `deploy/helm/jvmlens` (standalone chart) + `scripts/deploy-agent.sh` attach the
+  agent to any JVM image without touching the app's own chart.
 
-Adding a command = new `@Component @Command` class registered in `JvmlensCommand`'s
-`subcommands`; keep analysis logic in `Summarizer`, not the command.
+Adding a command = a new `@Component @Command` registered in `JvmlensCommand.subcommands`;
+keep analysis logic in the engine, not the command.
 
-### Summarizer design decisions (don't undo without reason)
+## Conventions
 
-- **Frame attribution leads with the first *application* frame**, skipping runtime
-  prefixes (`java.`/`jdk.`/`sun.`/`com.sun.`/`javax.`/`jakarta.` — the `RUNTIME` array
-  via `frame(st, skipRuntime=true)`). This was the highest-value fix: naive leaf
-  aggregation buried the user's hot method under JDK internals. A secondary self-time
-  leaf view (`skipRuntime=false`) is kept intentionally.
-- **The heuristic deliberately under-interprets.** It hedges and leans on
-  GC-pause + allocation-site signal rather than over-claiming a "leak" from sparse
-  `oldobject` samples. Prefer giving the LLM clean data over a confident wrong label.
+- **Engine stays dependency-free** (only `jdk.jfr.consumer`); CLI/MCP/agent are thin
+  front-ends; every capture path produces JFR consumed by `Summarizer`.
+- **Application-frame attribution**: lead with the first application frame. `Scope` skips the
+  JDK + common frameworks + native frames (`::`, `.so`); `-a/--app-package` is include-only,
+  `-x/--exclude` adds prefixes; the dominant app package is auto-detected and surfaced.
+- **Trust signals are first-class** (user calls this essential): every ranked row shows its
+  absolute hit `count`; sections are tagged `[sampled]` (statistical) vs `[measured]` (exact —
+  locks/GC); a `⚠` caveat fires under 200 execution samples.
+- **The heuristic under-interprets** — hedges, no confident "leak" from sparse old-object
+  samples. Give the LLM clean data over a confident wrong label.
+- **Build gates**: `mvn package` runs spring-javaformat + checkstyle + PMD (validate phase) and
+  JaCoCo ≥80% line — run `spring-javaformat:apply` first. Transport/bootstrap classes (`Main`,
+  `McpServerCommand`, agent, snapshot glue) are jacoco-excluded.
+- **Tests** synthesize real recordings via `jdk.jfr.Recording`/attach at runtime — no committed
+  `.jfr` fixtures.
+- **Dogfood loop**: profile real projects → file `field-finding` issues (`scripts/field-finding.sh`)
+  → fix → revalidate. Methodology: small CPU/memory/wait workloads, not giant cold inputs.
+- **Infra**: k3s is managed via kubectl/helm (ns `unitrack`); **Portainer is only the Docker
+  host**; images live in the Zot registry `registry.example.com:5000` (pull secret `my-regcred`).
 
-### Tests
+## Gotchas
 
-Tests synthesize real JFR recordings at runtime via `jdk.jfr.Recording` (run a workload,
-dump to a temp file, summarize, delete) — there are **no committed `.jfr` fixtures**.
+- **PMD bans `synchronized`** (method and statement) → use `ReentrantLock`.
+- **picocli enums are case-sensitive** → `setCaseInsensitiveEnumValuesAllowed(true)` (Main sets
+  it; standalone-CommandLine tests must too).
+- **Agent dump on exit**: use JFR `setDumpOnExit`, not a shutdown hook (the hook races JFR's
+  own teardown).
+- **Self-attach** (ByteBuddyAgent / async-profiler into a child) needs
+  `-Djdk.attach.allowAttachSelf=true`; CI may still block agent load → guard such tests with
+  JUnit `Assumptions.abort`.
+- **Agent jar packaging**: maven-shade must run *before* Spring Boot repackage; relocate
+  `net.bytebuddy`; shade leaves inert `META-INF/versions/9/net/bytebuddy` (harmless).
+- **CI workflow** needs `permissions` (checks/PR/contents write) and `continue-on-error` /
+  `fail_ci_if_error:false` on reporting steps; surefire fork pinned `-Xmx512m`.
 
 ## How this file evolves
 
@@ -98,31 +131,12 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
-- 2026-06-22 — **goal** — jvmlens turns a JFR recording into a ~400-token LLM-ready markdown summary; the summarizer is the product, capture/parsing are JDK-provided. See → README.md.
-- 2026-06-22 — **build** — `mvn package` fails on style/coverage, not just compile: javaformat+checkstyle+PMD at validate, JaCoCo ≥80% line gate. Why: run `spring-javaformat:apply` before building.
-- 2026-06-22 — **architecture** — `Summarizer` is dependency-free (only jdk.jfr.consumer), kept framework-free so the planned MCP front-end reuses it. Why: one engine, thin CLI/MCP front-ends.
-- 2026-06-22 — **attribution** — hot-path ranking leads with the first application frame, skipping java./jdk./sun./etc. Why: naive leaf aggregation buried the user's hot method under JDK internals.
-- 2026-06-23 — **output** — `analyze -f md|json|prompt` renders one `ProfileSummary` three ways; JSON is hand-rolled. Why: scoped JSON is what the future MCP server serves, and the engine must stay dependency-free.
-- 2026-06-23 — **cli** — picocli enum options are case-sensitive by default; set `setCaseInsensitiveEnumValuesAllowed(true)` so `-f json` works. Why: users type lowercase, not `JSON`.
-- 2026-06-23 — **capture** — `profile <pid>` attaches via public `jdk.attach` + `jdk.management.jfr` MXBean (no jcmd, no --add-exports). Why: keeps the headless single-binary positioning; verified from classpath.
-- 2026-06-23 — **dogfood** — real-project profiling feeds jvmlens gaps back as GitHub `field-finding` issues. Why: tuning is driven by field evidence, not guesses. See → `scripts/field-finding.sh`, issues #1/#2.
-- 2026-06-23 — **attribution** — field finding: framework pkgs (spring, bouncycastle) pass the runtime filter and bury user code; needs configurable app-package scoping. See → issue #1.
-- 2026-06-23 — **scope** — `Scope` defines application code: default skips JDK **+** common frameworks; `-a/--app-package` is include-only mode, `-x/--exclude` adds prefixes. Why: fixes #1 — validated on jhelm (default now leads with `HelmJavaApplication.main`, `-a org.alexmond` shows only the user's code). Auto-detect deferred.
-- 2026-06-23 — **adequacy** — markdown emits a `⚠` caveat below 200 exec samples; `profile` gained `-w/--warmup` to skip startup. Why: fixes #2 — short cold runs profile classloading, not the workload; the caveat stops the LLM trusting noisy shares.
-- 2026-06-23 — **confidence** — ranked rows now carry absolute `count` (shown as "(N samples/bytes/ms)") and sections are tagged `[sampled]` vs `[measured]`. Why: a share% without hit count is misleading (100% of 9 samples = noise), and sampled (statistical) vs tracked (exact: locks/GC) data must be weighted differently — user calls this essential.
-- 2026-06-23 — **reports** — `analyze -r/--report full|cpu|memory|locks|gc` focuses output on one concern via `Renderers.report` (sections gated by `Report`). Why: user wants multiple report types, not one fixed summary; reuses the same section slicing as the MCP tools.
-- 2026-06-23 — **cli** — shared output options (`-f/-r/-a/-x`) live in one `OutputOptions` `@Mixin` used by analyze/profile/watch (call `output.scope()`); `@Mixin` resolves fine through the picocli-spring factory. Why: kills option duplication/drift and gave profile+watch `--report` for free.
-- 2026-06-23 — **remote** — `profile`/`watch` take `--jmx <url|host:port>` to drive JFR over a remote JMX connection (`LiveCapture.withRemote` vs `withLocal`); remote JVM needs `-Dcom.sun.management.jmxremote...` start flags. Why: profile servers deployed remotely without installing an agent — FlightRecorder MXBean works over remote JMX (same code path as local).
-- 2026-06-23 — **async-profiler** — `profile --engine async` (`LiveCapture.captureAsync` via ap-loader `executeProfiler`) captures to JFR, consumed by the existing `Summarizer`; adds native frames. `Scope` now excludes native frames (`::`, `.so`) from the app view. Local pid only (native agent can't go over JMX). Why: higher fidelity behind the same engine; capture→JFR→existing pipeline.
-- 2026-06-24 — **remote-direction** — ~~JMX (`--jmx`)~~ **removed** (was #10): "never works easily" (RMI ports/hostnames/container pain), needs target start flags, async can't use it. Remote = run jvmlens *on* the host (ssh/kubectl/docker exec → tiny summary back). Next: MCP-over-HTTP endpoint, then an in-process agent embedding it.
-- 2026-06-24 — **deploy** — `deploy/helm/jvmlens` (standalone chart) runs any JVM image with the agent attached (initContainer→emptyDir→`JAVA_TOOL_OPTIONS=-javaagent:...` + busybox summary sidecar); `scripts/deploy-agent.sh` builds+pushes the agent image and optionally helm-installs it. Why: profiling as a *separate* deployment, not the app's main chart. Infra: k3s via kubectl/helm (ns `unitrack`); Portainer is only the Docker host; registry `registry.example.com:5000` (Zot, secret `my-regcred`).
-- 2026-06-24 — **v2-snapshots** — agent `snapshot=Class#method` instruments method entry via ByteBuddy advice (`snapshot.*`) and digests arg values (distinct/null/range) into a "Variable snapshots" section. ByteBuddy is shaded+relocated into the agent jar (maven-shade `net.bytebuddy`→`...shaded.bytebuddy`, runs before boot repackage). Gotchas: PMD bans `synchronized` (use `ReentrantLock`); self-attach test needs `-Djdk.attach.allowAttachSelf=true` + assumption-skip. Args only (locals need `-g`); redaction TODO.
-- 2026-06-24 — **agent** — `jvmlens-agent.jar` (`-javaagent`/dynamic attach, `agent.JvmlensAgent`) keeps an in-process JFR ring buffer and writes periodic summaries to a file. Built as a secondary maven-jar (classifier `agent`, Premain/Agent-Class manifest) with only the dependency-free engine + agent (no Spring). Why: container-native always-on profiling, no attach/JMX; v2 base. `snapshot()` unit-tested; class jacoco-excluded. Gotcha: use `setDumpOnExit`, not a shutdown hook (dump races JFR teardown).
-- 2026-06-24 — **mcp-live** — MCP server gained a `profile` tool (capture a live `pid`: duration/engine/report/scope → summary). Remote MCP = stdio-over-ssh (MCP client command `ssh host java -jar jvmlens.jar mcp`), no HTTP server/ports needed. Why: "MCP to remote host" without JMX; HTTP transport would drag in a servlet container and fight the CLI model — deferred to if a multi-client sidecar needs it.
-- 2026-06-23 — **watch** — `watch <pid>` runs a continuous JFR ring buffer (`setRecordingOptions` maxAge+disk) and dumps+summarizes a rolling window each interval (`-i`/`--max-age`/`-n`). Why: foundation of DESIGN's dump-on-trigger production mode; `LiveCapture.withRecorder` now shares attach glue between capture and watch.
-- 2026-06-23 — **trigger** — `WatchTrigger` (pure, computed from `ProfileSummary`) makes `watch` dump-on-trigger: `--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects` emit only on breach. Why: completes DESIGN's production mode; `Summarizer.render(summary, format)` added so `watch` analyzes once then triggers + renders.
-- 2026-06-23 — **mcp** — `jvmlens mcp` is an stdio MCP server (MCP Java SDK 0.10.0) exposing `ProfileTools` as scoped tools (overview → hot_paths/hot_leaves/allocations/lock_contention) over the dependency-free engine. Why: progressive disclosure (not one blob) is the moat; serves data only, never calls an LLM (recordings stay local). `McpServerCommand` is jacoco-excluded (transport glue), verified by a stdio handshake test.
+- 2026-06-24 — **remote-direction** — ~~JMX (`--jmx`)~~ **removed**: never works easily (RMI/container pain), needs target start flags, async can't use it. Remote = run jvmlens *on* the host (ssh/kubectl/docker exec, or MCP over stdio-over-ssh). Open: an MCP-over-HTTP endpoint only if a multi-client sidecar needs it.
+- 2026-06-24 — **v2-snapshots** — agent `snapshot=Class#method` captures variable snapshots (ByteBuddy → `snapshot.*`), digested into the summary. Open follow-ups: locals (need `-g`, detect-and-degrade), condition-gating, PII redaction for prod.
+- 2026-06-24 — **deploy** — `deploy/helm/jvmlens` + `scripts/deploy-agent.sh` attach the agent to any JVM image as a *separate* release. Caveat: a profiled copy sharing the app's `envFrom` hits the **same DB** — point it at a throwaway DB or run read-mostly.
 
-### Historic (older than 14 days · see git log for the build-up)
+### Historic
 
-- (none yet)
+Earlier build-out entries (v0.1→v0.2: engine, outputs, profile/watch/mcp, scope, async,
+agent, ci) graduated into Architecture / Conventions / Gotchas above. Full chronology:
+`docs/decisions/2026-06-jvmlens-buildout.md` (and git log).
