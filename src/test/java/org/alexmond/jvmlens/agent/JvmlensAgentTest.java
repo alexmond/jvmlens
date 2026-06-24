@@ -14,6 +14,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JvmlensAgentTest {
 
 	@Test
+	void agentScopeExcludesOwnPackageButKeepsApp() {
+		assertThat(JvmlensAgent.agentScope().isApplication("org.alexmond.jvmlens.Summarizer")).isFalse();
+		assertThat(JvmlensAgent.agentScope().isApplication("org.alexmond.unitrack.web.UserService")).isTrue();
+	}
+
+	@Test
 	void snapshotWritesSummaryFromInProcessRecording() throws Exception {
 		Recording recording = new Recording(Configuration.getConfiguration("profile"));
 		recording.start();
