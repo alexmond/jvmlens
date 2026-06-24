@@ -24,12 +24,24 @@ scripts/deploy-agent.sh              # → registry.example.com:5000/jvmlens-age
 
 == 2. Deploy (separate release)
 
-One command builds, pushes, and installs the chart (point `--target-image` at the app):
+For the homelab, `values-homelab.yaml` already pins the unitrack image and reuses the live
+release's `unitrack` ConfigMap + Secret (DB password), so it's one flag — the deploy script
+picks the file up automatically:
 
 [source,bash]
 ----
-scripts/deploy-agent.sh --release unitrack-profiled --namespace unitrack \
-  --target-image registry.example.com:5000/unitrack:0.2.0-SNAPSHOT
+scripts/deploy-agent.sh --release unitrack-profiled
+----
+
+CAUTION: that reuses the **live** DB — two app instances can race on Flyway startup
+migration. Point `target.env.UNITRACK_DB_URL` at a throwaway DB for anything beyond a look.
+
+Generic form (any app), building + pushing + installing in one go:
+
+[source,bash]
+----
+scripts/deploy-agent.sh --release my-app-profiled --namespace my-ns \
+  --target-image my-registry/my-app:1.0
 ----
 
 Or `helm upgrade --install` directly for full control:

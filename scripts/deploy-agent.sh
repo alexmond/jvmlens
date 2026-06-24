@@ -12,6 +12,7 @@
 #     --release NAME          if set, helm upgrade --install the jvmlens chart with this name
 #     --namespace NS          target namespace        (default: unitrack)
 #     --target-image IMAGE    JVM image to profile    (passed to the chart's target.image)
+#     --values FILE           extra Helm values file  (default: values-homelab.yaml if present)
 #     --no-build              skip the build (reuse the image already in the registry)
 #     --no-push               build the image but don't publish
 #
@@ -26,6 +27,7 @@ TAG=""
 RELEASE=""
 NAMESPACE=unitrack
 TARGET_IMAGE=""
+VALUES=""
 BUILD=1
 PUBLISH=1
 
@@ -36,12 +38,17 @@ while [[ $# -gt 0 ]]; do
     --release)      RELEASE="$2"; shift 2 ;;
     --namespace)    NAMESPACE="$2"; shift 2 ;;
     --target-image) TARGET_IMAGE="$2"; shift 2 ;;
+    --values)       VALUES="$2"; shift 2 ;;
     --no-build)     BUILD=0; shift ;;
     --no-push)      PUBLISH=0; shift ;;
-    -h|--help)      sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ -z "$VALUES" && -f deploy/helm/jvmlens/values-homelab.yaml ]]; then
+  VALUES=deploy/helm/jvmlens/values-homelab.yaml
+fi
 
 if [[ -z "$TAG" ]]; then
   TAG="$(./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1)"
@@ -72,6 +79,7 @@ if [[ -n "$RELEASE" ]]; then
   echo "==> helm upgrade --install $RELEASE (ns: $NAMESPACE)..."
   helm upgrade --install "$RELEASE" deploy/helm/jvmlens \
     --namespace "$NAMESPACE" --create-namespace \
+    ${VALUES:+-f "$VALUES"} \
     --set agent.image="$IMAGE" \
     ${TARGET_IMAGE:+--set target.image="$TARGET_IMAGE"}
 fi
