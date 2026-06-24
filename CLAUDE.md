@@ -134,6 +134,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-06-24 — **remote-direction** — ~~JMX (`--jmx`)~~ **removed**: never works easily (RMI/container pain), needs target start flags, async can't use it. Remote = run jvmlens *on* the host (ssh/kubectl/docker exec, or MCP over stdio-over-ssh). Open: an MCP-over-HTTP endpoint only if a multi-client sidecar needs it.
 - 2026-06-24 — **v2-snapshots** — agent `snapshot=Class#method` captures variable snapshots (ByteBuddy → `snapshot.*`), digested into the summary. Open follow-ups: locals (need `-g`, detect-and-degrade), condition-gating, PII redaction for prod.
 - 2026-06-24 — **deploy** — `deploy/helm/jvmlens` + `scripts/deploy-agent.sh` attach the agent to any JVM image as a *separate* release. Caveat: a profiled copy sharing the app's `envFrom` hits the **same DB** — point it at a throwaway DB or run read-mostly.
+- 2026-06-24 — **validation** — blind A/B settled the whole-idea gate: 8/8 isolated LLM sessions named the planted bug; on the fair `lock` head-to-head the summary matched raw's diagnosis at 5.5× fewer tokens (cpu/alloc raw overflow). Why: the release precondition ("real benefits") is now evidence-backed, not asserted. [see → examples/experiments.md]
+- 2026-06-24 — **adoption** — `INTEGRATING.md` (mirrored as `docs/.../integrating.adoc`) is the portable guide for profiling *other* projects — decision table over the 5 paths + a paste-ready CLAUDE.md snippet. Why: external adoption needs a task-oriented doc, not the flag reference.
 
 ### Historic
 
