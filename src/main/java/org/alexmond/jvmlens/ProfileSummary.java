@@ -34,9 +34,11 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 	 *
 	 * @param name the method or type name
 	 * @param share fraction (0..1) of the relevant total this row accounts for
+	 * @param count absolute weight behind the share (samples / bytes / nanos) — the hit
+	 * rate that says whether the share is trustworthy or just one stray hit
 	 * @param stack optional call-stack teaser ({@code null} when not applicable)
 	 */
-	public record Ranked(String name, double share, String stack) {
+	public record Ranked(String name, double share, long count, String stack) {
 	}
 
 }

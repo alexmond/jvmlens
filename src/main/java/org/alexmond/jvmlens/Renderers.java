@@ -15,11 +15,51 @@ final class Renderers {
 	/** Below this many execution samples, hot-path shares are too noisy to trust. */
 	private static final int LOW_SAMPLE_THRESHOLD = 200;
 
+	private static final String HOT_PATHS = "Top hot paths (application code, by sample share)";
+
+	private static final String HOT_LEAVES = "Hot leaf methods (self-time, incl. runtime)";
+
+	private static final String ALLOC_SITES = "Top allocation sites (application code, by est. bytes)";
+
+	private static final String ALLOC_TYPES = "Top allocated types (by est. bytes)";
+
+	private static final String LOCKS = "Lock contention (blocked time, by application method)";
+
 	private Renderers() {
 	}
 
-	/** The compact markdown report — the human/agent-readable default. */
+	/** The compact markdown report (full) — the human/agent-readable default. */
 	static String markdown(ProfileSummary s) {
+		return report(s, Summarizer.Report.FULL);
+	}
+
+	/** A concern-focused markdown report: full, or just CPU / memory / locks / GC. */
+	static String report(ProfileSummary s, Summarizer.Report report) {
+		StringBuilder md = new StringBuilder(baseHeader(s));
+		boolean cpu = report == Summarizer.Report.FULL || report == Summarizer.Report.CPU;
+		boolean mem = report == Summarizer.Report.FULL || report == Summarizer.Report.MEMORY
+				|| report == Summarizer.Report.GC;
+		boolean locks = report == Summarizer.Report.FULL || report == Summarizer.Report.LOCKS;
+		if (cpu) {
+			appendAdequacy(md, s.execSamples());
+			mdSection(md, HOT_PATHS, s.hotPaths(), "samples", false);
+			mdSection(md, HOT_LEAVES, s.hotLeaves(), "samples", false);
+		}
+		if (mem) {
+			mdSection(md, ALLOC_SITES, s.allocSites(), "bytes", false);
+			mdSection(md, ALLOC_TYPES, s.allocatedTypes(), "bytes", false);
+		}
+		if (locks) {
+			mdSection(md, LOCKS, s.locks(), "ms", true);
+			if (!s.monitors().isEmpty()) {
+				mdSection(md, "Contended monitors", s.monitors(), "ms", true);
+			}
+		}
+		md.append("## Suspected cause (heuristic)\n- ").append(s.cause()).append('\n');
+		return md.toString();
+	}
+
+	private static String baseHeader(ProfileSummary s) {
 		StringBuilder md = new StringBuilder();
 		md.append("# JVM profile summary (")
 			.append(s.source())
@@ -37,16 +77,6 @@ final class Renderers {
 		if (s.appPackage() != null) {
 			md.append("Application code under `").append(s.appPackage()).append(".*`.\n\n");
 		}
-		appendAdequacy(md, s.execSamples());
-		mdSection(md, "Top hot paths (application code, by sample share)", s.hotPaths());
-		mdSection(md, "Hot leaf methods (self-time, incl. runtime)", s.hotLeaves());
-		mdSection(md, "Top allocation sites (application code, by est. bytes)", s.allocSites());
-		mdSection(md, "Top allocated types (by est. bytes)", s.allocatedTypes());
-		mdSection(md, "Lock contention (blocked time, by application method)", s.locks());
-		if (!s.monitors().isEmpty()) {
-			mdSection(md, "Contended monitors", s.monitors());
-		}
-		md.append("## Suspected cause (heuristic)\n- ").append(s.cause()).append('\n');
 		return md.toString();
 	}
 
@@ -67,20 +97,25 @@ final class Renderers {
 	}
 
 	/** One ranked section rendered on its own — the unit the MCP tools hand back. */
-	static String section(String title, List<Ranked> rows) {
+	static String section(String title, List<Ranked> rows, String countUnit, boolean measured) {
 		StringBuilder md = new StringBuilder();
-		mdSection(md, title, rows);
+		mdSection(md, title, rows, countUnit, measured);
 		return md.toString();
 	}
 
-	private static void mdSection(StringBuilder md, String title, List<Ranked> rows) {
-		md.append("## ").append(title).append('\n');
+	private static void mdSection(StringBuilder md, String title, List<Ranked> rows, String countUnit,
+			boolean measured) {
+		md.append("## ").append(title).append(measured ? " [measured]\n" : " [sampled]\n");
 		if (rows.isEmpty()) {
 			md.append("- (none)\n\n");
 			return;
 		}
 		for (Ranked r : rows) {
 			md.append(String.format(Locale.ROOT, "- `%s` — %.0f%%", r.name(), 100.0 * r.share()));
+			if (countUnit != null) {
+				long shown = "ms".equals(countUnit) ? r.count() / 1_000_000 : r.count();
+				md.append(" (").append(shown).append(' ').append(countUnit).append(')');
+			}
 			if (r.stack() != null) {
 				md.append("  (").append(r.stack()).append(')');
 			}
@@ -124,6 +159,8 @@ final class Renderers {
 				.append(jsonString(r.name()))
 				.append(", \"share\": ")
 				.append(String.format(Locale.ROOT, "%.4f", r.share()))
+				.append(", \"count\": ")
+				.append(r.count())
 				.append(", \"stack\": ")
 				.append(jsonString(r.stack()))
 				.append('}');
@@ -157,13 +194,18 @@ final class Renderers {
 		return b.append('"').toString();
 	}
 
-	/** The markdown wrapped in a task instruction, ready to hand to an LLM. */
+	/** The full markdown wrapped in a task instruction, ready to hand to an LLM. */
 	static String prompt(ProfileSummary s) {
+		return promptOf(markdown(s));
+	}
+
+	/** Wrap an already-rendered report body in the LLM task instruction. */
+	static String promptOf(String body) {
 		return "You are a JVM performance expert. Below is a compact profile summary of a Java\n"
 				+ "application, distilled from a JFR recording. Identify the single most likely root\n"
 				+ "cause and the specific code change that would fix it. Be concise and cite the named\n"
 				+ "methods; if the signal is ambiguous, say what additional evidence you would collect.\n\n" + "---\n\n"
-				+ markdown(s);
+				+ body;
 	}
 
 }
