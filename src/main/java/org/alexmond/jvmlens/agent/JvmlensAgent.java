@@ -61,11 +61,20 @@ public final class JvmlensAgent {
 		System.err.println("jvmlens-agent: recording; summaries every " + interval + "s -> " + out);
 	}
 
+	/**
+	 * Scope for in-process summaries: like the default, but excludes jvmlens's own
+	 * package so the agent never reports its own dump/summarize work as the target's hot
+	 * path.
+	 */
+	static Scope agentScope() {
+		return Scope.of(List.of(), List.of("org.alexmond.jvmlens"));
+	}
+
 	private static void loop(Recording recording, Path out, int interval) {
 		while (true) {
 			try {
 				Thread.sleep(interval * 1000L);
-				snapshot(recording, out, Scope.defaults());
+				snapshot(recording, out, agentScope());
 			}
 			catch (InterruptedException ex) {
 				Thread.currentThread().interrupt();
