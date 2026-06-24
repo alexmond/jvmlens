@@ -34,6 +34,9 @@ final class Renderers {
 			.append(" GC pauses (")
 			.append(s.gcPauseMillis())
 			.append(" ms).\n\n");
+		if (s.appPackage() != null) {
+			md.append("Application code under `").append(s.appPackage()).append(".*`.\n\n");
+		}
 		appendAdequacy(md, s.execSamples());
 		mdSection(md, "Top hot paths (application code, by sample share)", s.hotPaths());
 		mdSection(md, "Hot leaf methods (self-time, incl. runtime)", s.hotLeaves());
@@ -107,7 +110,8 @@ final class Renderers {
 		jsonArray(j, "allocatedTypes", s.allocatedTypes());
 		jsonArray(j, "locks", s.locks());
 		jsonArray(j, "monitors", s.monitors());
-		j.append("  \"cause\": ").append(jsonString(s.cause())).append("\n}\n");
+		j.append("  \"appPackage\": ").append(jsonString(s.appPackage()));
+		j.append(",\n  \"cause\": ").append(jsonString(s.cause())).append("\n}\n");
 		return j.toString();
 	}
 

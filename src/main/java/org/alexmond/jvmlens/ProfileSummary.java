@@ -21,10 +21,13 @@ import java.util.List;
  * @param locks lock contention by application method, by blocked time
  * @param monitors contended monitor classes, by blocked time
  * @param cause one-line heuristic cause
+ * @param appPackage the recording's dominant application package (e.g.
+ * {@code org.alexmond}), or {@code null} if none could be detected — a hint for what to
+ * pass to {@code --app-package}
  */
 public record ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
 		long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
-		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause) {
+		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage) {
 
 	/**
 	 * One ranked row.
