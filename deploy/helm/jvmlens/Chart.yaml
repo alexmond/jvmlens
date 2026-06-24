@@ -1,0 +1,20 @@
+apiVersion: v2
+name: jvmlens
+description: >-
+  Run a JVM workload with the jvmlens agent attached, as a standalone deployment.
+  Injects -javaagent:jvmlens-agent.jar via an init container + JAVA_TOOL_OPTIONS so
+  the app writes a periodic, LLM-ready profile (and optional variable snapshots)
+  without changing the app image. Point it at any JVM image (default: unitrack).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - jvm
+  - profiling
+  - jfr
+  - observability
+  - agent
+home: https://github.com/alexmond/jvmlens
+maintainers:
+  - name: Alex Mondshain
+    email: alexmond@gmail.com
