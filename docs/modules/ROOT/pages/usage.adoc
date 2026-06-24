@@ -52,6 +52,36 @@ java -jar target/jvmlens.jar profile -d 30 -k run.jfr 12345  # keep the recordin
 
 `-w` / `--warmup` waits before recording so startup/JIT noise is skipped.
 
+== Remote servers (JMX)
+
+For a JVM deployed on another host, `profile` and `watch` take `--jmx` instead of a
+local `<pid>` and drive JFR over a remote JMX connection — no agent to install, just the
+platform FlightRecorder MXBean.
+
+**Start command** — the remote JVM must be launched with JMX remote enabled:
+
+[source,bash]
+----
+java -Dcom.sun.management.jmxremote \
+     -Dcom.sun.management.jmxremote.port=7091 \
+     -Dcom.sun.management.jmxremote.rmi.port=7091 \
+     -Dcom.sun.management.jmxremote.authenticate=false \
+     -Dcom.sun.management.jmxremote.ssl=false \
+     -Djava.rmi.server.hostname=<host-or-ip> \
+     -jar your-app.jar
+----
+
+Then query it remotely (full `service:jmx:...` URL or a `host:port` shorthand):
+
+[source,bash]
+----
+java -jar target/jvmlens.jar profile --jmx my-server:7091 -d 30
+java -jar target/jvmlens.jar watch   --jmx my-server:7091 --on-gc-ms 200
+----
+
+NOTE: the example disables auth/TLS for brevity; secure the JMX endpoint (auth, TLS, or
+an SSH tunnel) for anything beyond a trusted network.
+
 == Continuous watch (rolling profile)
 
 `watch <pid>` keeps a continuous JFR ring buffer on the target and dumps + summarizes
