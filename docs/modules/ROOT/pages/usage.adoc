@@ -10,6 +10,34 @@ java -jar target/jvmlens.jar analyze recording.jfr
 The output is markdown: ranked hot paths (application-frame attributed),
 allocation sites, lock contention, GC pressure, and a one-line heuristic cause.
 
+Each ranked row shows its **absolute hit count** next to the share (e.g.
+`99% (1040 samples)`), so a high percentage built on one stray hit is obvious. Every
+section is tagged with how the data was obtained — `[sampled]` (statistical: CPU and
+allocation) or `[measured]` (exact: lock blocked time, GC) — so the reliability of each
+signal is explicit.
+
+== Report focus
+
+`-r` / `--report` narrows the output to one concern (reusing the same sections the MCP
+server exposes):
+
+[cols="1,3"]
+|===
+| Report | Shows
+
+| `full` (default) | Everything.
+| `cpu` | Hot paths + leaf methods (sampled).
+| `memory` | Allocation sites + types.
+| `locks` | Lock contention + contended monitors (measured).
+| `gc` | GC pressure and the allocation that drives it.
+|===
+
+[source,bash]
+----
+java -jar target/jvmlens.jar analyze --report cpu recording.jfr
+java -jar target/jvmlens.jar analyze -r memory -f json recording.jfr
+----
+
 == Live capture from a running JVM
 
 `profile <pid>` attaches to a running JVM, captures a timed JFR recording, and
