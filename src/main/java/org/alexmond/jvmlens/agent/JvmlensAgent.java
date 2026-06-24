@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jdk.jfr.Configuration;
@@ -12,6 +13,8 @@ import jdk.jfr.Recording;
 
 import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
+import org.alexmond.jvmlens.snapshot.SnapshotCapture;
+import org.alexmond.jvmlens.snapshot.SnapshotStore;
 
 /**
  * In-process jvmlens agent: load it with {@code -javaagent:jvmlens-agent.jar} (or attach
@@ -32,18 +35,23 @@ public final class JvmlensAgent {
 
 	/** Entry point for {@code -javaagent} at JVM launch. */
 	public static void premain(String args, Instrumentation instrumentation) throws Exception {
-		start(args);
+		start(args, instrumentation);
 	}
 
 	/** Entry point for dynamic attach ({@code VirtualMachine.loadAgent}). */
 	public static void agentmain(String args, Instrumentation instrumentation) throws Exception {
-		start(args);
+		start(args, instrumentation);
 	}
 
-	private static void start(String args) throws Exception {
+	private static void start(String args, Instrumentation instrumentation) throws Exception {
 		Map<String, String> opts = parse(args);
 		Path out = Path.of(opts.getOrDefault("out", "jvmlens-summary.md"));
 		int interval = Integer.parseInt(opts.getOrDefault("interval", "60"));
+		String snapshot = opts.get("snapshot");
+		if (snapshot != null && !snapshot.isBlank() && instrumentation != null) {
+			SnapshotCapture.install(instrumentation, List.of(snapshot.split(";")));
+			System.err.println("jvmlens-agent: capturing variable snapshots at " + snapshot);
+		}
 		Recording recording = new Recording(Configuration.getConfiguration(opts.getOrDefault("settings", "profile")));
 		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
 		recording.start();
@@ -78,7 +86,8 @@ public final class JvmlensAgent {
 		try {
 			recording.dump(dump);
 			String summary = Summarizer.summarize(dump, Summarizer.Format.MARKDOWN, scope);
-			Files.writeString(out, summary);
+			String snapshots = SnapshotStore.render();
+			Files.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
 		}
 		finally {
 			Files.deleteIfExists(dump);
