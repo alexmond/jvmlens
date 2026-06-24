@@ -2,6 +2,7 @@ package org.alexmond.jvmlens;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -23,8 +24,11 @@ import picocli.CommandLine.Command;
 /**
  * Runs jvmlens as an MCP server over stdio, exposing the {@link ProfileTools} surface as
  * scoped, navigable tools (overview → drill into hot paths → pull allocation sites) so an
- * agent fetches only the slice it needs rather than one big blob. The server only serves
- * structured profile data — it never calls an LLM, so recordings never leave the host.
+ * agent fetches only the slice it needs rather than one big blob, plus a {@code profile}
+ * tool that captures a live local JVM by pid. The server only serves structured profile
+ * data — it never calls an LLM, so recordings never leave the host. For a remote server,
+ * run this over the host's access channel (e.g. an MCP client command of
+ * {@code ssh host java -jar jvmlens.jar mcp}).
  */
 @Component
 @Command(name = "mcp", mixinStandardHelpOptions = true,
@@ -38,6 +42,17 @@ public class McpServerCommand implements Callable<Integer> {
 			"appPackages":{"type":"array","items":{"type":"string"},"description":"Application package prefixes (include-only)"},\
 			"exclude":{"type":"array","items":{"type":"string"},"description":"Extra non-application package prefixes"}\
 			},"required":["file"]}""";
+
+	/** Input schema for the live {@code profile} tool: capture a local pid on demand. */
+	private static final String LIVE_SCHEMA = """
+			{"type":"object","properties":{\
+			"pid":{"type":"string","description":"Process ID of a local JVM to profile"},\
+			"duration":{"type":"integer","description":"Seconds to record (default 20)"},\
+			"engine":{"type":"string","enum":["jfr","async"],"description":"Capture engine (default jfr)"},\
+			"report":{"type":"string","enum":["full","cpu","memory","locks","gc"],"description":"Report focus (default full)"},\
+			"appPackages":{"type":"array","items":{"type":"string"}},\
+			"exclude":{"type":"array","items":{"type":"string"}}\
+			},"required":["pid"]}""";
 
 	@Override
 	public Integer call() throws Exception {
@@ -53,7 +68,8 @@ public class McpServerCommand implements Callable<Integer> {
 					tool("allocations", "Top allocation sites and allocated types, by estimated bytes.",
 							ProfileTools::allocations),
 					tool("lock_contention", "Lock contention by application method and contended monitors.",
-							ProfileTools::lockContention))
+							ProfileTools::lockContention),
+					liveProfileTool())
 			.build();
 		Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
 		new CountDownLatch(1).await(); // serve until the host closes the process
@@ -72,6 +88,49 @@ public class McpServerCommand implements Callable<Integer> {
 			}
 		};
 		return new SyncToolSpecification(new Tool(name, description, INPUT_SCHEMA), handler);
+	}
+
+	private static SyncToolSpecification liveProfileTool() {
+		BiFunction<McpSyncServerExchange, Map<String, Object>, CallToolResult> handler = (exchange, args) -> {
+			Path recording = null;
+			try {
+				String pid = String.valueOf(args.get("pid"));
+				int duration = intArg(args.get("duration"), 20);
+				Scope scope = Scope.of(strings(args.get("appPackages")), strings(args.get("exclude")));
+				boolean async = "async".equalsIgnoreCase(String.valueOf(args.get("engine")));
+				recording = async ? LiveCapture.captureAsync(pid, duration, 0, "cpu")
+						: LiveCapture.capture(pid, duration, "profile", 0);
+				String out = Summarizer.summarize(recording, Summarizer.Format.MARKDOWN, scope,
+						report(args.get("report")));
+				return new CallToolResult(out, false);
+			}
+			catch (Exception ex) {
+				return new CallToolResult("jvmlens: " + ex.getMessage(), true);
+			}
+			finally {
+				if (recording != null) {
+					recording.toFile().delete();
+				}
+			}
+		};
+		return new SyncToolSpecification(new Tool("profile",
+				"Capture a live local JVM by pid (jfr or async engine) and summarize it.", LIVE_SCHEMA), handler);
+	}
+
+	private static int intArg(Object value, int fallback) {
+		return (value instanceof Number number) ? number.intValue() : fallback;
+	}
+
+	private static Summarizer.Report report(Object value) {
+		if (value == null) {
+			return Summarizer.Report.FULL;
+		}
+		try {
+			return Summarizer.Report.valueOf(value.toString().toUpperCase(Locale.ROOT));
+		}
+		catch (IllegalArgumentException ex) {
+			return Summarizer.Report.FULL;
+		}
 	}
 
 	private static List<String> strings(Object value) {
