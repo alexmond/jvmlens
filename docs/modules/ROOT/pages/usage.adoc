@@ -44,6 +44,32 @@ It diffs the totals, hot paths, allocation sites, locks, and every extended sect
 (▲/▼ percentage-point change, plus `NEW` / `GONE`), ranked by the size of the change; rows
 that barely moved are dropped. `-a`/`-x` scoping applies to both recordings.
 
+==== CI perf-gate (`--assert`)
+
+Add `--assert "<rules>"` (with `--baseline`) and jvmlens **exits non-zero on regression** —
+a backend-free perf gate for a PR, ground the SaaS APMs can't take (they own prod, not the
+pull request). Rules are comma-separated `metric < threshold`:
+
+[cols="1,3"]
+|===
+| Metric | Fails when
+
+| `gc-ms` | the *after* GC pause time (ms) is not under the limit
+| `gc-pct` | GC pause increased by more than the limit (%)
+| `oldobj-delta` | retained (old-object) samples grew by more than the limit
+| `regression-pp` | a hot path's share rose by more than the limit (percentage points)
+| `new-hotpath-pp` | a *new* hot path appears at/above the limit (% share)
+|===
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze -b before.jfr after.jfr \
+  --assert "gc-pct < 10, regression-pp < 5, new-hotpath-pp < 20" || echo "perf regressed"
+----
+
+Each rule prints `✅`/`❌` with the actual value; the process exits `1` if any rule fails,
+`0` if all pass (`2` for bad arguments) — drop it straight into a CI step.
+
 == Report focus
 
 `-r` / `--report` narrows the output to one concern (reusing the same sections the MCP
