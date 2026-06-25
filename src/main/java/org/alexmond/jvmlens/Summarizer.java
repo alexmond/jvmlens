@@ -56,7 +56,11 @@ public final class Summarizer {
 		/** External (network + file) blocking I/O by endpoint. */
 		IO,
 		/** Virtual-thread pinning sites. */
-		PINNING
+		PINNING,
+		/** Top SQL statements (agent JDBC instrumentation). */
+		DB,
+		/** Top HTTP endpoints (agent servlet instrumentation). */
+		WEB
 
 	}
 

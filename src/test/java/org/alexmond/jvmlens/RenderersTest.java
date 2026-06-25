@@ -93,6 +93,26 @@ class RenderersTest {
 	}
 
 	@Test
+	void correlatesDominantSignalsAcrossDimensionsInFull() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 100, 0, 0, 0, 350,
+				List.of(new Ranked("com.example.Svc.handle", 1.0, 100, null)), List.of(), List.of(), List.of(),
+				List.of(), List.of(), "cause", "com.example",
+				List.of(new ProfileSummary.Section("web", "Top HTTP endpoints", "ms", true,
+						List.of(new Ranked("POST /orders", 1.0, 5_000_000_000L, "10 reqs"))),
+						new ProfileSummary.Section("db", "Top SQL", "ms", true, List
+							.of(new Ranked("select * from line where id = ?", 1.0, 4_000_000_000L, "600 calls")))));
+		String full = Renderers.markdown(s);
+		assertThat(full).contains("## Cross-dimension correlation (heuristic)");
+		assertThat(full).contains("slowest endpoint `POST /orders`").contains("hot SQL `select");
+		assertThat(full).contains("350 ms GC");
+		// a single-dimension summary (just a hot path) gets no correlation block
+		ProfileSummary cpuOnly = new ProfileSummary("r.jfr", 100, 0, 0, 0, 0,
+				List.of(new Ranked("com.example.Svc.run", 1.0, 100, null)), List.of(), List.of(), List.of(), List.of(),
+				List.of(), "cause", "com.example");
+		assertThat(Renderers.markdown(cpuOnly)).doesNotContain("Cross-dimension correlation");
+	}
+
+	@Test
 	void withSectionsAppendsAndIsEmptySafe() {
 		ProfileSummary base = sample();
 		assertThat(base.withSections(List.of())).isSameAs(base);

@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -60,8 +61,51 @@ final class Renderers {
 				mdSection(md, sec.title(), sec.rows(), sec.unit(), sec.measured());
 			}
 		}
+		if (report == Summarizer.Report.FULL) {
+			appendCorrelation(md, s);
+		}
 		md.append("## Suspected cause (heuristic)\n- ").append(s.cause()).append('\n');
 		return md.toString();
+	}
+
+	/**
+	 * A hedged cross-dimension note: co-locate the dominant signal from each present
+	 * dimension (endpoint / query / I/O / hot path / lock / GC) so an LLM sees the
+	 * candidate chain in one place. Co-occurrence, not proof — jvmlens has no per-request
+	 * trace linkage, so it suggests, it does not assert.
+	 */
+	private static void appendCorrelation(StringBuilder md, ProfileSummary s) {
+		List<String> parts = new ArrayList<>();
+		addPart(parts, "slowest endpoint", topName(s, "web"));
+		addPart(parts, "hot SQL", topName(s, "db"));
+		addPart(parts, "blocking I/O on", topName(s, "io"));
+		addPart(parts, "hot path", s.hotPaths().isEmpty() ? null : s.hotPaths().get(0).name());
+		addPart(parts, "lock", s.locks().isEmpty() ? null : s.locks().get(0).name());
+		if (s.gcPauseMillis() > 200) {
+			parts.add(s.gcPauseMillis() + " ms GC");
+		}
+		if (parts.size() < 2) {
+			return;
+		}
+		md.append("## Cross-dimension correlation (heuristic)\n- Dominant signals co-occur: ")
+			.append(String.join(", ", parts))
+			.append(". If they share a call path the likely chain is request → query / allocation → GC;"
+					+ " confirm with a focused capture.\n\n");
+	}
+
+	private static void addPart(List<String> parts, String label, String name) {
+		if (name != null) {
+			parts.add(label + " `" + name + "`");
+		}
+	}
+
+	private static String topName(ProfileSummary s, String key) {
+		return s.sections()
+			.stream()
+			.filter((sec) -> sec.key().equals(key) && !sec.rows().isEmpty())
+			.map((sec) -> sec.rows().get(0).name())
+			.findFirst()
+			.orElse(null);
 	}
 
 	private static String baseHeader(ProfileSummary s) {
