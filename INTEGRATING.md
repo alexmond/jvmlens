@@ -115,8 +115,40 @@ Agent options (comma-separated `key=value`):
 | `out` | File the **latest** summary is written to (overwritten each interval) | `jvmlens-summary.md` |
 | `history` | JSONL file the agent **appends** one sample to per interval — for multi-day trends (see below) | — |
 | `interval` | Seconds between summaries | `60` |
-| `settings` | JFR config: `profile` or `default` | `profile` |
+| `settings` | JFR config: `profile` (denser) or `default` (lighter) | `profile` |
 | `snapshot` | `Class#method` to capture argument digests for (semicolon-separate several) | — |
+| `db` / `web` / `messaging` / `cache` | Instrument JDBC / HTTP / Kafka-JMS / Spring-Cache (one dimension each) | off |
+| `micrometer` | Summarize an existing Micrometer registry (no extra instrumentation) | off |
+| `paused` | Launch **without** emitting — `start` it after warm-up (skips startup noise) | off |
+| `control` | A file the agent watches for **in-flight** commands (see *Runtime control* below) | — |
+
+Deadlock detection runs **always** (cheap, agent-side `ThreadMXBean`) — no option needed.
+
+```bash
+# everything on, paused until you start it, controllable:
+java -javaagent:tools/jvmlens-<version>-agent.jar=out=/var/log/builder.md,db,web,paused,control=/var/log/builder.control \
+     -jar build/libs/builder.jar
+```
+
+### Runtime control (in-flight, no restart)
+
+With `control=<file>` set, steer the running agent by issuing commands on the host (the
+`jvmlens control` CLI appends to the file and reads the agent's state back):
+
+```bash
+java -jar tools/jvmlens.jar control /var/log/builder.control start          # begin after warm-up
+java -jar tools/jvmlens.jar control /var/log/builder.control enable db      # turn a dimension on
+java -jar tools/jvmlens.jar control /var/log/builder.control topn db 5      # top 5 SQL with stats
+java -jar tools/jvmlens.jar control /var/log/builder.control settings default  # lighter sampling
+java -jar tools/jvmlens.jar control /var/log/builder.control scope app com.example.builder
+java -jar tools/jvmlens.jar control /var/log/builder.control dump           # emit now
+java -jar tools/jvmlens.jar control /var/log/builder.control status         # read state back
+```
+
+Commands: `start`/`stop`, `clear`, `dump`, `enable`/`disable <dim>`, `settings profile|default`,
+`interval <s>`, `scope app|exclude <prefix>` / `scope reset`, `topn [<category>] <n>`, `status`.
+No ports, no JMX. **`paused` + `start`-after-warm-up is the clean fix for short cold runs that
+otherwise profile startup, not the workload.**
 
 In containers you usually don't control the launch command — set it via the
 JVM-standard env var (honoured by buildpacks and `java -jar` alike):

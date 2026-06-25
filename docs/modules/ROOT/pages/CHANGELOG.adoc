@@ -2,7 +2,63 @@
 
 == 0.1.0 (unreleased)
 
-* Initial proof-of-concept, graduated from the incubator.
-* `analyze <file.jfr>` — summarize a JFR recording into LLM-ready markdown:
-  application-attributed hot paths, allocation sites, lock contention, GC
-  pressure, and a heuristic suspected cause.
+Proof-of-concept graduated from the incubator, then built out into a full
+JVM-evidence → LLM-ready summarizer with a live control plane.
+
+=== Commands
+
+* `analyze <file.jfr>` — summarize a recording into LLM-ready markdown / JSON / prompt.
+* `profile <pid>` — live attach + timed JFR capture (no pre-recorded file); `--engine async`
+  adds native frames via async-profiler; `-w/--warmup`, `-k/--keep`.
+* `watch <pid>` — continuous ring buffer; periodic, or **dump-on-trigger**
+  (`--on-gc-ms` / `--on-cpu-pct` / `--on-old-objects`).
+* `trend <history.jsonl>` — reduce a long-running monitor's accumulated history to a
+  **change-over-time** digest (per-dimension direction, hot-path shift, hedged retention).
+* `control <control-file> <cmd…>` — **in-flight** agent control (see _Runtime control_).
+* `mcp` — stdio MCP server exposing scoped, navigable tools (one per dimension) plus a live
+  `profile` tool; reachable remotely over stdio-over-ssh. Serves data only — never calls an LLM.
+
+=== Dimensions summarized
+
+* **CPU** — hot paths (application-attributed) + hot leaf methods.
+* **Memory** — allocation sites + types, GC pressure.
+* **Wait** — lock contention by method + contended monitors.
+* **External I/O** — socket + file blocking I/O by endpoint (`jdk.SocketRead/Write`,
+  `jdk.FileRead/Write`).
+* **Virtual-thread pinning** — `jdk.VirtualThreadPinned` by site, with `pinnedReason`.
+* **Deadlocks** — authoritative `ThreadMXBean.findDeadlockedThreads` wait-for cycle (agent).
+* **Database (SQL)** — agent JDBC instrumentation; sanitized SQL shapes, latency, N+1 flag.
+* **HTTP endpoints** — agent servlet instrumentation; route-shape, latency, errors.
+* **Messaging / cache** — agent Kafka/JMS and Spring-`Cache` operation timing.
+* **Micrometer** — summarize an existing registry's timers (no extra instrumentation).
+* **Variable snapshots** — agent `snapshot=Class#method` argument digests (correctness).
+* **Cross-dimension correlation** — a hedged note co-locating the dominant signal per dimension.
+
+=== Trust & honesty
+
+* Per-row absolute hit `count` beside every share; sections tagged `[sampled]` vs `[measured]`;
+  a `⚠` adequacy caveat under 200 execution samples.
+* The heuristic under-interprets — retention is flagged as _possible_ growth, never a
+  confident "leak"; correlation suggests, never asserts.
+
+=== Agent & runtime control
+
+* `-javaagent:jvmlens-agent.jar` — in-process, container-native, no attach/JMX. Writes
+  periodic summaries; `history=` appends a JSONL time-series; per-dimension opt-in.
+* **Runtime control** via a watched control file (`control=<file>`) + the `jvmlens control`
+  CLI: `start`/`stop`, `clear`, `dump`, `enable`/`disable <dim>`, `settings profile|default`,
+  `interval`, `scope app|exclude|reset` (filtering), `topn [<category>] <n>` (rows/section),
+  `status` — each returns the agent's state to the caller. No ports, no JMX.
+* `paused` launch + `start`-after-warm-up — the clean fix for short cold runs profiling startup.
+
+=== Outputs & engine
+
+* Formats `md` / `json` / `prompt`; report focuses `full` / `cpu` / `memory` / `locks` / `gc` /
+  `io` / `pinning` / `db` / `web` / `messaging` / `cache` / `metrics` / `deadlock`.
+* Application-frame scoping (`-a/--app-package`, `-x/--exclude`); runtime-adjustable top-N.
+* Dependency-free engine (`jdk.jfr.consumer` only) reused by every front-end.
+
+=== Deploy
+
+* Standalone Helm chart (`deploy/helm/jvmlens`) + `scripts/deploy-agent.sh` attach the agent
+  to any JVM image as a separate release, without touching the app's own chart.

@@ -1,8 +1,13 @@
 # jvmlens — design notes
 
 Forward-looking architecture and decisions, carried over from the incubator so
-work can continue here uninterrupted. This is the "why", not the "what" — for
-usage see the README, for the plan see [ROADMAP.md](ROADMAP.md).
+work can continue here uninterrupted. This is the "why", not the "what" — for the
+full current capability set see the README and
+[CHANGELOG](docs/modules/ROOT/pages/CHANGELOG.adoc), for usage the
+[Usage reference](docs/modules/ROOT/pages/usage.adoc), and for the plan
+[ROADMAP.md](ROADMAP.md). (The "two front-ends" framing below is the original
+rationale; there are now several thin front-ends — CLI, MCP, and the agent — over
+the one engine.)
 
 ## Thesis
 
