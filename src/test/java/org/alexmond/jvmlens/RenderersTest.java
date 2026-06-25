@@ -70,6 +70,36 @@ class RenderersTest {
 		assertThat(Renderers.markdown(s)).contains("1.9 MB").doesNotContain("2000000 bytes");
 	}
 
+	private static ProfileSummary withSections() {
+		return new ProfileSummary("r.jfr", 100, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(), List.of(),
+				List.of(), "cause", "com.example",
+				List.of(new ProfileSummary.Section("io", "External I/O (blocked time, by endpoint)", "ms", true,
+						List.of(new Ranked("db-host:5432", 1.0, 4_000_000_000L, "2.0 MB over 30 ops"))),
+						new ProfileSummary.Section("pinning", "Virtual-thread pinning (pinned time, by site)", "ms",
+								true, List.of(new Ranked("com.example.Svc.run", 1.0, 1_500_000_000L, "MONITOR")))));
+	}
+
+	@Test
+	void rendersExtendedSectionsInFullAndFocus() {
+		String full = Renderers.markdown(withSections());
+		assertThat(full).contains("External I/O (blocked time, by endpoint) [measured]");
+		assertThat(full).contains("`db-host:5432` — 100% (4000 ms)  (2.0 MB over 30 ops)");
+		assertThat(full).contains("Virtual-thread pinning (pinned time, by site) [measured]");
+
+		String io = Renderers.report(withSections(), Summarizer.Report.IO);
+		assertThat(io).contains("External I/O")
+			.doesNotContain("Virtual-thread pinning")
+			.doesNotContain("Top hot paths");
+	}
+
+	@Test
+	void jsonIncludesExtendedSections() {
+		String json = Renderers.json(withSections());
+		assertThat(json).contains("\"sections\": [");
+		assertThat(json).contains("\"key\": \"io\"").contains("\"name\": \"db-host:5432\"");
+		assertThat(json).contains("\"key\": \"pinning\"");
+	}
+
 	@Test
 	void labelsSampledVsMeasuredSections() {
 		String md = Renderers.markdown(sample());

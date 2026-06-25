@@ -52,7 +52,11 @@ public final class Summarizer {
 		/** Lock contention + contended monitors (measured wait). */
 		LOCKS,
 		/** GC pressure and the allocation that drives it. */
-		GC
+		GC,
+		/** External (network + file) blocking I/O by endpoint. */
+		IO,
+		/** Virtual-thread pinning sites. */
+		PINNING
 
 	}
 
@@ -224,6 +228,21 @@ public final class Summarizer {
 		return m.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
 	}
 
+	/** Human-readable bytes (e.g. {@code 2.1 MB}) for I/O teasers. */
+	private static String humanBytes(long bytes) {
+		if (bytes < 1024) {
+			return bytes + " B";
+		}
+		String[] units = { "KB", "MB", "GB", "TB", "PB" };
+		double value = bytes / 1024.0;
+		int i = 0;
+		while (value >= 1024 && i < units.length - 1) {
+			value /= 1024;
+			i++;
+		}
+		return String.format(java.util.Locale.ROOT, "%.1f %s", value, units[i]);
+	}
+
 	/** The most-sampled two-segment package among application frames, or {@code null}. */
 	private static String detectAppPackage(Map<String, Long> appByWeight) {
 		Map<String, Long> byPackage = new HashMap<>();
@@ -273,6 +292,16 @@ public final class Summarizer {
 
 		private final Map<String, Long> lockByMonitor = new HashMap<>();
 
+		private final Map<String, Long> ioByEndpoint = new HashMap<>();
+
+		private final Map<String, Long> ioBytes = new HashMap<>();
+
+		private final Map<String, Long> ioOps = new HashMap<>();
+
+		private final Map<String, Long> pinnedBySite = new HashMap<>();
+
+		private final Map<String, String> pinnedReason = new HashMap<>();
+
 		private long execSamples;
 
 		private long allocBytes;
@@ -296,7 +325,49 @@ public final class Summarizer {
 				}
 				case "jdk.JavaMonitorEnter" -> addLock(e);
 				case "jdk.GCPhasePause" -> addGc(e);
+				case "jdk.SocketRead", "jdk.SocketWrite" -> addSocketIo(e);
+				case "jdk.FileRead", "jdk.FileWrite" -> addFileIo(e);
+				case "jdk.VirtualThreadPinned" -> addPinned(e);
 				default -> {
+				}
+			}
+		}
+
+		private void addSocketIo(RecordedEvent e) {
+			String host = e.hasField("host") ? e.getString("host") : null;
+			String addr = e.hasField("address") ? e.getString("address") : null;
+			String where = (host != null && !host.isBlank()) ? host : addr;
+			long port = e.hasField("port") ? e.getLong("port") : -1;
+			String endpoint = (where != null) ? (where + ((port >= 0) ? (":" + port) : "")) : "unknown";
+			addIo(endpoint, e, "bytesRead", "bytesWritten");
+		}
+
+		private void addFileIo(RecordedEvent e) {
+			String path = e.hasField("path") ? e.getString("path") : "unknown";
+			addIo("file " + path, e, "bytesRead", "bytesWritten");
+		}
+
+		private void addIo(String endpoint, RecordedEvent e, String readField, String writeField) {
+			this.ioByEndpoint.merge(endpoint, e.getDuration().toNanos(), Long::sum);
+			this.ioOps.merge(endpoint, 1L, Long::sum);
+			long bytes = e.hasField(readField) ? e.getLong(readField)
+					: (e.hasField(writeField) ? e.getLong(writeField) : 0);
+			this.ioBytes.merge(endpoint, Math.max(bytes, 0), Long::sum);
+		}
+
+		private void addPinned(RecordedEvent e) {
+			String site = appFrame(e.getStackTrace(), this.scope);
+			if (site == null) {
+				site = leafFrame(e.getStackTrace());
+			}
+			if (site == null) {
+				site = "unknown";
+			}
+			this.pinnedBySite.merge(site, e.getDuration().toNanos(), Long::sum);
+			if (e.hasField("pinnedReason")) {
+				Object reason = e.getValue("pinnedReason");
+				if (reason != null) {
+					this.pinnedReason.putIfAbsent(site, reason.toString());
 				}
 			}
 		}
@@ -350,7 +421,30 @@ public final class Summarizer {
 					ranked(this.allocByType, this.allocBytes, null),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null),
 					ranked(this.lockByMonitor, sum(this.lockByMonitor), null), heuristic(),
-					detectAppPackage(detectionWeights()));
+					detectAppPackage(detectionWeights()), extendedSections());
+		}
+
+		/** The beyond-CPU/memory/wait dimensions, only those with any signal. */
+		private List<ProfileSummary.Section> extendedSections() {
+			List<ProfileSummary.Section> out = new ArrayList<>();
+			if (!this.ioByEndpoint.isEmpty()) {
+				out.add(new ProfileSummary.Section("io", "External I/O (blocked time, by endpoint)", "ms", true,
+						ranked(this.ioByEndpoint, sum(this.ioByEndpoint), ioTeasers())));
+			}
+			if (!this.pinnedBySite.isEmpty()) {
+				out.add(new ProfileSummary.Section("pinning", "Virtual-thread pinning (pinned time, by site)", "ms",
+						true, ranked(this.pinnedBySite, sum(this.pinnedBySite), this.pinnedReason)));
+			}
+			return out;
+		}
+
+		/** Per-endpoint teaser: humanized bytes + op count. */
+		private Map<String, String> ioTeasers() {
+			Map<String, String> teasers = new HashMap<>();
+			this.ioByEndpoint.keySet()
+				.forEach((ep) -> teasers.put(ep, humanBytes(this.ioBytes.getOrDefault(ep, 0L)) + " over "
+						+ this.ioOps.getOrDefault(ep, 0L) + " ops"));
+			return teasers;
 		}
 
 		/**
@@ -377,6 +471,15 @@ public final class Summarizer {
 			}
 			if (topApp != null && this.execSamples > 0 && this.cpuByApp.get(topApp) * 100.0 / this.execSamples > 40) {
 				return "CPU-bound — `" + topApp + "` accounts for the majority of samples.";
+			}
+			String topPinned = top(this.pinnedBySite);
+			if (topPinned != null && sum(this.pinnedBySite) > 100_000_000L) {
+				return "Virtual-thread pinning — carrier threads pinned at `" + topPinned
+						+ "`; a synchronized block or native call is blocking the carrier.";
+			}
+			String topIo = top(this.ioByEndpoint);
+			if (topApp == null && topIo != null) {
+				return "I/O-bound — blocked time concentrated on `" + topIo + "`.";
 			}
 			return (topApp != null) ? "Hot path is `" + topApp + "`." : "No dominant signal.";
 		}

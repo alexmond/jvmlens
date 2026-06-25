@@ -55,6 +55,11 @@ final class Renderers {
 				mdSection(md, "Contended monitors", s.monitors(), "ms", true);
 			}
 		}
+		for (ProfileSummary.Section sec : s.sections()) {
+			if (report == Summarizer.Report.FULL || report.name().equalsIgnoreCase(sec.key())) {
+				mdSection(md, sec.title(), sec.rows(), sec.unit(), sec.measured());
+			}
+		}
 		md.append("## Suspected cause (heuristic)\n- ").append(s.cause()).append('\n');
 		return md.toString();
 	}
@@ -170,9 +175,38 @@ final class Renderers {
 		jsonArray(j, "allocatedTypes", s.allocatedTypes());
 		jsonArray(j, "locks", s.locks());
 		jsonArray(j, "monitors", s.monitors());
+		jsonSections(j, s.sections());
 		j.append("  \"appPackage\": ").append(jsonString(s.appPackage()));
 		j.append(",\n  \"cause\": ").append(jsonString(s.cause())).append("\n}\n");
 		return j.toString();
+	}
+
+	private static void jsonSections(StringBuilder j, List<ProfileSummary.Section> sections) {
+		j.append("  \"sections\": [");
+		for (int i = 0; i < sections.size(); i++) {
+			ProfileSummary.Section sec = sections.get(i);
+			j.append((i == 0) ? "\n" : ",\n");
+			j.append("    {\"key\": ")
+				.append(jsonString(sec.key()))
+				.append(", \"title\": ")
+				.append(jsonString(sec.title()))
+				.append(", \"measured\": ")
+				.append(sec.measured())
+				.append(", \"rows\": [");
+			for (int r = 0; r < sec.rows().size(); r++) {
+				Ranked row = sec.rows().get(r);
+				j.append((r == 0) ? "" : ", ");
+				j.append("{\"name\": ")
+					.append(jsonString(row.name()))
+					.append(", \"share\": ")
+					.append(String.format(Locale.ROOT, "%.4f", row.share()))
+					.append(", \"count\": ")
+					.append(row.count())
+					.append('}');
+			}
+			j.append("]}");
+		}
+		j.append(sections.isEmpty() ? "],\n" : "\n  ],\n");
 	}
 
 	private static void jsonArray(StringBuilder j, String name, List<Ranked> rows) {

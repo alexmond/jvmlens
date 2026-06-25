@@ -30,7 +30,15 @@ server exposes):
 | `memory` | Allocation sites + types.
 | `locks` | Lock contention + contended monitors (measured).
 | `gc` | GC pressure and the allocation that drives it.
+| `io` | External (network + file) blocking I/O by endpoint (measured).
+| `pinning` | Virtual-thread pinning sites, by pinned time (measured).
 |===
+
+The `io` and `pinning` sections appear in the `full` report whenever the recording carries
+those events. `io` aggregates `jdk.SocketRead`/`jdk.SocketWrite` (by remote `host:port`) and
+`jdk.FileRead`/`jdk.FileWrite` (by path), ranked by blocked time with a bytes/op teaser.
+`pinning` aggregates `jdk.VirtualThreadPinned` by site, surfacing the `pinnedReason`
+(`MONITOR` / `NATIVE_METHOD` on JDK 24+) — the carrier-pinning that silently caps virtual-thread throughput.
 
 [source,bash]
 ----
@@ -217,6 +225,8 @@ the slice it needs (progressive disclosure) instead of one large blob:
 | `hot_leaves` | Leaf (self-time) hot methods, runtime included.
 | `allocations` | Top allocation sites and allocated types.
 | `lock_contention` | Lock contention by method and contended monitors.
+| `io` | External (network + file) blocking I/O by endpoint.
+| `pinning` | Virtual-thread pinning sites, by pinned time.
 | `profile` | Capture a **live** local JVM by `pid` (`engine` jfr/async, `report` focus) and summarize it.
 |===
 

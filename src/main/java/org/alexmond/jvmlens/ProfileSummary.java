@@ -24,10 +24,25 @@ import java.util.List;
  * @param appPackage the recording's dominant application package (e.g.
  * {@code org.alexmond}), or {@code null} if none could be detected — a hint for what to
  * pass to {@code --app-package}
+ * @param sections extended (beyond CPU/memory/wait) dimensions — external I/O,
+ * virtual-thread pinning, and, later, web / db / messaging — each a self-describing
+ * {@link Section} so new dimensions are additive rather than a signature change
  */
 public record ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
 		long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
-		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage) {
+		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage,
+		List<Section> sections) {
+
+	/**
+	 * Back-compatible constructor for callers (and tests) predating the extended
+	 * {@code sections}; defaults them to empty.
+	 */
+	public ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
+			long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
+			List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage) {
+		this(source, execSamples, allocTypes, oldObjects, gcPauses, gcPauseMillis, hotPaths, hotLeaves, allocSites,
+				allocatedTypes, locks, monitors, cause, appPackage, List.of());
+	}
 
 	/**
 	 * One ranked row.
@@ -39,6 +54,21 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 	 * @param stack optional call-stack teaser ({@code null} when not applicable)
 	 */
 	public record Ranked(String name, double share, long count, String stack) {
+	}
+
+	/**
+	 * One extended dimension's ranked section, self-describing so {@link Renderers} can
+	 * render it generically and a report focus can select it by {@code key}.
+	 *
+	 * @param key the focus key (e.g. {@code io}, {@code pinning}, {@code db}) — matches a
+	 * {@link Summarizer.Report} name
+	 * @param title the section heading
+	 * @param unit count unit for {@code formatCount} ({@code ms} / {@code bytes} / other)
+	 * @param measured {@code true} for exact ([measured]) signal, {@code false} for
+	 * sampled
+	 * @param rows the ranked rows
+	 */
+	public record Section(String key, String title, String unit, boolean measured, List<Ranked> rows) {
 	}
 
 }
