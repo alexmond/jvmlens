@@ -20,6 +20,7 @@ import org.alexmond.jvmlens.Summarizer;
 import org.alexmond.jvmlens.cache.CacheCapture;
 import org.alexmond.jvmlens.cache.CacheStore;
 import org.alexmond.jvmlens.consume.MicrometerSource;
+import org.alexmond.jvmlens.deadlock.DeadlockDetector;
 import org.alexmond.jvmlens.messaging.MessagingCapture;
 import org.alexmond.jvmlens.messaging.MessagingStore;
 import org.alexmond.jvmlens.snapshot.SnapshotCapture;
@@ -165,6 +166,8 @@ public final class JvmlensAgent {
 	 */
 	private static List<ProfileSummary.Section> instrumentationSections() {
 		List<ProfileSummary.Section> all = new ArrayList<>();
+		all.addAll(DeadlockDetector.detect()); // always — cheap, and a deadlock is the
+												// top signal
 		all.addAll(SqlStore.sections());
 		all.addAll(WebStore.sections());
 		all.addAll(MessagingStore.sections());

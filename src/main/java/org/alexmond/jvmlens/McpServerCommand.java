@@ -73,6 +73,8 @@ public class McpServerCommand implements Callable<Integer> {
 							(s) -> ProfileTools.extended(s, "io")),
 					tool("pinning", "Virtual-thread pinning sites, by pinned time.",
 							(s) -> ProfileTools.extended(s, "pinning")),
+					tool("deadlock", "Deadlocked threads and their wait-for cycle (agent recordings).",
+							(s) -> ProfileTools.extended(s, "deadlock")),
 					liveProfileTool())
 			.build();
 		Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));

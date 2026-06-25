@@ -66,7 +66,9 @@ public final class Summarizer {
 		/** Top cache operations (agent Spring-Cache instrumentation). */
 		CACHE,
 		/** Top Micrometer timers (consumed from an existing registry). */
-		METRICS
+		METRICS,
+		/** Deadlocked threads (agent ThreadMXBean check). */
+		DEADLOCK
 
 	}
 

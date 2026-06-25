@@ -37,7 +37,15 @@ server exposes):
 | `messaging` | Top messaging operations (agent Kafka/JMS instrumentation).
 | `cache` | Top cache operations (agent Spring-Cache instrumentation).
 | `metrics` | Top Micrometer timers (consumed from an existing registry).
+| `deadlock` | Deadlocked threads and their wait-for cycle (agent recordings).
 |===
+
+The **agent always runs a deadlock check** (`ThreadMXBean.findDeadlockedThreads`) — no
+option needed. A true deadlock is distinct from ordinary lock contention: the threads block
+*forever* and never acquire the monitor, so JFR's `JavaMonitorEnter` never fires; the
+`ThreadMXBean` check is the reliable signal (and only sees the JVM it runs in, hence
+agent-only). When present, a `Deadlocked threads (wait-for cycle)` section names each stuck
+thread and the lock it waits on / who holds it.
 
 The `full` report also appends a hedged **Cross-dimension correlation** note when two or more
 dimensions carry signal — it co-locates the dominant endpoint / query / I/O / hot path / lock
@@ -274,6 +282,7 @@ the slice it needs (progressive disclosure) instead of one large blob:
 | `lock_contention` | Lock contention by method and contended monitors.
 | `io` | External (network + file) blocking I/O by endpoint.
 | `pinning` | Virtual-thread pinning sites, by pinned time.
+| `deadlock` | Deadlocked threads and their wait-for cycle (agent recordings).
 | `profile` | Capture a **live** local JVM by `pid` (`engine` jfr/async, `report` focus) and summarize it.
 |===
 

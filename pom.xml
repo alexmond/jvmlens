@@ -126,6 +126,7 @@
                                         <include>org/alexmond/jvmlens/cache/**</include>
                                         <include>org/alexmond/jvmlens/probe/**</include>
                                         <include>org/alexmond/jvmlens/consume/**</include>
+                                        <include>org/alexmond/jvmlens/deadlock/**</include>
                                         <include>org/alexmond/jvmlens/Summarizer*.class</include>
                                         <include>org/alexmond/jvmlens/Renderers*.class</include>
                                         <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
