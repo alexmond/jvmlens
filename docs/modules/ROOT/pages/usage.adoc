@@ -16,6 +16,34 @@ section is tagged with how the data was obtained — `[sampled]` (statistical: C
 allocation) or `[measured]` (exact: lock blocked time, GC) — so the reliability of each
 signal is explicit.
 
+=== Differential analysis (before → after)
+
+The agent optimize→measure loop — "did the fix work, what changed" — is a single flag.
+`-b` / `--baseline` diffs `<file.jfr>` (the _after_) against a baseline (the _before_) and
+names what moved, instead of making you eyeball two summaries:
+
+[source,bash]
+----
+java -jar target/jvmlens.jar analyze --baseline before.jfr after.jfr
+java -jar target/jvmlens.jar analyze -b before.jfr after.jfr -f prompt   # wrapped for an LLM
+----
+
+[source]
+----
+# JVM profile diff (before.jfr → after.jfr)
+## Totals
+- Exec samples: 685 → 235 (-450, -66%)
+- GC pause (ms): 40 → 1550 (+1510, +3775%)
+## Hot paths (sample share)
+- `GoFmt.floatString` — 50%→8% (▼ 42pp)
+- `Cache.get` — NEW 40%
+- `ListNode.iterator` — GONE (was 16%)
+----
+
+It diffs the totals, hot paths, allocation sites, locks, and every extended section by share
+(▲/▼ percentage-point change, plus `NEW` / `GONE`), ranked by the size of the change; rows
+that barely moved are dropped. `-a`/`-x` scoping applies to both recordings.
+
 == Report focus
 
 `-r` / `--report` narrows the output to one concern (reusing the same sections the MCP
