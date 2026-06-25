@@ -120,6 +120,7 @@
                                     <includes>
                                         <include>org/alexmond/jvmlens/agent/**</include>
                                         <include>org/alexmond/jvmlens/snapshot/**</include>
+                                        <include>org/alexmond/jvmlens/sql/**</include>
                                         <include>org/alexmond/jvmlens/Summarizer*.class</include>
                                         <include>org/alexmond/jvmlens/Renderers*.class</include>
                                         <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
@@ -275,6 +276,8 @@
                                         <!-- Bytecode-instrumentation glue; verified by an integration test, not unit coverage -->
                                         <exclude>org.alexmond.jvmlens.snapshot.SnapshotAdvice</exclude>
                                         <exclude>org.alexmond.jvmlens.snapshot.SnapshotCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.sql.SqlAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.sql.SqlCapture</exclude>
                                     </excludes>
                                 </rule>
                             </rules>
