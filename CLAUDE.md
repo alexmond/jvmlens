@@ -61,6 +61,9 @@ path produces JFR consumed by the same engine*.
     (`--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects`).
   - `trend <history.jsonl>` — reduces the agent's appended `History.Sample` time-series (the
     `history=` long-run mode) to a change-over-time digest (engine `History`; CLI parses via Jackson).
+  - `control <control-file> <cmd…>` — appends an in-flight command to the agent's watched control
+    file (start/stop/clear/dump, enable/disable, settings, interval, scope, topn, status); reads the
+    agent's `<file>.status` back. The command logic is the `agent.AgentControl` state machine.
   - `mcp` — stdio MCP server (`McpServerCommand`) exposing `ProfileTools` as scoped tools
     (overview → hot_paths/hot_leaves/allocations/lock_contention) **plus a live `profile`
     tool**; reach a remote host via stdio-over-ssh. Serves data only, never calls an LLM.
@@ -148,6 +151,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-06-25 — **e2cd** — agent `messaging` (Kafka/JMS send+poll/receive) + `cache` (Spring `Cache` get/put/evict) options. Shared `probe.OpStore` aggregates by `Class.method` via `@Advice.Origin` (no reflection, version-agnostic); `MessagingStore`/`CacheStore` are thin static facades. Report focuses `messaging`/`cache`. Pattern: extract the common store once, dimensions = matcher config. [#28]
 - 2026-06-25 — **e3-consume** — agent `micrometer` option reflectively reads `Metrics.globalRegistry` (`MicrometerSource`, jacoco-excluded glue) → `MetricsReader` summarizes timers into a `metrics` section; detect-and-degrade, no Micrometer dep. `MetricsReader.read(Object)` tested with Micrometer-shaped fakes. **Extended-profiling track E1–E4 all shipped** (#26/#28/#27/#29). OTel/Actuator HTTP-scrape still future. [#27]
 - 2026-06-25 — **deadlock** — `DeadlockDetector` (java.lang.management, dependency-free) renders `ThreadMXBean.findDeadlockedThreads` as a `deadlock` Section; **agent-always-on** (cheap, top signal). Why ThreadMXBean not JFR: a true deadlock never acquires the monitor so `JavaMonitorEnter` never fires; and the bean only sees its own JVM → agent-only. Report focus + MCP `deadlock` tool. Tested with a real 2-thread deadlock. [#23]
+- 2026-06-25 — **control-plane** — in-flight agent control via a **watched control file** (no ports/JMX): `agent.AgentControl` state machine + `ControlChannel` + `jvmlens control` CLI (reads `<file>.status` back). Commands: start/stop/clear/dump, enable/disable (lazy ByteBuddy), settings, interval, scope, topn (`RankLimits`). `paused`+`start`-after-warmup solves cold-start (#2). Why file not port: keeps the no-JMX stance.
+- 2026-06-25 — **agent-shade** — new engine classes the agent uses **must** be added to the agent-jar shade `<includes>` (it lists engine classes explicitly), else `NoClassDefFoundError` at runtime. `RankLimits` was missed — caught only by an end-to-end agent smoke test. Smoke-test the agent jar after adding engine deps it touches.
 
 ### Historic
 
