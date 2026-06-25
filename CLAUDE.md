@@ -59,6 +59,8 @@ path produces JFR consumed by the same engine*.
     (`LiveCapture`); `--engine async` uses ap-loader (native frames); `-w/--warmup`, `-k/--keep`.
   - `watch <pid>` — continuous JFR ring buffer; periodic, or dump-on-trigger via `WatchTrigger`
     (`--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects`).
+  - `trend <history.jsonl>` — reduces the agent's appended `History.Sample` time-series (the
+    `history=` long-run mode) to a change-over-time digest (engine `History`; CLI parses via Jackson).
   - `mcp` — stdio MCP server (`McpServerCommand`) exposing `ProfileTools` as scoped tools
     (overview → hot_paths/hot_leaves/allocations/lock_contention) **plus a live `profile`
     tool**; reach a remote host via stdio-over-ssh. Serves data only, never calls an LLM.
@@ -136,6 +138,7 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-06-24 — **deploy** — `deploy/helm/jvmlens` + `scripts/deploy-agent.sh` attach the agent to any JVM image as a *separate* release. Caveat: a profiled copy sharing the app's `envFrom` hits the **same DB** — point it at a throwaway DB or run read-mostly.
 - 2026-06-24 — **validation** — blind A/B settled the whole-idea gate: 8/8 isolated LLM sessions named the planted bug; on the fair `lock` head-to-head the summary matched raw's diagnosis at 5.5× fewer tokens (cpu/alloc raw overflow). Why: the release precondition ("real benefits") is now evidence-backed, not asserted. [see → examples/experiments.md]
 - 2026-06-24 — **adoption** — `INTEGRATING.md` (mirrored as `docs/.../integrating.adoc`) is the portable guide for profiling *other* projects — decision table over the 5 paths + a paste-ready CLAUDE.md snippet. Why: external adoption needs a task-oriented doc, not the flag reference.
+- 2026-06-25 — **long-run** — agent `history=<file.jsonl>` *appends* one compact CPU/memory/wait sample per interval (vs overwriting `out`); `jvmlens trend <file>` digests a multi-day run (engine `History`; CLI parses JSONL via Jackson). Why: "let it run for days, then check" needs retained time-series, not just the latest window. Retention stays hedged — *possible* growth, never "leak".
 
 ### Historic
 

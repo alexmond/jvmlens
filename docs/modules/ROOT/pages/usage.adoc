@@ -145,10 +145,38 @@ summary to a file every interval. No attach, no JMX, nothing external:
 java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-app.jar
 ----
 
-Options (comma-separated `key=value`): `out` (summary file), `interval` (seconds between
-summaries), `settings` (JFR config, default `profile`), and `snapshot` (see below). The
-agent jar is the separate `jvmlens-agent.jar` artifact (engine + agent + a relocated
-ByteBuddy); it can also be attached dynamically via the `Agent-Class` entry.
+Options (comma-separated `key=value`): `out` (latest-summary file), `interval` (seconds
+between summaries), `settings` (JFR config, default `profile`), `snapshot` (see below),
+and `history` (see *Long-running monitor* below). The agent jar is the separate
+`jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
+attached dynamically via the `Agent-Class` entry.
+
+=== Long-running monitor (history + trend)
+
+`out` is overwritten each interval — only the latest window survives. For a *multi-day*
+watch, add `history=<file.jsonl>` and the agent instead **appends** one compact sample per
+interval (covering all three dimensions — CPU, memory, wait), so nothing is lost:
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,history=/var/log/jvmlens.jsonl,interval=300 \
+     -jar your-app.jar
+----
+
+Let it run, then `trend` reduces the accumulated run to a change-over-time report — what
+moved across the days, not a single snapshot:
+
+[source,bash]
+----
+java -jar jvmlens.jar trend /var/log/jvmlens.jsonl          # markdown digest
+java -jar jvmlens.jar trend -f prompt /var/log/jvmlens.jsonl  # wrapped for an LLM
+java -jar jvmlens.jar trend -f json   /var/log/jvmlens.jsonl  # the raw samples
+----
+
+The digest reports each dimension's first-third→last-third direction (rising / flat /
+falling), whether the hot path stayed stable or shifted, when lock contention appeared,
+and a **hedged** retention indicator — old-object growth alongside rising GC pressure is
+flagged as *possible* retention growth, never a confident "leak".
 
 === Variable snapshots
 

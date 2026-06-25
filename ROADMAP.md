@@ -49,6 +49,12 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
 - [x] In-process agent — `jvmlens-agent.jar` (`-javaagent` / dynamic attach) keeps a
       continuous in-process JFR ring buffer and writes periodic LLM-ready summaries to a
       file; container-native, no attach/JMX. Separate dependency-free jar. The base for v2.
+- [x] **Long-running monitor** — the agent's `history=<file.jsonl>` appends one compact
+      sample (CPU + memory + wait) per interval instead of overwriting; `jvmlens trend
+      <file.jsonl>` reduces a multi-day run to a change-over-time digest with a hedged
+      retention indicator. The "let it run for days, then check" loop.
+- [ ] Deadlock detection — wait-for-graph cycles / `ThreadMXBean.findDeadlockedThreads`
+      surfaced as a first-class `[measured]` signal (issue #23).
 - [ ] Optional: MCP-over-HTTP for multi-client/long-lived sidecars; agent embedding the
       MCP endpoint; agent dump-on-trigger (latency/error/OOM).
 - [x] async-profiler fidelity via ap-loader — `profile --engine async` captures with
