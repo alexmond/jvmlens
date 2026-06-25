@@ -155,7 +155,8 @@ java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-
 
 Options (comma-separated `key=value`): `out` (latest-summary file), `interval` (seconds
 between summaries), `settings` (JFR config, default `profile`), `snapshot` (see below),
-and `history` (see *Long-running monitor* below). The agent jar is the separate
+`db` (instrument JDBC — see *Database (SQL)* below), and `history` (see *Long-running
+monitor* below). The agent jar is the separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
 attached dynamically via the `Agent-Class` entry.
 
@@ -185,6 +186,23 @@ The digest reports each dimension's first-third→last-third direction (rising /
 falling), whether the hot path stayed stable or shifted, when lock contention appeared,
 and a **hedged** retention indicator — old-object growth alongside rising GC pressure is
 flagged as *possible* retention growth, never a confident "leak".
+
+=== Database (SQL)
+
+Add `db` to the agent options and it instruments `java.sql.Statement.execute*` (ByteBuddy)
+to time JDBC calls, aggregating them by **sanitized SQL shape** (literals parameterized, so
+no values reach the summary) into a `Top SQL (by total time)` section — each shape with its
+call count, average latency, and a hedged *possible N+1* flag for high-count low-latency
+shapes:
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,db,interval=60 -jar app.jar
+----
+
+The SQL comes from the statement argument (plain `Statement`) or the statement's
+`toString()` (most `PreparedStatement` drivers — H2, PostgreSQL); unknown shapes degrade to
+`?`. This is profiling signal, not a query log — it never records literal values.
 
 === Variable snapshots
 

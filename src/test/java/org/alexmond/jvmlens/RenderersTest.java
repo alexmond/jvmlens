@@ -93,6 +93,16 @@ class RenderersTest {
 	}
 
 	@Test
+	void withSectionsAppendsAndIsEmptySafe() {
+		ProfileSummary base = sample();
+		assertThat(base.withSections(List.of())).isSameAs(base);
+		ProfileSummary merged = withSections()
+			.withSections(List.of(new ProfileSummary.Section("db", "Top SQL", "ms", true, List.of())));
+		assertThat(merged.sections()).hasSize(3);
+		assertThat(Renderers.markdown(merged)).contains("External I/O").contains("Top SQL");
+	}
+
+	@Test
 	void jsonIncludesExtendedSections() {
 		String json = Renderers.json(withSections());
 		assertThat(json).contains("\"sections\": [");

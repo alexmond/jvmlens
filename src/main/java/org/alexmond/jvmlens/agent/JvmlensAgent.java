@@ -18,6 +18,8 @@ import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
 import org.alexmond.jvmlens.snapshot.SnapshotCapture;
 import org.alexmond.jvmlens.snapshot.SnapshotStore;
+import org.alexmond.jvmlens.sql.SqlCapture;
+import org.alexmond.jvmlens.sql.SqlStore;
 
 /**
  * In-process jvmlens agent: load it with {@code -javaagent:jvmlens-agent.jar} (or attach
@@ -29,9 +31,10 @@ import org.alexmond.jvmlens.snapshot.SnapshotStore;
  * Options are a comma-separated {@code key=value} list passed after {@code =}, e.g.
  * {@code -javaagent:jvmlens-agent.jar=out=/tmp/jvmlens.md,interval=60}. Keys: {@code out}
  * (latest-summary file), {@code interval} (seconds between summaries), {@code settings}
- * (JFR config), {@code snapshot} (variable-snapshot targets), and {@code history} — a
- * JSONL file the agent <em>appends</em> one compact {@link History.Sample} to each
- * interval, so a multi-day run can be reduced to a trend later ({@code jvmlens trend}).
+ * (JFR config), {@code snapshot} (variable-snapshot targets), {@code db} (instrument JDBC
+ * statement timing into a {@code Top SQL} section), and {@code history} — a JSONL file
+ * the agent <em>appends</em> one compact {@link History.Sample} to each interval, so a
+ * multi-day run can be reduced to a trend later ({@code jvmlens trend}).
  */
 public final class JvmlensAgent {
 
@@ -58,6 +61,10 @@ public final class JvmlensAgent {
 		if (snapshot != null && !snapshot.isBlank() && instrumentation != null) {
 			SnapshotCapture.install(instrumentation, List.of(snapshot.split(";")));
 			System.err.println("jvmlens-agent: capturing variable snapshots at " + snapshot);
+		}
+		if (opts.containsKey("db") && instrumentation != null) {
+			SqlCapture.install(instrumentation);
+			System.err.println("jvmlens-agent: capturing JDBC statement timing");
 		}
 		Recording recording = new Recording(Configuration.getConfiguration(opts.getOrDefault("settings", "profile")));
 		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
@@ -108,7 +115,7 @@ public final class JvmlensAgent {
 		Path dump = Files.createTempFile("jvmlens-agent", ".jfr");
 		try {
 			recording.dump(dump);
-			ProfileSummary ps = Summarizer.analyze(dump, scope);
+			ProfileSummary ps = Summarizer.analyze(dump, scope).withSections(SqlStore.sections());
 			String summary = Summarizer.render(ps, Summarizer.Format.MARKDOWN);
 			String snapshots = SnapshotStore.render();
 			Files.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
