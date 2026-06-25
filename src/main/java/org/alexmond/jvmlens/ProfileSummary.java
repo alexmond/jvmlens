@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -42,6 +43,24 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 			List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage) {
 		this(source, execSamples, allocTypes, oldObjects, gcPauses, gcPauseMillis, hotPaths, hotLeaves, allocSites,
 				allocatedTypes, locks, monitors, cause, appPackage, List.of());
+	}
+
+	/**
+	 * A copy of this summary with {@code extra} extended sections appended — how an
+	 * instrumentation front-end (e.g. the agent's SQL/web capture) folds its dimensions
+	 * into the same render-agnostic structure the engine produced from JFR.
+	 * @param extra sections to append (ignored if empty/null)
+	 * @return this if {@code extra} is empty, else a copy with the sections merged
+	 */
+	public ProfileSummary withSections(List<Section> extra) {
+		if (extra == null || extra.isEmpty()) {
+			return this;
+		}
+		List<Section> merged = new ArrayList<>(this.sections);
+		merged.addAll(extra);
+		return new ProfileSummary(this.source, this.execSamples, this.allocTypes, this.oldObjects, this.gcPauses,
+				this.gcPauseMillis, this.hotPaths, this.hotLeaves, this.allocSites, this.allocatedTypes, this.locks,
+				this.monitors, this.cause, this.appPackage, List.copyOf(merged));
 	}
 
 	/**
