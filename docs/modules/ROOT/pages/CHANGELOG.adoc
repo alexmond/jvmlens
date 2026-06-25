@@ -8,7 +8,8 @@ JVM-evidence → LLM-ready summarizer with a live control plane.
 === Commands
 
 * `analyze <file.jfr>` — summarize a recording into LLM-ready markdown / JSON / prompt;
-  `--baseline <before.jfr>` **diffs** two recordings (names what changed: `50%→8%`, NEW / GONE).
+  `--baseline <before.jfr>` **diffs** two recordings (names what changed: `50%→8%`, NEW / GONE);
+  `--assert "<rules>"` is a **CI perf-gate** (non-zero exit on regression).
 * `profile <pid>` — live attach + timed JFR capture (no pre-recorded file); `--engine async`
   adds native frames via async-profiler; `-w/--warmup`, `-k/--keep`.
 * `watch <pid>` — continuous ring buffer; periodic, or **dump-on-trigger**
