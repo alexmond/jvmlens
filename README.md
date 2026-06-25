@@ -9,13 +9,39 @@ is hundreds of thousands of tokens and routinely overflows a model's context
 window. jvmlens reads a JFR recording and emits a few hundred tokens of ranked,
 source-attributed signal you can hand straight to a coding agent.
 
-> Early / proof-of-concept. CPU, allocation, lock-contention and GC signal from
-> an existing `.jfr`, a live JVM (`profile <pid>`, JFR or async-profiler), or a
-> continuous ring buffer (`watch`), rendered as markdown, JSON, or an LLM prompt — or
-> served to an agent over MCP (`jvmlens mcp`), or run always-on as a Java agent
-> (`-javaagent:jvmlens-agent.jar`) that writes periodic summaries in-process — including
-> **variable snapshots** (`snapshot=Class#method`) for correctness questions. For remote
-> servers, run jvmlens on the host (e.g. MCP over `ssh`).
+## What it captures
+
+Beyond the classic three (CPU / memory / wait), jvmlens summarizes **external I/O**,
+**virtual-thread pinning**, **deadlocks**, and — via the in-process agent — **SQL**,
+**HTTP endpoints**, **messaging**, **cache**, and **Micrometer** timers, plus **variable
+snapshots** for correctness and a hedged **cross-dimension correlation** that ties a slow
+endpoint to its query, hot path, and GC. Every row carries an absolute hit count, sections
+are tagged `[sampled]` vs `[measured]`, and the heuristic under-interprets (it never claims
+a confident "leak").
+
+## Inputs & commands
+
+| Command | What |
+|---|---|
+| `analyze <file.jfr>` | Summarize an existing recording (offline). |
+| `profile <pid>` | Live attach + timed JFR capture; `--engine async` for native frames; `-w/--warmup`, `-k/--keep`. |
+| `watch <pid>` | Continuous ring buffer — periodic, or **dump-on-trigger** (`--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects`). |
+| `trend <history.jsonl>` | Reduce a multi-day agent run to a **change-over-time** digest. |
+| `control <file> <cmd…>` | **In-flight** control of a running agent (no ports/JMX). |
+| `mcp` | Stdio MCP server — scoped tools per dimension; reachable over `ssh`. Serves data only. |
+| `-javaagent:jvmlens-agent.jar` | In-process, container-native; periodic summaries, `history=`, per-dimension opt-in. |
+
+Output is markdown / JSON / LLM-prompt (`-f`), narrowable to one concern (`-r`), and scoped
+to your packages (`-a`/`-x`). For remote servers, run jvmlens *on the host* (ssh / kubectl /
+docker exec) — only the few-hundred-token summary travels back.
+
+## Runtime control (in-flight)
+
+Like a desktop profiler's live controls, the agent can be steered without a restart through a
+**watched control file** — start/stop, `enable`/`disable` a dimension, switch sampling
+density, adjust filtering, set per-section top-N — via `jvmlens control <file> <cmd>` (run on
+the host). Launching `paused` and starting after warm-up is the clean fix for short cold runs
+profiling startup. See **[Usage → Runtime control](docs/modules/ROOT/pages/usage.adoc)**.
 
 ## Why
 
