@@ -9,13 +9,6 @@ is hundreds of thousands of tokens and routinely overflows a model's context
 window. jvmlens reads a JFR recording and emits a few hundred tokens of ranked,
 source-attributed signal you can hand straight to a coding agent.
 
-[NOTE]
-====
-Early / proof-of-concept. CPU, allocation, lock-contention and GC signal from an
-existing `.jfr`. Live attach, async-profiler fidelity, JSON output and an MCP
-server are on the roadmap.
-====
-
 == Why
 
 A 20-second `profile`-settings recording of a hot loop dumps roughly *380K
@@ -24,4 +17,29 @@ into a *~400-token* summary that names the hot application method, the leaking
 allocation site, or the contended lock. For an LLM, the summary isn't just
 cheaper — for non-trivial recordings it's the only input that fits.
 
-See xref:installation.adoc[Installation] and xref:usage.adoc[Usage] to get started.
+== What it does
+
+[cols="1,3"]
+|===
+| Area | Capability
+
+| Inputs | An existing `.jfr` (`analyze`), a live JVM (`profile <pid>`, JFR or
+async-profiler), a continuous ring buffer (`watch`, periodic or dump-on-trigger), or an
+in-process `-javaagent` (container-native).
+| Dimensions | CPU hot paths/leaves, memory + GC, lock contention, **external I/O**,
+**virtual-thread pinning**, **deadlocks**, and — via the agent — **SQL**, **HTTP endpoints**,
+**messaging**, **cache**, and **Micrometer** timers, plus **variable snapshots** and a hedged
+**cross-dimension correlation**.
+| Outputs | Markdown / JSON / LLM-prompt; report focuses per dimension; scoped, navigable
+**MCP** tools (`jvmlens mcp`). Serves data only — no LLM egress.
+| Long-running | The agent's `history=` appends a JSONL time-series; `jvmlens trend` reduces a
+multi-day run to a change-over-time digest.
+| Live control | Steer a running agent in-flight (start/stop, enable/disable dimensions,
+sampling density, filtering, top-N) via a watched control file + the `jvmlens control` CLI — no
+ports, no JMX.
+| Trust | Per-row hit counts, `[sampled]` vs `[measured]` tags, a low-sample `⚠` caveat, and an
+under-interpreting heuristic.
+|===
+
+See xref:installation.adoc[Installation], xref:usage.adoc[Usage] for the full reference, and
+xref:integrating.adoc[Integrating] to profile another project.
