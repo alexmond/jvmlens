@@ -16,7 +16,7 @@ class HistoryTest {
 	private static Sample s(long t, long exec, String hot, long gcMs, long allocBytes, long oldObjects, String lock,
 			long lockMs) {
 		return new Sample(t, exec, hot, 0.9, exec, 1, gcMs, allocBytes, "Svc.alloc", oldObjects, lock, lockMs, "cause",
-				0, 0);
+				0, 0, 0, 0);
 	}
 
 	@Test
@@ -117,11 +117,26 @@ class HistoryTest {
 			Sample base = s(i * 1000L, 1000, "com.example.Svc.run", 5, 100, 0, "", 0);
 			run.add(new Sample(base.t(), base.exec(), base.hot(), base.hotShare(), base.hotCount(), base.gcPauses(),
 					base.gcMs(), base.allocBytes(), base.alloc(), base.oldObjects(), base.lock(), base.lockMs(),
-					base.cause(), 10L + i * 30L, 5L + i * 10L));
+					base.cause(), 10L + i * 30L, 5L + i * 10L, 0, 0));
 		}
 		String d = History.digest(run);
 		assertThat(d).contains("External I/O blocked time/window rising");
 		assertThat(d).contains("Virtual-thread pinning time/window rising");
+	}
+
+	@Test
+	void digestReportsWebAndDbTrendsWhenPresent() {
+		List<Sample> run = new java.util.ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			Sample b = s(i * 1000L, 1000, "com.example.Svc.run", 5, 100, 0, "", 0);
+			run.add(new Sample(b.t(), b.exec(), b.hot(), b.hotShare(), b.hotCount(), b.gcPauses(), b.gcMs(),
+					b.allocBytes(), b.alloc(), b.oldObjects(), b.lock(), b.lockMs(), b.cause(), 0, 0, 20L + i * 40L,
+					100L + i * 50L));
+		}
+		String d = History.digest(run);
+		assertThat(d).contains("## Application (web / db) [measured]");
+		assertThat(d).contains("HTTP time/window rising");
+		assertThat(d).contains("SQL time/window rising");
 	}
 
 	@Test

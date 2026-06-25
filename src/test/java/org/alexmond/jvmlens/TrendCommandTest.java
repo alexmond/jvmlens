@@ -14,9 +14,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TrendCommandTest {
 
 	private static final String LINES = """
-			{"t":1000,"exec":1000,"hot":"com.example.Svc.run","hotShare":0.9,"hotCount":900,"gcPauses":1,"gcMs":10,"allocBytes":1000,"alloc":"com.example.Svc.alloc","oldObjects":2,"lock":"","lockMs":0,"cause":"c","ioMs":0,"pinnedMs":0}
-			{"t":2000,"exec":1000,"hot":"com.example.Svc.run","hotShare":0.9,"hotCount":900,"gcPauses":1,"gcMs":80,"allocBytes":1000,"alloc":"com.example.Svc.alloc","oldObjects":40,"lock":"","lockMs":0,"cause":"c","ioMs":0,"pinnedMs":0}
-			{"t":3000,"exec":1000,"hot":"com.example.Svc.run","hotShare":0.9,"hotCount":900,"gcPauses":1,"gcMs":160,"allocBytes":1000,"alloc":"com.example.Svc.alloc","oldObjects":90,"lock":"","lockMs":0,"cause":"c","ioMs":0,"pinnedMs":0}
+			{"t":1000,"exec":1000,"hot":"com.example.Svc.run","hotShare":0.9,"hotCount":900,"gcPauses":1,"gcMs":10,"allocBytes":1000,"alloc":"com.example.Svc.alloc","oldObjects":2,"lock":"","lockMs":0,"cause":"c","ioMs":0,"pinnedMs":0,"dbMs":0,"webMs":0}
+			{"t":2000,"exec":1000,"hot":"com.example.Svc.run","hotShare":0.9,"hotCount":900,"gcPauses":1,"gcMs":80,"allocBytes":1000,"alloc":"com.example.Svc.alloc","oldObjects":40,"lock":"","lockMs":0,"cause":"c","ioMs":0,"pinnedMs":0,"dbMs":0,"webMs":0}
+			{"t":3000,"exec":1000,"hot":"com.example.Svc.run","hotShare":0.9,"hotCount":900,"gcPauses":1,"gcMs":160,"allocBytes":1000,"alloc":"com.example.Svc.alloc","oldObjects":90,"lock":"","lockMs":0,"cause":"c","ioMs":0,"pinnedMs":0,"dbMs":0,"webMs":0}
 			""";
 
 	private static String run(Path file, String... args) {

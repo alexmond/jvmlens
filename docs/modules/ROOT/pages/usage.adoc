@@ -32,7 +32,14 @@ server exposes):
 | `gc` | GC pressure and the allocation that drives it.
 | `io` | External (network + file) blocking I/O by endpoint (measured).
 | `pinning` | Virtual-thread pinning sites, by pinned time (measured).
+| `db` | Top SQL statements (agent JDBC instrumentation).
+| `web` | Top HTTP endpoints (agent servlet instrumentation).
 |===
+
+The `full` report also appends a hedged **Cross-dimension correlation** note when two or more
+dimensions carry signal — it co-locates the dominant endpoint / query / I/O / hot path / lock
+/ GC so an LLM sees the candidate chain in one place. It's co-occurrence, not proof (jvmlens
+has no per-request trace linkage), so it suggests rather than asserts.
 
 The `io` and `pinning` sections appear in the `full` report whenever the recording carries
 those events. `io` aggregates `jdk.SocketRead`/`jdk.SocketWrite` (by remote `host:port`) and

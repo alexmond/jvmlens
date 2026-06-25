@@ -40,7 +40,7 @@ public final class History {
 		Ranked lock = first(s.locks());
 		return new Sample(epochMillis, s.execSamples(), name(hot), share(hot), count(hot), s.gcPauses(),
 				s.gcPauseMillis(), count(alloc), name(alloc), s.oldObjects(), name(lock), count(lock) / 1_000_000L,
-				s.cause(), sectionMs(s, "io"), sectionMs(s, "pinning"));
+				s.cause(), sectionMs(s, "io"), sectionMs(s, "pinning"), sectionMs(s, "db"), sectionMs(s, "web"));
 	}
 
 	/**
@@ -79,6 +79,8 @@ public final class History {
 		j.append(",\"cause\":").append(str(s.cause()));
 		j.append(",\"ioMs\":").append(s.ioMs());
 		j.append(",\"pinnedMs\":").append(s.pinnedMs());
+		j.append(",\"dbMs\":").append(s.dbMs());
+		j.append(",\"webMs\":").append(s.webMs());
 		return j.append('}').toString();
 	}
 
@@ -118,6 +120,7 @@ public final class History {
 		appendCpu(md, run);
 		appendMemory(md, run);
 		appendWait(md, run);
+		appendApplication(md, run);
 		appendRetention(md, run);
 		return md.toString();
 	}
@@ -195,6 +198,22 @@ public final class History {
 		}
 		if (run.stream().anyMatch((s) -> s.pinnedMs() > 0)) {
 			md.append("- Virtual-thread pinning time/window ").append(trendLine(run, Sample::pinnedMs));
+		}
+		md.append('\n');
+	}
+
+	private static void appendApplication(StringBuilder md, List<Sample> run) {
+		boolean anyDb = run.stream().anyMatch((s) -> s.dbMs() > 0);
+		boolean anyWeb = run.stream().anyMatch((s) -> s.webMs() > 0);
+		if (!anyDb && !anyWeb) {
+			return;
+		}
+		md.append("## Application (web / db) [measured]\n");
+		if (anyWeb) {
+			md.append("- HTTP time/window ").append(trendLine(run, Sample::webMs));
+		}
+		if (anyDb) {
+			md.append("- SQL time/window ").append(trendLine(run, Sample::dbMs));
 		}
 		md.append('\n');
 	}
@@ -350,10 +369,12 @@ public final class History {
 	 * @param ioMs total external (network + file) blocked time in the window,
 	 * milliseconds
 	 * @param pinnedMs total virtual-thread pinned time in the window, milliseconds
+	 * @param dbMs total instrumented JDBC time in the window, milliseconds
+	 * @param webMs total instrumented HTTP-endpoint time in the window, milliseconds
 	 */
 	public record Sample(long t, long exec, String hot, double hotShare, long hotCount, long gcPauses, long gcMs,
 			long allocBytes, String alloc, long oldObjects, String lock, long lockMs, String cause, long ioMs,
-			long pinnedMs) {
+			long pinnedMs, long dbMs, long webMs) {
 	}
 
 }
