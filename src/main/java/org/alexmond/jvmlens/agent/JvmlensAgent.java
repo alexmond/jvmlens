@@ -19,6 +19,7 @@ import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
 import org.alexmond.jvmlens.cache.CacheCapture;
 import org.alexmond.jvmlens.cache.CacheStore;
+import org.alexmond.jvmlens.consume.MicrometerSource;
 import org.alexmond.jvmlens.messaging.MessagingCapture;
 import org.alexmond.jvmlens.messaging.MessagingStore;
 import org.alexmond.jvmlens.snapshot.SnapshotCapture;
@@ -41,11 +42,16 @@ import org.alexmond.jvmlens.web.WebStore;
  * (JFR config), {@code snapshot} (variable-snapshot targets), {@code db} (instrument JDBC
  * statement timing into a {@code Top SQL} section), {@code web} (HTTP servlet timing),
  * {@code messaging} (Kafka/JMS send + poll/receive timing), {@code cache} (Spring
- * {@code Cache} op timing), and {@code history} — a JSONL file the agent <em>appends</em>
- * one compact {@link History.Sample} to each interval, so a multi-day run can be reduced
- * to a trend later ({@code jvmlens trend}).
+ * {@code Cache} op timing), {@code micrometer} (summarize an existing Micrometer registry
+ * instead of re-instrumenting), and {@code history} — a JSONL file the agent
+ * <em>appends</em> one compact {@link History.Sample} to each interval, so a multi-day
+ * run can be reduced to a trend later ({@code jvmlens trend}).
  */
 public final class JvmlensAgent {
+
+	// set once in start() before the worker thread is created (safe via Thread.start
+	// happens-before)
+	private static boolean micrometer;
 
 	private JvmlensAgent() {
 	}
@@ -86,6 +92,10 @@ public final class JvmlensAgent {
 		if (opts.containsKey("cache") && instrumentation != null) {
 			CacheCapture.install(instrumentation);
 			System.err.println("jvmlens-agent: capturing cache operation timing");
+		}
+		if (opts.containsKey("micrometer")) {
+			micrometer = true;
+			System.err.println("jvmlens-agent: will summarize the Micrometer registry if present");
 		}
 		Recording recording = new Recording(Configuration.getConfiguration(opts.getOrDefault("settings", "profile")));
 		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
@@ -159,6 +169,9 @@ public final class JvmlensAgent {
 		all.addAll(WebStore.sections());
 		all.addAll(MessagingStore.sections());
 		all.addAll(CacheStore.sections());
+		if (micrometer) {
+			all.addAll(MicrometerSource.readGlobal());
+		}
 		return all;
 	}
 
