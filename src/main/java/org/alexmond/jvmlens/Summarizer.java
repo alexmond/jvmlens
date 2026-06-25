@@ -60,7 +60,11 @@ public final class Summarizer {
 		/** Top SQL statements (agent JDBC instrumentation). */
 		DB,
 		/** Top HTTP endpoints (agent servlet instrumentation). */
-		WEB
+		WEB,
+		/** Top messaging operations (agent Kafka/JMS instrumentation). */
+		MESSAGING,
+		/** Top cache operations (agent Spring-Cache instrumentation). */
+		CACHE
 
 	}
 

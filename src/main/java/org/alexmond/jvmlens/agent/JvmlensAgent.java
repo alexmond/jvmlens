@@ -17,6 +17,10 @@ import org.alexmond.jvmlens.History;
 import org.alexmond.jvmlens.ProfileSummary;
 import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
+import org.alexmond.jvmlens.cache.CacheCapture;
+import org.alexmond.jvmlens.cache.CacheStore;
+import org.alexmond.jvmlens.messaging.MessagingCapture;
+import org.alexmond.jvmlens.messaging.MessagingStore;
 import org.alexmond.jvmlens.snapshot.SnapshotCapture;
 import org.alexmond.jvmlens.snapshot.SnapshotStore;
 import org.alexmond.jvmlens.sql.SqlCapture;
@@ -35,10 +39,11 @@ import org.alexmond.jvmlens.web.WebStore;
  * {@code -javaagent:jvmlens-agent.jar=out=/tmp/jvmlens.md,interval=60}. Keys: {@code out}
  * (latest-summary file), {@code interval} (seconds between summaries), {@code settings}
  * (JFR config), {@code snapshot} (variable-snapshot targets), {@code db} (instrument JDBC
- * statement timing into a {@code Top SQL} section), {@code web} (instrument HTTP servlet
- * timing into a {@code Top HTTP endpoints} section), and {@code history} — a JSONL file
- * the agent <em>appends</em> one compact {@link History.Sample} to each interval, so a
- * multi-day run can be reduced to a trend later ({@code jvmlens trend}).
+ * statement timing into a {@code Top SQL} section), {@code web} (HTTP servlet timing),
+ * {@code messaging} (Kafka/JMS send + poll/receive timing), {@code cache} (Spring
+ * {@code Cache} op timing), and {@code history} — a JSONL file the agent <em>appends</em>
+ * one compact {@link History.Sample} to each interval, so a multi-day run can be reduced
+ * to a trend later ({@code jvmlens trend}).
  */
 public final class JvmlensAgent {
 
@@ -73,6 +78,14 @@ public final class JvmlensAgent {
 		if (opts.containsKey("web") && instrumentation != null) {
 			WebCapture.install(instrumentation);
 			System.err.println("jvmlens-agent: capturing HTTP endpoint timing");
+		}
+		if (opts.containsKey("messaging") && instrumentation != null) {
+			MessagingCapture.install(instrumentation);
+			System.err.println("jvmlens-agent: capturing messaging operation timing");
+		}
+		if (opts.containsKey("cache") && instrumentation != null) {
+			CacheCapture.install(instrumentation);
+			System.err.println("jvmlens-agent: capturing cache operation timing");
 		}
 		Recording recording = new Recording(Configuration.getConfiguration(opts.getOrDefault("settings", "profile")));
 		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
@@ -144,6 +157,8 @@ public final class JvmlensAgent {
 		List<ProfileSummary.Section> all = new ArrayList<>();
 		all.addAll(SqlStore.sections());
 		all.addAll(WebStore.sections());
+		all.addAll(MessagingStore.sections());
+		all.addAll(CacheStore.sections());
 		return all;
 	}
 

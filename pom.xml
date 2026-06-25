@@ -122,6 +122,9 @@
                                         <include>org/alexmond/jvmlens/snapshot/**</include>
                                         <include>org/alexmond/jvmlens/sql/**</include>
                                         <include>org/alexmond/jvmlens/web/**</include>
+                                        <include>org/alexmond/jvmlens/messaging/**</include>
+                                        <include>org/alexmond/jvmlens/cache/**</include>
+                                        <include>org/alexmond/jvmlens/probe/**</include>
                                         <include>org/alexmond/jvmlens/Summarizer*.class</include>
                                         <include>org/alexmond/jvmlens/Renderers*.class</include>
                                         <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
@@ -281,6 +284,10 @@
                                         <exclude>org.alexmond.jvmlens.sql.SqlCapture</exclude>
                                         <exclude>org.alexmond.jvmlens.web.WebAdvice</exclude>
                                         <exclude>org.alexmond.jvmlens.web.WebCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.messaging.MessagingAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.messaging.MessagingCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.cache.CacheAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.cache.CacheCapture</exclude>
                                     </excludes>
                                 </rule>
                             </rules>
