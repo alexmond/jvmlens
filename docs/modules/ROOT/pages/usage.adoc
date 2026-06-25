@@ -34,6 +34,8 @@ server exposes):
 | `pinning` | Virtual-thread pinning sites, by pinned time (measured).
 | `db` | Top SQL statements (agent JDBC instrumentation).
 | `web` | Top HTTP endpoints (agent servlet instrumentation).
+| `messaging` | Top messaging operations (agent Kafka/JMS instrumentation).
+| `cache` | Top cache operations (agent Spring-Cache instrumentation).
 |===
 
 The `full` report also appends a hedged **Cross-dimension correlation** note when two or more
@@ -163,8 +165,10 @@ java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-
 Options (comma-separated `key=value`): `out` (latest-summary file), `interval` (seconds
 between summaries), `settings` (JFR config, default `profile`), `snapshot` (see below),
 `db` (instrument JDBC — see *Database (SQL)* below), `web` (instrument HTTP — see *Web
-(HTTP endpoints)* below), and `history` (see *Long-running monitor* below). The agent jar
-is the separate
+(HTTP endpoints)* below), `messaging` (time Kafka/JMS send + poll/receive), `cache` (time
+Spring `Cache` get/put/evict), and `history` (see *Long-running monitor* below). The
+`messaging` and `cache` dimensions aggregate by `Class.method` operation and render top
+operations by total time. The agent jar is the separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
 attached dynamically via the `Agent-Class` entry.
 
