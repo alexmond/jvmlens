@@ -176,12 +176,45 @@ between summaries), `settings` (JFR config, default `profile`), `snapshot` (see 
 `db` (instrument JDBC — see *Database (SQL)* below), `web` (instrument HTTP — see *Web
 (HTTP endpoints)* below), `messaging` (time Kafka/JMS send + poll/receive), `cache` (time
 Spring `Cache` get/put/evict), `micrometer` (summarize an existing Micrometer registry —
-no extra instrumentation; degrades to nothing if Micrometer is absent), and `history` (see
-*Long-running monitor* below). The `messaging` and `cache` dimensions aggregate by
-`Class.method` operation and render top operations by total time. The agent jar is the
-separate
+no extra instrumentation; degrades to nothing if Micrometer is absent), `history` (see
+*Long-running monitor* below), `paused` (launch without emitting — `start` it after warm-up;
+see *Runtime control* below), and `control` (a file the agent watches for in-flight
+commands). The `messaging` and `cache` dimensions aggregate by `Class.method` operation and
+render top operations by total time. The agent jar is the separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
 attached dynamically via the `Agent-Class` entry.
+
+=== Runtime control (in-flight adjustment)
+
+Like a desktop profiler's live controls, the agent can be steered at runtime — without a
+restart — through a **control file** it watches (`control=<file>`). No ports, no JMX: an
+operator appends commands over whatever access they already have, via the `jvmlens control`
+CLI (run it on the host: `kubectl exec`, `ssh`, …):
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/agent/jvmlens.md,control=/agent/jvmlens.control,paused -jar app.jar
+
+# then, on the host:
+java -jar jvmlens.jar control /agent/jvmlens.control start          # begin (e.g. after warm-up)
+java -jar jvmlens.jar control /agent/jvmlens.control enable db      # turn a dimension on (lazy-instruments)
+java -jar jvmlens.jar control /agent/jvmlens.control topn db 5      # top 5 SQL queries with their stats
+java -jar jvmlens.jar control /agent/jvmlens.control settings default   # lighter sampling (profile = denser)
+java -jar jvmlens.jar control /agent/jvmlens.control scope app com.example   # adjust app-frame filtering
+java -jar jvmlens.jar control /agent/jvmlens.control dump           # emit a summary now
+java -jar jvmlens.jar control /agent/jvmlens.control status         # read current state back
+----
+
+Commands: `start` / `stop`, `clear` (reset the window + stores), `dump` (emit now),
+`enable <dim>` / `disable <dim>` (db/web/messaging/cache/micrometer/snapshot/deadlock),
+`settings <profile|default>` (sampling density), `interval <seconds>`, `scope app|exclude
+<prefix>` / `scope reset` (filtering), `topn [<category>] <n>` / `topn reset` (rows per
+section — `category` is cpu/perf, memory/mem, locks, io, pinning, or a plugin like db/web),
+and `status`. Each command makes the agent publish its state to `<control-file>.status`,
+which the CLI reads back and prints — so `topn db 5` returns the resulting limits to you.
+
+**Launching `paused` and then `start` after warm-up is the clean fix for short cold runs
+profiling startup** rather than the workload — no more guessing a `--warmup` duration.
 
 === Long-running monitor (history + trend)
 

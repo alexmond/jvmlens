@@ -17,9 +17,6 @@ import org.alexmond.jvmlens.ProfileSummary.Section;
  */
 public final class OpStore {
 
-	/** How many operations a section keeps. */
-	private static final int TOP_N = 5;
-
 	private final Map<String, Stat> ops = new ConcurrentHashMap<>();
 
 	/** Record one operation {@code label} taking {@code nanos}. */
@@ -46,7 +43,7 @@ public final class OpStore {
 		List<Ranked> rows = this.ops.entrySet()
 			.stream()
 			.sorted((a, b) -> Long.compare(b.getValue().nanos.get(), a.getValue().nanos.get()))
-			.limit(TOP_N)
+			.limit(org.alexmond.jvmlens.RankLimits.limit(key))
 			.map((en) -> new Ranked(en.getKey(), (total > 0) ? (double) en.getValue().nanos.get() / total : 0,
 					en.getValue().nanos.get(), en.getValue().teaser()))
 			.toList();

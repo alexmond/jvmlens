@@ -18,8 +18,6 @@ import org.alexmond.jvmlens.ProfileSummary.Section;
  */
 public final class WebStore {
 
-	private static final int TOP_N = 5;
-
 	private static final int SERVER_ERROR = 400;
 
 	private static final Map<String, Stat> ENDPOINTS = new ConcurrentHashMap<>();
@@ -49,7 +47,7 @@ public final class WebStore {
 		List<Ranked> rows = ENDPOINTS.entrySet()
 			.stream()
 			.sorted((a, b) -> Long.compare(b.getValue().nanos.get(), a.getValue().nanos.get()))
-			.limit(TOP_N)
+			.limit(org.alexmond.jvmlens.RankLimits.limit("web"))
 			.map((en) -> new Ranked(en.getKey(), (total > 0) ? (double) en.getValue().nanos.get() / total : 0,
 					en.getValue().nanos.get(), en.getValue().teaser()))
 			.toList();
