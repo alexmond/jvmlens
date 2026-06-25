@@ -100,11 +100,16 @@ java -javaagent:tools/jvmlens-<version>-agent.jar=out=/var/log/builder-profile.m
 |===
 | Key | Meaning | Default
 
-| `out` | File the rolling summary is written to | `jvmlens-summary.md`
+| `out` | File the **latest** summary is written to (overwritten each interval) | `jvmlens-summary.md`
+| `history` | JSONL file the agent **appends** one sample to per interval (multi-day trends) | —
 | `interval` | Seconds between summaries | `60`
 | `settings` | JFR config: `profile` or `default` | `profile`
 | `snapshot` | `Class#method` to capture argument digests for (`;`-separate several) | —
 |===
+
+For a multi-day watch, add `history=<file.jsonl>` (the agent appends one CPU+memory+wait
+sample per interval) and reduce the run later with `jvmlens trend <file.jsonl>` — a
+change-over-time digest with a hedged retention indicator, never a confident "leak".
 
 In containers, set it via the JVM-standard env var (honoured by buildpacks and
 `java -jar` alike):

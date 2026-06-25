@@ -112,7 +112,8 @@ Agent options (comma-separated `key=value`):
 
 | Key | Meaning | Default |
 |---|---|---|
-| `out` | File the rolling summary is written to | `jvmlens-summary.md` |
+| `out` | File the **latest** summary is written to (overwritten each interval) | `jvmlens-summary.md` |
+| `history` | JSONL file the agent **appends** one sample to per interval — for multi-day trends (see below) | — |
 | `interval` | Seconds between summaries | `60` |
 | `settings` | JFR config: `profile` or `default` | `profile` |
 | `snapshot` | `Class#method` to capture argument digests for (semicolon-separate several) | — |
@@ -128,6 +129,30 @@ JAVA_TOOL_OPTIONS=-javaagent:/agent/jvmlens-agent.jar=out=/agent/builder.md,inte
 makes the agent append a per-argument digest (distinct values, null rate, numeric
 range) for that method — answer "what values flow through this?" without stopping
 the app. Method arguments need no debug info.
+
+### Long-running monitor (let it run for days, then check)
+
+`out` only keeps the *latest* window. For a multi-day watch, add `history=<file.jsonl>`:
+the agent **appends** one compact sample per interval (CPU + memory + wait), so the run
+accumulates instead of overwriting. Use a longer `interval` (e.g. 300s) for days-long runs.
+
+```bash
+java -javaagent:tools/jvmlens-<version>-agent.jar=out=/var/log/builder.md,history=/var/log/builder.jsonl,interval=300 \
+     -jar build/libs/builder.jar
+```
+
+Let it run a few days, then **check** it — `trend` reduces the whole run to a
+change-over-time report (what moved, not a single snapshot):
+
+```bash
+java -jar tools/jvmlens.jar trend /var/log/builder.jsonl              # markdown digest
+java -jar tools/jvmlens.jar trend -f prompt /var/log/builder.jsonl    # wrapped for an LLM
+```
+
+The digest covers all three dimensions (CPU hot-path stability/shift, allocation + GC
+trend, lock-contention emergence) and a **hedged** retention indicator: old-object growth
+alongside rising GC is flagged as *possible* retention growth — never a confident "leak".
+Mount `/var/log/builder.jsonl` on a volume that survives restarts so the history isn't lost.
 
 ## Path D — MCP for coding agents
 

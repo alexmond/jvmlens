@@ -34,15 +34,20 @@ class JvmlensAgentTest {
 			throw new IllegalStateException("unreachable");
 		}
 		Path out = Files.createTempFile("jvmlens-agent-test", ".md");
+		Path history = Files.createTempFile("jvmlens-agent-test", ".jsonl");
 		try {
-			JvmlensAgent.snapshot(recording, out, Scope.defaults());
+			JvmlensAgent.snapshot(recording, out, history, Scope.defaults());
+			JvmlensAgent.snapshot(recording, out, history, Scope.defaults());
 			String summary = Files.readString(out);
 			assertThat(summary).contains("# JVM profile summary");
 			assertThat(summary).contains("Suspected cause");
+			// history is appended, not overwritten: one JSON line per snapshot
+			assertThat(Files.readAllLines(history)).hasSize(2).allSatisfy((l) -> assertThat(l).startsWith("{\"t\":"));
 		}
 		finally {
 			recording.close();
 			Files.deleteIfExists(out);
+			Files.deleteIfExists(history);
 		}
 	}
 
