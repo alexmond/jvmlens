@@ -1,5 +1,7 @@
 package org.alexmond.jvmlens;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -7,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jdk.jfr.Recording;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -114,6 +117,44 @@ class SummarizerTest {
 		assertThat(md).containsIgnoringCase("allocation");
 		assertThat(md).containsIgnoringCase("lock");
 		assertThat(keep).isNotEmpty();
+	}
+
+	@Test
+	void summarizesFileIo() throws Exception {
+		Recording recording = new Recording();
+		recording.enable("jdk.FileWrite").withThreshold(Duration.ZERO);
+		recording.enable("jdk.FileRead").withThreshold(Duration.ZERO);
+		recording.start();
+		Path data = Files.createTempFile("jvmlens-io-data", ".bin");
+		byte[] chunk = new byte[8192];
+		try (FileOutputStream out = new FileOutputStream(data.toFile())) {
+			for (int i = 0; i < 16; i++) {
+				out.write(chunk);
+			}
+		}
+		try (FileInputStream in = new FileInputStream(data.toFile())) {
+			byte[] buf = new byte[8192];
+			while (in.read(buf) >= 0) {
+				// drain
+			}
+		}
+		recording.stop();
+		Path file = Files.createTempFile("jvmlens-io", ".jfr");
+		recording.dump(file);
+		recording.close();
+		try {
+			ProfileSummary s = Summarizer.analyze(file);
+			boolean hasIo = s.sections().stream().anyMatch((sec) -> "io".equals(sec.key()));
+			Assumptions.assumeTrue(hasIo, "JFR file-I/O events not captured on this platform");
+			assertThat(Summarizer.summarize(file)).contains("External I/O").contains("file ");
+			assertThat(Summarizer.summarize(file, Summarizer.Format.MARKDOWN, Scope.defaults(), Summarizer.Report.IO))
+				.contains("External I/O")
+				.doesNotContain("Top hot paths");
+		}
+		finally {
+			Files.deleteIfExists(file);
+			Files.deleteIfExists(data);
+		}
 	}
 
 	private static Path cpuRecording() throws Exception {

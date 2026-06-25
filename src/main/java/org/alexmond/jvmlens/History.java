@@ -40,7 +40,20 @@ public final class History {
 		Ranked lock = first(s.locks());
 		return new Sample(epochMillis, s.execSamples(), name(hot), share(hot), count(hot), s.gcPauses(),
 				s.gcPauseMillis(), count(alloc), name(alloc), s.oldObjects(), name(lock), count(lock) / 1_000_000L,
-				s.cause());
+				s.cause(), sectionMs(s, "io"), sectionMs(s, "pinning"));
+	}
+
+	/**
+	 * Total blocked/pinned milliseconds across an extended section's rows (count is
+	 * nanos).
+	 */
+	private static long sectionMs(ProfileSummary s, String key) {
+		return s.sections()
+			.stream()
+			.filter((sec) -> sec.key().equals(key))
+			.flatMap((sec) -> sec.rows().stream())
+			.mapToLong(Ranked::count)
+			.sum() / 1_000_000L;
 	}
 
 	/** One JSONL line for {@code sample(summary, t)} — what a capture path appends. */
@@ -64,6 +77,8 @@ public final class History {
 		j.append(",\"lock\":").append(str(s.lock()));
 		j.append(",\"lockMs\":").append(s.lockMs());
 		j.append(",\"cause\":").append(str(s.cause()));
+		j.append(",\"ioMs\":").append(s.ioMs());
+		j.append(",\"pinnedMs\":").append(s.pinnedMs());
 		return j.append('}').toString();
 	}
 
@@ -157,23 +172,30 @@ public final class History {
 	}
 
 	private static void appendWait(StringBuilder md, List<Sample> run) {
-		md.append("## Wait / locks [measured]\n");
+		md.append("## Wait / I/O / pinning [measured]\n");
 		long lockWindows = run.stream().filter((s) -> s.lock() != null && !s.lock().isEmpty()).count();
 		if (lockWindows == 0) {
-			md.append("- No lock contention measured in any window.\n\n");
-			return;
+			md.append("- No lock contention measured in any window.\n");
 		}
-		Sample worst = run.stream().max((a, b) -> Long.compare(a.lockMs(), b.lockMs())).orElse(run.get(0));
-		md.append("- Contention in ")
-			.append(lockWindows)
-			.append('/')
-			.append(run.size())
-			.append(" windows; worst `")
-			.append(worst.lock())
-			.append("` at ")
-			.append(worst.lockMs())
-			.append(" ms.\n- Blocked time/window ");
-		md.append(trendLine(run, Sample::lockMs));
+		else {
+			Sample worst = run.stream().max((a, b) -> Long.compare(a.lockMs(), b.lockMs())).orElse(run.get(0));
+			md.append("- Contention in ")
+				.append(lockWindows)
+				.append('/')
+				.append(run.size())
+				.append(" windows; worst `")
+				.append(worst.lock())
+				.append("` at ")
+				.append(worst.lockMs())
+				.append(" ms.\n- Blocked time/window ")
+				.append(trendLine(run, Sample::lockMs));
+		}
+		if (run.stream().anyMatch((s) -> s.ioMs() > 0)) {
+			md.append("- External I/O blocked time/window ").append(trendLine(run, Sample::ioMs));
+		}
+		if (run.stream().anyMatch((s) -> s.pinnedMs() > 0)) {
+			md.append("- Virtual-thread pinning time/window ").append(trendLine(run, Sample::pinnedMs));
+		}
 		md.append('\n');
 	}
 
@@ -307,9 +329,10 @@ public final class History {
 	}
 
 	/**
-	 * One interval's compact metrics across the three dimensions: CPU ({@code exec},
-	 * {@code hot*}), memory ({@code allocBytes}, {@code gc*}, {@code oldObjects}), and
-	 * wait ({@code lock}, {@code lockMs}). Component names are the JSONL keys.
+	 * One interval's compact metrics across the dimensions: CPU ({@code exec},
+	 * {@code hot*}), memory ({@code allocBytes}, {@code gc*}, {@code oldObjects}), wait
+	 * ({@code lock}, {@code lockMs}), external I/O ({@code ioMs}), and virtual-thread
+	 * pinning ({@code pinnedMs}). Component names are the JSONL keys.
 	 *
 	 * @param t epoch milliseconds the snapshot was taken
 	 * @param exec execution samples in the window
@@ -324,9 +347,13 @@ public final class History {
 	 * @param lock top contended application method (empty if none)
 	 * @param lockMs its blocked time in milliseconds
 	 * @param cause the window's one-line heuristic cause
+	 * @param ioMs total external (network + file) blocked time in the window,
+	 * milliseconds
+	 * @param pinnedMs total virtual-thread pinned time in the window, milliseconds
 	 */
 	public record Sample(long t, long exec, String hot, double hotShare, long hotCount, long gcPauses, long gcMs,
-			long allocBytes, String alloc, long oldObjects, String lock, long lockMs, String cause) {
+			long allocBytes, String alloc, long oldObjects, String lock, long lockMs, String cause, long ioMs,
+			long pinnedMs) {
 	}
 
 }
