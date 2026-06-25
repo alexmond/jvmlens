@@ -89,6 +89,34 @@ class CommandsTest {
 	}
 
 	@Test
+	void assertNeedsBaseline() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).execute("--assert", "gc-ms < 1000", file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
+	void assertPassesAndFailsByExitCode() throws Exception {
+		Path before = tinyRecording();
+		Path after = tinyRecording();
+		try {
+			// a lenient gate passes (exit 0)
+			int pass = new CommandLine(new AnalyzeCommand()).execute("--baseline", before.toString(), "--assert",
+					"gc-ms < 100000", after.toString());
+			assertThat(pass).isZero();
+			// an impossible gate fails (exit 1)
+			int fail = new CommandLine(new AnalyzeCommand()).execute("--baseline", before.toString(), "--assert",
+					"gc-ms < 0", after.toString());
+			assertThat(fail).isEqualTo(1);
+		}
+		finally {
+			Files.deleteIfExists(before);
+			Files.deleteIfExists(after);
+		}
+	}
+
+	@Test
 	void rootCommandPrintsUsageAndReturnsZero() {
 		int rc = new CommandLine(new JvmlensCommand()).execute();
 		assertThat(rc).isZero();
