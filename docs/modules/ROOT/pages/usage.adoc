@@ -36,6 +36,7 @@ server exposes):
 | `web` | Top HTTP endpoints (agent servlet instrumentation).
 | `messaging` | Top messaging operations (agent Kafka/JMS instrumentation).
 | `cache` | Top cache operations (agent Spring-Cache instrumentation).
+| `metrics` | Top Micrometer timers (consumed from an existing registry).
 |===
 
 The `full` report also appends a hedged **Cross-dimension correlation** note when two or more
@@ -166,9 +167,11 @@ Options (comma-separated `key=value`): `out` (latest-summary file), `interval` (
 between summaries), `settings` (JFR config, default `profile`), `snapshot` (see below),
 `db` (instrument JDBC — see *Database (SQL)* below), `web` (instrument HTTP — see *Web
 (HTTP endpoints)* below), `messaging` (time Kafka/JMS send + poll/receive), `cache` (time
-Spring `Cache` get/put/evict), and `history` (see *Long-running monitor* below). The
-`messaging` and `cache` dimensions aggregate by `Class.method` operation and render top
-operations by total time. The agent jar is the separate
+Spring `Cache` get/put/evict), `micrometer` (summarize an existing Micrometer registry —
+no extra instrumentation; degrades to nothing if Micrometer is absent), and `history` (see
+*Long-running monitor* below). The `messaging` and `cache` dimensions aggregate by
+`Class.method` operation and render top operations by total time. The agent jar is the
+separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
 attached dynamically via the `Agent-Class` entry.
 

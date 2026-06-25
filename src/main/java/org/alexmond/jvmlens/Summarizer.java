@@ -64,7 +64,9 @@ public final class Summarizer {
 		/** Top messaging operations (agent Kafka/JMS instrumentation). */
 		MESSAGING,
 		/** Top cache operations (agent Spring-Cache instrumentation). */
-		CACHE
+		CACHE,
+		/** Top Micrometer timers (consumed from an existing registry). */
+		METRICS
 
 	}
 

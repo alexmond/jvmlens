@@ -76,12 +76,14 @@ Application-semantic dimensions — web endpoints, DB/SQL, messaging, I/O, virtu
 pinning. Research + epic plan: **[`docs/competitor-analysis.md`](docs/competitor-analysis.md)**
 (landscape) and **[`docs/extended-profiling.md`](docs/extended-profiling.md)** (epics). Summary:
 
-- [ ] **E1 — JFR-native I/O + VT-pinning** (#26, engine-only; ships first): socket/file I/O sections
-      and `jdk.VirtualThreadPinned`, new `io`/`pinning` report focuses, history/trend coverage.
-- [ ] **E2 — semantic web/db/messaging** (#28) via the agent's existing ByteBuddy (E2b SQL+N+1 first,
-      then E2a web, E2c messaging, E2d cache); sanitized SQL, opt-in, prod-safe.
-- [ ] **E3 — consume existing observability** (#27) (OTel / Micrometer / Actuator) instead of re-instrumenting.
-- [ ] **E4 — unified rendering + correlation** (#29) (slow endpoint → query → GC) + long-run coverage.
+- [x] **E1 — JFR-native I/O + VT-pinning** (#26): socket/file I/O + `jdk.VirtualThreadPinned`
+      sections, `io`/`pinning` report focuses, history/trend coverage.
+- [x] **E2 — semantic web/db/messaging** (#28): agent ByteBuddy → `db` (sanitized SQL + N+1),
+      `web` (route-shape endpoints), `messaging` (Kafka/JMS), `cache` (Spring Cache); opt-in per dimension.
+- [x] **E3 — consume existing observability** (#27): agent `micrometer` reflectively summarizes an
+      existing Micrometer registry (`metrics` section); detect-and-degrade. (OTel/Actuator: future.)
+- [x] **E4 — unified rendering + correlation** (#29): hedged cross-dimension correlation block +
+      `db`/`web` report focuses and long-run (`trend`) coverage.
 
 Non-goals: not an APM — no distributed tracing, no collector/backend/dashboards, no
 multi-language, single-JVM, digest-not-spans, local-only.
