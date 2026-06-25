@@ -9,7 +9,7 @@ import picocli.CommandLine.Spec;
 @Command(name = "jvmlens", mixinStandardHelpOptions = true, version = "jvmlens 0.1.0",
 		description = "Turn JVM runtime evidence into a compact, LLM-ready diagnosis.",
 		subcommands = { AnalyzeCommand.class, ProfileCommand.class, WatchCommand.class, TrendCommand.class,
-				McpServerCommand.class })
+				ControlCommand.class, McpServerCommand.class })
 public class JvmlensCommand implements Runnable {
 
 	@Spec

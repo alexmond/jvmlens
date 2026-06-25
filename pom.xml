@@ -131,6 +131,7 @@
                                         <include>org/alexmond/jvmlens/Renderers*.class</include>
                                         <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
                                         <include>org/alexmond/jvmlens/Scope*.class</include>
+                                        <include>org/alexmond/jvmlens/RankLimits*.class</include>
                                     </includes>
                                 </filter>
                             </filters>
@@ -277,6 +278,10 @@
                                         <exclude>org.alexmond.jvmlens.Main</exclude>
                                         <!-- MCP stdio transport front-end; verified by an end-to-end handshake test, not unit coverage -->
                                         <exclude>org.alexmond.jvmlens.McpServerCommand</exclude>
+                                        <!-- Control-file transport with a timing-dependent read-back; behaviour is the AgentControl state machine, unit-tested -->
+                                        <exclude>org.alexmond.jvmlens.ControlCommand</exclude>
+                                        <!-- Control-file watcher daemon (glue); the command logic is in AgentControl -->
+                                        <exclude>org.alexmond.jvmlens.agent.ControlChannel</exclude>
                                         <!-- Agent premain/daemon bootstrap; the snapshot logic is unit-tested -->
                                         <exclude>org.alexmond.jvmlens.agent.JvmlensAgent</exclude>
                                         <!-- Bytecode-instrumentation glue; verified by an integration test, not unit coverage -->

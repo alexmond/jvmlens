@@ -23,9 +23,6 @@ import org.alexmond.jvmlens.ProfileSummary.Section;
  */
 public final class MetricsReader {
 
-	/** How many timers the section keeps. */
-	private static final int TOP_N = 5;
-
 	private MetricsReader() {
 	}
 
@@ -59,7 +56,7 @@ public final class MetricsReader {
 		List<Ranked> rows = byName.entrySet()
 			.stream()
 			.sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
-			.limit(TOP_N)
+			.limit(org.alexmond.jvmlens.RankLimits.limit("metrics"))
 			.map((en) -> new Ranked(en.getKey(), (total > 0) ? (double) en.getValue() / total : 0, en.getValue(),
 					teaser(counts.get(en.getKey()), en.getValue())))
 			.toList();

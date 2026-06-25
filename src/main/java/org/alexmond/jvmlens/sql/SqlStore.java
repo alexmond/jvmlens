@@ -18,9 +18,6 @@ import org.alexmond.jvmlens.ProfileSummary.Section;
  */
 public final class SqlStore {
 
-	/** How many statement shapes the section keeps. */
-	private static final int TOP_N = 5;
-
 	/** A shape executed at least this many times with a low average is flagged N+1. */
 	private static final long N_PLUS_ONE_CALLS = 50;
 
@@ -54,7 +51,7 @@ public final class SqlStore {
 		List<Ranked> rows = SHAPES.entrySet()
 			.stream()
 			.sorted((a, b) -> Long.compare(b.getValue().nanos.get(), a.getValue().nanos.get()))
-			.limit(TOP_N)
+			.limit(org.alexmond.jvmlens.RankLimits.limit("db"))
 			.map((en) -> new Ranked(en.getKey(), (total > 0) ? (double) en.getValue().nanos.get() / total : 0,
 					en.getValue().nanos.get(), en.getValue().teaser()))
 			.toList();

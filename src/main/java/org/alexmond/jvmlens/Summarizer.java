@@ -72,9 +72,6 @@ public final class Summarizer {
 
 	}
 
-	/** How many rows each ranked section keeps. */
-	private static final int TOP_N = 5;
-
 	private Summarizer() {
 	}
 
@@ -221,8 +218,9 @@ public final class Summarizer {
 
 	/**
 	 * Top-N rows of {@code m} as shares of {@code total}, newest-stack teaser attached.
+	 * The row count is the runtime {@link RankLimits} for {@code category}.
 	 */
-	private static List<Ranked> ranked(Map<String, Long> m, long total, Map<String, String> stacks) {
+	private static List<Ranked> ranked(Map<String, Long> m, long total, Map<String, String> stacks, String category) {
 		List<Ranked> rows = new ArrayList<>();
 		if (total <= 0) {
 			return rows;
@@ -230,7 +228,7 @@ public final class Summarizer {
 		m.entrySet()
 			.stream()
 			.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-			.limit(TOP_N)
+			.limit(RankLimits.limit(category))
 			.forEach((en) -> rows.add(new Ranked(en.getKey(), (double) en.getValue() / total, en.getValue(),
 					(stacks != null) ? stacks.get(en.getKey()) : null)));
 		return rows;
@@ -428,11 +426,12 @@ public final class Summarizer {
 		private ProfileSummary toSummary(Path file) {
 			return new ProfileSummary(file.getFileName().toString(), this.execSamples, this.allocByType.size(),
 					this.oldObjects, this.gcPauses, this.gcPauseNanos / 1_000_000,
-					ranked(this.cpuByApp, this.execSamples, this.appStack),
-					ranked(this.cpuByLeaf, this.execSamples, null), ranked(this.allocBySite, this.allocBytes, null),
-					ranked(this.allocByType, this.allocBytes, null),
-					ranked(this.lockByMethod, sum(this.lockByMethod), null),
-					ranked(this.lockByMonitor, sum(this.lockByMonitor), null), heuristic(),
+					ranked(this.cpuByApp, this.execSamples, this.appStack, "cpu"),
+					ranked(this.cpuByLeaf, this.execSamples, null, "cpu"),
+					ranked(this.allocBySite, this.allocBytes, null, "memory"),
+					ranked(this.allocByType, this.allocBytes, null, "memory"),
+					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
+					ranked(this.lockByMonitor, sum(this.lockByMonitor), null, "locks"), heuristic(),
 					detectAppPackage(detectionWeights()), extendedSections());
 		}
 
@@ -441,11 +440,11 @@ public final class Summarizer {
 			List<ProfileSummary.Section> out = new ArrayList<>();
 			if (!this.ioByEndpoint.isEmpty()) {
 				out.add(new ProfileSummary.Section("io", "External I/O (blocked time, by endpoint)", "ms", true,
-						ranked(this.ioByEndpoint, sum(this.ioByEndpoint), ioTeasers())));
+						ranked(this.ioByEndpoint, sum(this.ioByEndpoint), ioTeasers(), "io")));
 			}
 			if (!this.pinnedBySite.isEmpty()) {
 				out.add(new ProfileSummary.Section("pinning", "Virtual-thread pinning (pinned time, by site)", "ms",
-						true, ranked(this.pinnedBySite, sum(this.pinnedBySite), this.pinnedReason)));
+						true, ranked(this.pinnedBySite, sum(this.pinnedBySite), this.pinnedReason, "pinning")));
 			}
 			return out;
 		}

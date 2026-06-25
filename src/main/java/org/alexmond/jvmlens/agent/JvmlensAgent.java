@@ -7,8 +7,11 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import jdk.jfr.Configuration;
 import jdk.jfr.Recording;
@@ -40,19 +43,24 @@ import org.alexmond.jvmlens.web.WebStore;
  * Options are a comma-separated {@code key=value} list passed after {@code =}, e.g.
  * {@code -javaagent:jvmlens-agent.jar=out=/tmp/jvmlens.md,interval=60}. Keys: {@code out}
  * (latest-summary file), {@code interval} (seconds between summaries), {@code settings}
- * (JFR config), {@code snapshot} (variable-snapshot targets), {@code db} (instrument JDBC
- * statement timing into a {@code Top SQL} section), {@code web} (HTTP servlet timing),
- * {@code messaging} (Kafka/JMS send + poll/receive timing), {@code cache} (Spring
- * {@code Cache} op timing), {@code micrometer} (summarize an existing Micrometer registry
- * instead of re-instrumenting), and {@code history} — a JSONL file the agent
- * <em>appends</em> one compact {@link History.Sample} to each interval, so a multi-day
- * run can be reduced to a trend later ({@code jvmlens trend}).
+ * (JFR config), {@code snapshot} (variable-snapshot targets), {@code db} / {@code web} /
+ * {@code messaging} / {@code cache} (instrumentation dimensions), {@code micrometer}
+ * (summarize an existing registry), {@code history} (a JSONL file the agent appends one
+ * {@link History.Sample} to each interval), {@code paused} (launch without emitting —
+ * start it after warm-up to skip startup noise), and {@code control} (a file the agent
+ * watches for in-flight commands; see {@link AgentControl}).
  */
 public final class JvmlensAgent {
 
-	// set once in start() before the worker thread is created (safe via Thread.start
-	// happens-before)
-	private static boolean micrometer;
+	/**
+	 * ByteBuddy-installed dimensions (so a runtime {@code enable} never
+	 * double-instruments).
+	 */
+	private static final Set<String> INSTALLED = ConcurrentHashMap.newKeySet();
+
+	private static Instrumentation instr;
+
+	private static AgentControl control;
 
 	private JvmlensAgent() {
 	}
@@ -69,68 +77,151 @@ public final class JvmlensAgent {
 
 	private static void start(String args, Instrumentation instrumentation) throws Exception {
 		Map<String, String> opts = parse(args);
+		instr = instrumentation;
 		Path out = Path.of(opts.getOrDefault("out", "jvmlens-summary.md"));
 		String historyOpt = opts.get("history");
 		Path history = (historyOpt == null || historyOpt.isBlank()) ? null : Path.of(historyOpt);
 		int interval = Integer.parseInt(opts.getOrDefault("interval", "60"));
+		String settings = opts.getOrDefault("settings", "profile");
+
 		String snapshot = opts.get("snapshot");
 		if (snapshot != null && !snapshot.isBlank() && instrumentation != null) {
 			SnapshotCapture.install(instrumentation, List.of(snapshot.split(";")));
+			INSTALLED.add("snapshot");
 			System.err.println("jvmlens-agent: capturing variable snapshots at " + snapshot);
 		}
-		if (opts.containsKey("db") && instrumentation != null) {
-			SqlCapture.install(instrumentation);
-			System.err.println("jvmlens-agent: capturing JDBC statement timing");
-		}
-		if (opts.containsKey("web") && instrumentation != null) {
-			WebCapture.install(instrumentation);
-			System.err.println("jvmlens-agent: capturing HTTP endpoint timing");
-		}
-		if (opts.containsKey("messaging") && instrumentation != null) {
-			MessagingCapture.install(instrumentation);
-			System.err.println("jvmlens-agent: capturing messaging operation timing");
-		}
-		if (opts.containsKey("cache") && instrumentation != null) {
-			CacheCapture.install(instrumentation);
-			System.err.println("jvmlens-agent: capturing cache operation timing");
+
+		Set<String> enabled = new HashSet<>();
+		enabled.add("deadlock"); // always-on — a deadlock is the top signal
+		for (String dim : new String[] { "db", "web", "messaging", "cache" }) {
+			if (opts.containsKey(dim)) {
+				enabled.add(dim);
+				lazyInstall(dim);
+			}
 		}
 		if (opts.containsKey("micrometer")) {
-			micrometer = true;
-			System.err.println("jvmlens-agent: will summarize the Micrometer registry if present");
+			enabled.add("micrometer");
 		}
-		Recording recording = new Recording(Configuration.getConfiguration(opts.getOrDefault("settings", "profile")));
-		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
+		if (snapshot != null && !snapshot.isBlank()) {
+			enabled.add("snapshot");
+		}
+
+		boolean running = !opts.containsKey("paused");
+		control = new AgentControl(running, settings, interval, enabled, List.of("org.alexmond.jvmlens"),
+				JvmlensAgent::lazyInstall);
+
+		String controlFile = opts.get("control");
+		if (controlFile != null && !controlFile.isBlank()) {
+			new ControlChannel(Path.of(controlFile), control).start();
+			System.err.println("jvmlens-agent: control file -> " + controlFile);
+		}
+
+		Recording recording = newRecording(settings, interval);
 		recording.start();
-		Thread worker = new Thread(() -> loop(recording, out, history, interval), "jvmlens-agent");
+		Thread worker = new Thread(() -> loop(recording, out, history), "jvmlens-agent");
 		worker.setDaemon(true);
 		worker.start();
-		System.err.println("jvmlens-agent: recording; summaries every " + interval + "s -> " + out
-				+ ((history != null) ? (" (history -> " + history + ")") : ""));
+		System.err.println("jvmlens-agent: " + (running ? "recording" : "PAUSED") + "; summaries every " + interval
+				+ "s -> " + out + ((history != null) ? (" (history -> " + history + ")") : ""));
 	}
 
-	/**
-	 * Scope for in-process summaries: like the default, but excludes jvmlens's own
-	 * package so the agent never reports its own dump/summarize work as the target's hot
-	 * path.
-	 */
+	/** Install a dimension's ByteBuddy advice once (no-op if already installed). */
+	private static void lazyInstall(String dim) {
+		if (instr == null || !INSTALLED.add(dim)) {
+			return;
+		}
+		switch (dim) {
+			case "db" -> SqlCapture.install(instr);
+			case "web" -> WebCapture.install(instr);
+			case "messaging" -> MessagingCapture.install(instr);
+			case "cache" -> CacheCapture.install(instr);
+			default -> {
+				return; // micrometer / snapshot / deadlock have nothing to install here
+			}
+		}
+		System.err.println("jvmlens-agent: instrumented " + dim);
+	}
+
+	/** Scope for in-process summaries — excludes jvmlens's own package. */
 	static Scope agentScope() {
 		return Scope.of(List.of(), List.of("org.alexmond.jvmlens"));
 	}
 
-	private static void loop(Recording recording, Path out, Path history, int interval) {
+	private static Recording newRecording(String settings, int interval) throws Exception {
+		Recording recording = new Recording(Configuration.getConfiguration(settings));
+		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
+		return recording;
+	}
+
+	private static void loop(Recording initial, Path out, Path history) {
+		Recording recording = initial;
 		while (true) {
 			try {
-				Thread.sleep(interval * 1000L);
-				snapshot(recording, out, history, agentScope());
+				String pending = control.takePendingSettings();
+				if (pending != null) {
+					recording = restart(recording, pending);
+				}
+				if (control.takeClear()) {
+					resetStores();
+					recording = restart(recording, control.settings());
+				}
+				boolean dump = sleepInterval();
+				if (control.running() || dump) {
+					snapshot(recording, out, history, control.scope());
+				}
 			}
 			catch (InterruptedException ex) {
 				Thread.currentThread().interrupt();
+				recording.close();
 				return;
 			}
 			catch (Exception ex) {
 				System.err.println("jvmlens-agent: snapshot failed: " + ex.getMessage());
 			}
 		}
+	}
+
+	/**
+	 * Sleep up to the current interval in 1s steps; returns true if a dump was requested.
+	 */
+	private static boolean sleepInterval() throws InterruptedException {
+		int target = Math.max(control.interval(), 1);
+		for (int s = 0; s < target; s++) {
+			Thread.sleep(1000);
+			if (control.takeDump()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Start a fresh recording with {@code settings}, then close the old one. */
+	private static Recording restart(Recording old, String settings) {
+		Recording fresh;
+		try {
+			fresh = newRecording(settings, control.interval());
+			fresh.start();
+		}
+		catch (Exception ex) {
+			System.err.println("jvmlens-agent: settings change failed: " + ex.getMessage());
+			return old;
+		}
+		try {
+			old.close();
+		}
+		catch (Exception ignored) {
+			// best-effort close of the superseded recording
+		}
+		System.err.println("jvmlens-agent: recording restarted (settings=" + settings + ")");
+		return fresh;
+	}
+
+	private static void resetStores() {
+		SqlStore.reset();
+		WebStore.reset();
+		MessagingStore.reset();
+		CacheStore.reset();
+		SnapshotStore.reset();
 	}
 
 	/** Latest-only snapshot (no history) — kept for callers that don't track a run. */
@@ -161,18 +252,28 @@ public final class JvmlensAgent {
 		}
 	}
 
-	/**
-	 * The extended sections produced by the agent's in-process instrumentation stores.
-	 */
+	/** The extended sections, gated by the current {@link AgentControl} enable state. */
 	private static List<ProfileSummary.Section> instrumentationSections() {
 		List<ProfileSummary.Section> all = new ArrayList<>();
-		all.addAll(DeadlockDetector.detect()); // always — cheap, and a deadlock is the
-												// top signal
-		all.addAll(SqlStore.sections());
-		all.addAll(WebStore.sections());
-		all.addAll(MessagingStore.sections());
-		all.addAll(CacheStore.sections());
-		if (micrometer) {
+		if (control == null) {
+			return all;
+		}
+		if (control.enabled("deadlock")) {
+			all.addAll(DeadlockDetector.detect());
+		}
+		if (control.enabled("db")) {
+			all.addAll(SqlStore.sections());
+		}
+		if (control.enabled("web")) {
+			all.addAll(WebStore.sections());
+		}
+		if (control.enabled("messaging")) {
+			all.addAll(MessagingStore.sections());
+		}
+		if (control.enabled("cache")) {
+			all.addAll(CacheStore.sections());
+		}
+		if (control.enabled("micrometer")) {
 			all.addAll(MicrometerSource.readGlobal());
 		}
 		return all;
@@ -185,9 +286,8 @@ public final class JvmlensAgent {
 		}
 		for (String pair : args.split(",")) {
 			int eq = pair.indexOf('=');
-			if (eq > 0) {
-				opts.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
-			}
+			opts.put((eq > 0) ? pair.substring(0, eq).trim() : pair.trim(),
+					(eq > 0) ? pair.substring(eq + 1).trim() : "");
 		}
 		return opts;
 	}
