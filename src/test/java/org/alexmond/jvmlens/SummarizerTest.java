@@ -157,6 +157,21 @@ class SummarizerTest {
 		}
 	}
 
+	@Test
+	void filtersRecorderSelfSinkFromIo() {
+		// #39 gap 4: a microbenchmark with no real I/O reported "file null" (the JFR
+		// sink)
+		assertThat(Summarizer.isNoiseEndpoint("file null")).isTrue();
+		assertThat(Summarizer.isNoiseEndpoint("file unknown")).isTrue();
+		assertThat(Summarizer.isNoiseEndpoint("unknown")).isTrue();
+		assertThat(Summarizer.isNoiseEndpoint("/tmp/jvmlens-agent123.jfr")).isTrue();
+		assertThat(Summarizer.isNoiseEndpoint("")).isTrue();
+		assertThat(Summarizer.isNoiseEndpoint(null)).isTrue();
+		// real endpoints are kept
+		assertThat(Summarizer.isNoiseEndpoint("db-host:5432")).isFalse();
+		assertThat(Summarizer.isNoiseEndpoint("file /var/data/orders.csv")).isFalse();
+	}
+
 	private static Path cpuRecording() throws Exception {
 		return recordFile(() -> {
 			long end = System.nanoTime() + 2_000_000_000L;

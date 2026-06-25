@@ -238,6 +238,20 @@ public final class Summarizer {
 		return m.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
 	}
 
+	/**
+	 * Whether an I/O endpoint is infrastructure noise rather than application signal —
+	 * the JFR recording's own sink (a {@code null}/unknown path, or the {@code .jfr} file
+	 * itself), so neither the I/O section nor the cross-dimension correlation fires on
+	 * the recorder. Surfaced by the gotmpl4j JMH field-finding (#39, gap 4).
+	 */
+	static boolean isNoiseEndpoint(String endpoint) {
+		if (endpoint == null || endpoint.isBlank()) {
+			return true;
+		}
+		return "unknown".equals(endpoint) || "file null".equals(endpoint) || "file unknown".equals(endpoint)
+				|| endpoint.endsWith(".jfr");
+	}
+
 	/** Human-readable bytes (e.g. {@code 2.1 MB}) for I/O teasers. */
 	private static String humanBytes(long bytes) {
 		if (bytes < 1024) {
@@ -358,6 +372,9 @@ public final class Summarizer {
 		}
 
 		private void addIo(String endpoint, RecordedEvent e, String readField, String writeField) {
+			if (isNoiseEndpoint(endpoint)) {
+				return; // recorder self-sink / unattributed I/O — not application signal
+			}
 			this.ioByEndpoint.merge(endpoint, e.getDuration().toNanos(), Long::sum);
 			this.ioOps.merge(endpoint, 1L, Long::sum);
 			long bytes = e.hasField(readField) ? e.getLong(readField)
