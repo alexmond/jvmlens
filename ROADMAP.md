@@ -70,6 +70,22 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
       `jvmlens-agent.jar`. Still to do: locals (need `-g`, detect-and-degrade),
       condition-gating, and PII redaction for prod.
 
+## Later — extended profiling (new track: beyond CPU/memory/wait)
+
+Application-semantic dimensions — web endpoints, DB/SQL, messaging, I/O, virtual-thread
+pinning. Research + epic plan: **[`docs/competitor-analysis.md`](docs/competitor-analysis.md)**
+(landscape) and **[`docs/extended-profiling.md`](docs/extended-profiling.md)** (epics). Summary:
+
+- [ ] **E1 — JFR-native I/O + VT-pinning** (#26, engine-only; ships first): socket/file I/O sections
+      and `jdk.VirtualThreadPinned`, new `io`/`pinning` report focuses, history/trend coverage.
+- [ ] **E2 — semantic web/db/messaging** (#28) via the agent's existing ByteBuddy (E2b SQL+N+1 first,
+      then E2a web, E2c messaging, E2d cache); sanitized SQL, opt-in, prod-safe.
+- [ ] **E3 — consume existing observability** (#27) (OTel / Micrometer / Actuator) instead of re-instrumenting.
+- [ ] **E4 — unified rendering + correlation** (#29) (slow endpoint → query → GC) + long-run coverage.
+
+Non-goals: not an APM — no distributed tracing, no collector/backend/dashboards, no
+multi-language, single-JVM, digest-not-spans, local-only.
+
 ## Explicitly deferred
 
 - GraalVM native single-binary (native build was dropped for now).
