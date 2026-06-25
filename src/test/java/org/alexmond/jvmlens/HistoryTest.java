@@ -15,7 +15,8 @@ class HistoryTest {
 
 	private static Sample s(long t, long exec, String hot, long gcMs, long allocBytes, long oldObjects, String lock,
 			long lockMs) {
-		return new Sample(t, exec, hot, 0.9, exec, 1, gcMs, allocBytes, "Svc.alloc", oldObjects, lock, lockMs, "cause");
+		return new Sample(t, exec, hot, 0.9, exec, 1, gcMs, allocBytes, "Svc.alloc", oldObjects, lock, lockMs, "cause",
+				0, 0);
 	}
 
 	@Test
@@ -94,6 +95,33 @@ class HistoryTest {
 		assertThat(d).contains("⚠ Avg").contains("exec samples/window");
 		assertThat(d).contains("No application hot path");
 		assertThat(d).contains("No lock contention measured");
+	}
+
+	@Test
+	void sampleCapturesIoAndPinningFromSections() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 100, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
+				List.of(), List.of(), "cause", "com.example",
+				List.of(new ProfileSummary.Section("io", "External I/O", "ms", true,
+						List.of(new Ranked("db-host:5432", 1.0, 4_000_000_000L, "2 MB"))),
+						new ProfileSummary.Section("pinning", "VT pinning", "ms", true,
+								List.of(new Ranked("com.example.Svc.run", 1.0, 1_500_000_000L, "MONITOR")))));
+		Sample built = History.sample(s, 1L);
+		assertThat(built.ioMs()).isEqualTo(4000L);
+		assertThat(built.pinnedMs()).isEqualTo(1500L);
+	}
+
+	@Test
+	void digestReportsIoAndPinningTrends() {
+		List<Sample> run = new java.util.ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			Sample base = s(i * 1000L, 1000, "com.example.Svc.run", 5, 100, 0, "", 0);
+			run.add(new Sample(base.t(), base.exec(), base.hot(), base.hotShare(), base.hotCount(), base.gcPauses(),
+					base.gcMs(), base.allocBytes(), base.alloc(), base.oldObjects(), base.lock(), base.lockMs(),
+					base.cause(), 10L + i * 30L, 5L + i * 10L));
+		}
+		String d = History.digest(run);
+		assertThat(d).contains("External I/O blocked time/window rising");
+		assertThat(d).contains("Virtual-thread pinning time/window rising");
 	}
 
 	@Test

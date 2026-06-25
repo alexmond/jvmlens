@@ -60,4 +60,13 @@ class ProfileToolsTest {
 		assertThat(md).contains("Contended monitors").contains("com.example.Mutex");
 	}
 
+	@Test
+	void extendedRendersSectionByKeyOrNone() {
+		ProfileSummary withIo = new ProfileSummary("rec.jfr", 1, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
+				List.of(), List.of(), "cause", "com.example", List.of(new ProfileSummary.Section("io", "External I/O",
+						"ms", true, List.of(new Ranked("db:5432", 1.0, 2_000_000L, null)))));
+		assertThat(ProfileTools.extended(withIo, "io")).contains("External I/O").contains("db:5432");
+		assertThat(ProfileTools.extended(withIo, "pinning")).contains("(none)");
+	}
+
 }

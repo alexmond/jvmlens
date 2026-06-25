@@ -44,4 +44,14 @@ final class ProfileTools {
 				+ Renderers.section("Contended monitors", s.monitors(), "ms", true);
 	}
 
+	/** A single extended dimension ({@code io} / {@code pinning} / …) by its key. */
+	static String extended(ProfileSummary s, String key) {
+		return s.sections()
+			.stream()
+			.filter((sec) -> sec.key().equalsIgnoreCase(key))
+			.findFirst()
+			.map((sec) -> Renderers.section(sec.title(), sec.rows(), sec.unit(), sec.measured()))
+			.orElse("## " + key + " [measured]\n- (none)\n\n");
+	}
+
 }

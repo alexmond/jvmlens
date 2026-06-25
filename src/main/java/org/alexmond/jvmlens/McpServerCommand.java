@@ -69,6 +69,10 @@ public class McpServerCommand implements Callable<Integer> {
 							ProfileTools::allocations),
 					tool("lock_contention", "Lock contention by application method and contended monitors.",
 							ProfileTools::lockContention),
+					tool("io", "External (network + file) blocking I/O by endpoint.",
+							(s) -> ProfileTools.extended(s, "io")),
+					tool("pinning", "Virtual-thread pinning sites, by pinned time.",
+							(s) -> ProfileTools.extended(s, "pinning")),
 					liveProfileTool())
 			.build();
 		Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
