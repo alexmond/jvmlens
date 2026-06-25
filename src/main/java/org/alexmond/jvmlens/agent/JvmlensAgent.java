@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,8 @@ import org.alexmond.jvmlens.snapshot.SnapshotCapture;
 import org.alexmond.jvmlens.snapshot.SnapshotStore;
 import org.alexmond.jvmlens.sql.SqlCapture;
 import org.alexmond.jvmlens.sql.SqlStore;
+import org.alexmond.jvmlens.web.WebCapture;
+import org.alexmond.jvmlens.web.WebStore;
 
 /**
  * In-process jvmlens agent: load it with {@code -javaagent:jvmlens-agent.jar} (or attach
@@ -32,7 +35,8 @@ import org.alexmond.jvmlens.sql.SqlStore;
  * {@code -javaagent:jvmlens-agent.jar=out=/tmp/jvmlens.md,interval=60}. Keys: {@code out}
  * (latest-summary file), {@code interval} (seconds between summaries), {@code settings}
  * (JFR config), {@code snapshot} (variable-snapshot targets), {@code db} (instrument JDBC
- * statement timing into a {@code Top SQL} section), and {@code history} — a JSONL file
+ * statement timing into a {@code Top SQL} section), {@code web} (instrument HTTP servlet
+ * timing into a {@code Top HTTP endpoints} section), and {@code history} — a JSONL file
  * the agent <em>appends</em> one compact {@link History.Sample} to each interval, so a
  * multi-day run can be reduced to a trend later ({@code jvmlens trend}).
  */
@@ -65,6 +69,10 @@ public final class JvmlensAgent {
 		if (opts.containsKey("db") && instrumentation != null) {
 			SqlCapture.install(instrumentation);
 			System.err.println("jvmlens-agent: capturing JDBC statement timing");
+		}
+		if (opts.containsKey("web") && instrumentation != null) {
+			WebCapture.install(instrumentation);
+			System.err.println("jvmlens-agent: capturing HTTP endpoint timing");
 		}
 		Recording recording = new Recording(Configuration.getConfiguration(opts.getOrDefault("settings", "profile")));
 		recording.setMaxAge(Duration.ofSeconds(Math.max(interval * 2L, 60)));
@@ -115,7 +123,7 @@ public final class JvmlensAgent {
 		Path dump = Files.createTempFile("jvmlens-agent", ".jfr");
 		try {
 			recording.dump(dump);
-			ProfileSummary ps = Summarizer.analyze(dump, scope).withSections(SqlStore.sections());
+			ProfileSummary ps = Summarizer.analyze(dump, scope).withSections(instrumentationSections());
 			String summary = Summarizer.render(ps, Summarizer.Format.MARKDOWN);
 			String snapshots = SnapshotStore.render();
 			Files.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
@@ -127,6 +135,16 @@ public final class JvmlensAgent {
 		finally {
 			Files.deleteIfExists(dump);
 		}
+	}
+
+	/**
+	 * The extended sections produced by the agent's in-process instrumentation stores.
+	 */
+	private static List<ProfileSummary.Section> instrumentationSections() {
+		List<ProfileSummary.Section> all = new ArrayList<>();
+		all.addAll(SqlStore.sections());
+		all.addAll(WebStore.sections());
+		return all;
 	}
 
 	private static Map<String, String> parse(String args) {

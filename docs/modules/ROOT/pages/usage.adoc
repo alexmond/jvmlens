@@ -155,8 +155,9 @@ java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-
 
 Options (comma-separated `key=value`): `out` (latest-summary file), `interval` (seconds
 between summaries), `settings` (JFR config, default `profile`), `snapshot` (see below),
-`db` (instrument JDBC — see *Database (SQL)* below), and `history` (see *Long-running
-monitor* below). The agent jar is the separate
+`db` (instrument JDBC — see *Database (SQL)* below), `web` (instrument HTTP — see *Web
+(HTTP endpoints)* below), and `history` (see *Long-running monitor* below). The agent jar
+is the separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
 attached dynamically via the `Agent-Class` entry.
 
@@ -203,6 +204,20 @@ java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,db,interval=60 -jar ap
 The SQL comes from the statement argument (plain `Statement`) or the statement's
 `toString()` (most `PreparedStatement` drivers — H2, PostgreSQL); unknown shapes degrade to
 `?`. This is profiling signal, not a query log — it never records literal values.
+
+=== Web (HTTP endpoints)
+
+Add `web` and the agent instruments `HttpServlet.service` (ByteBuddy; both `jakarta.servlet`
+and `javax.servlet`, read reflectively so jvmlens needs no servlet dependency — Spring MVC's
+`DispatcherServlet` is covered by this one point). Requests aggregate by **route shape**
+(numeric / UUID / long-token path segments become `{}`, query strings dropped) into a
+`Top HTTP endpoints (by total time)` section, each with request count, average latency, and
+an error count (status ≥ 400):
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,web,db -jar app.jar
+----
 
 === Variable snapshots
 
