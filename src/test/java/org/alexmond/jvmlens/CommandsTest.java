@@ -62,6 +62,33 @@ class CommandsTest {
 	}
 
 	@Test
+	void analyzeDiffsAgainstABaseline() throws Exception {
+		Path before = tinyRecording();
+		Path after = tinyRecording();
+		java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream original = System.out;
+		try {
+			System.setOut(new java.io.PrintStream(captured, true, java.nio.charset.StandardCharsets.UTF_8));
+			int rc = new CommandLine(new AnalyzeCommand()).execute("--baseline", before.toString(), after.toString());
+			assertThat(rc).isZero();
+		}
+		finally {
+			System.setOut(original);
+			Files.deleteIfExists(before);
+			Files.deleteIfExists(after);
+		}
+		assertThat(captured.toString(java.nio.charset.StandardCharsets.UTF_8)).contains("# JVM profile diff");
+	}
+
+	@Test
+	void analyzeBaselineReturnsTwoForMissingBaseline() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).execute("--baseline", "/no/such/before.jfr", file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
 	void rootCommandPrintsUsageAndReturnsZero() {
 		int rc = new CommandLine(new JvmlensCommand()).execute();
 		assertThat(rc).isZero();
