@@ -83,6 +83,10 @@ came with it so work can continue uninterrupted:
 - **[ROADMAP.md](ROADMAP.md)** — staged plan with effort and the immediate next step.
 - **[examples/experiments.md](examples/experiments.md)** — how to validate
   summary quality against the planted-pathology workload.
+- **[docs/competitor-analysis.md](docs/competitor-analysis.md)** — the profiling /
+  observability landscape (continuous profilers, JProfiler/YourKit/JMC, APM/OTel,
+  Glowroot) and where jvmlens differs, plus **[docs/extended-profiling.md](docs/extended-profiling.md)**
+  — the epics for going beyond CPU/memory/wait into web/db/messaging.
 
 ## License
 
