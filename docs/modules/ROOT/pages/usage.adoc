@@ -113,6 +113,18 @@ never an assertion.
 java -jar jvmlens.jar analyze recording.jfr --hints
 ----
 
+=== Budget-dialing the size
+
+`--top-k <n>` keeps only the top *n* rows per section; `--max-tokens <n>` shrinks top-k until
+the summary fits roughly *n* tokens (chars/4). For an always-on agent that adjusts limits at
+runtime, the agent control plane's `topn` does the same per-dimension (see *Runtime control*).
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze recording.jfr --top-k 3
+java -jar jvmlens.jar analyze recording.jfr --max-tokens 250
+----
+
 == Report focus
 
 `-r` / `--report` narrows the output to one concern (reusing the same sections the MCP
