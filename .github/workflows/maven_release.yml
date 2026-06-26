@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Important for git history
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -38,7 +38,7 @@ jobs:
 
       - name: Prepare Release
         run: |
-          mvn versions:set -DnewVersion=${{ github.event.inputs.releaseVersion }} --no-transfer-progress
+          mvn versions:set -DnewVersion=${{ github.event.inputs.releaseVersion }} -DprocessAllModules=true --no-transfer-progress
           git commit -am "Prepare release ${{ github.event.inputs.releaseVersion }}"
           git tag -a ${{ github.event.inputs.releaseVersion }} -m "Release ${{ github.event.inputs.releaseVersion }}"
 
@@ -48,6 +48,11 @@ jobs:
           mkdir -p ~/.m2
           cp .github/settings.xml ~/.m2/settings.xml
 
+      # NOTE (multi-module): this deploys EVERY module to Central — incl. the Spring Boot
+      # fat jar (jvmlens-cli) and the shaded jars (jvmlens-agent/-jmh), which are apps/tools,
+      # not libraries. Before the first real release, decide the Central scope (likely
+      # parent + jvmlens-engine only; ship the app jars via the GitHub `latest`/tag release)
+      # and run the release-prep skill. Tracked: needs a deploy-scope decision.
       - name: Deploy to Maven Central
         run: mvn --batch-mode -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }} clean deploy -Prelease --no-transfer-progress
         env:
@@ -57,7 +62,7 @@ jobs:
 
       - name: Prepare for Next Development Version
         run: |
-          mvn versions:set -DnewVersion=${{ github.event.inputs.nextVersion }} --no-transfer-progress
+          mvn versions:set -DnewVersion=${{ github.event.inputs.nextVersion }} -DprocessAllModules=true --no-transfer-progress
           git commit -am "Prepare for next development iteration: ${{ github.event.inputs.nextVersion }}"
 
       - name: Push Changes
