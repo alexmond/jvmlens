@@ -23,13 +23,17 @@ cheaper — for non-trivial recordings it's the only input that fits.
 |===
 | Area | Capability
 
-| Inputs | An existing `.jfr` (`analyze`), a live JVM (`profile <pid>`, JFR or
-async-profiler), a continuous ring buffer (`watch`, periodic or dump-on-trigger), or an
-in-process `-javaagent` (container-native).
+| Inputs | An existing `.jfr` or a **JMH `-prof jfr` directory** (`analyze`, forks merged), a
+live JVM (`profile <pid>`, JFR or async-profiler), a continuous ring buffer (`watch`, periodic
+or dump-on-trigger), or an in-process `-javaagent` (container-native).
 | Dimensions | CPU hot paths/leaves, memory + GC, lock contention, **external I/O**,
 **virtual-thread pinning**, **deadlocks**, and — via the agent — **SQL**, **HTTP endpoints**,
 **messaging**, **cache**, and **Micrometer** timers, plus **variable snapshots** and a hedged
 **cross-dimension correlation**.
+| Optimize loop | `analyze --baseline` **diffs** two runs (absolute-anchored), `--assert`
+**gates** a regression in CI (non-zero exit), `--hints` gives hedged fix directions, and
+`--top-k` / `--max-tokens` budget the size. A JMH profiler (`-prof …JvmlensProfiler`) prints
+the summary inline after a benchmark.
 | Outputs | Markdown / JSON / LLM-prompt; report focuses per dimension; scoped, navigable
 **MCP** tools (`jvmlens mcp`). Serves data only — no LLM egress.
 | Long-running | The agent's `history=` appends a JSONL time-series; `jvmlens trend` reduces a
