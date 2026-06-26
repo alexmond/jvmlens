@@ -77,6 +77,27 @@ java -jar jvmlens.jar analyze -b before.jfr after.jfr \
 Each rule prints `✅`/`❌` with the actual value; the process exits `1` if any rule fails,
 `0` if all pass (`2` for bad arguments) — drop it straight into a CI step.
 
+=== JMH benchmarks (a directory of forks)
+
+Optimizing a JVM library is almost always a JMH loop, and JMH's `-prof jfr` writes **one
+`.jfr` per fork** (often all named `profile.jfr` in per-benchmark subdirs). Point `analyze`
+(and `--baseline`) at a **directory** and jvmlens finds every `.jfr` under it and **merges
+the forks** into one summary, so the signal isn't split:
+
+[source,bash]
+----
+java -jar benchmarks.jar -prof "jfr:dir=/tmp/run-after"     # JMH writes per-fork .jfr there
+java -jar jvmlens.jar analyze /tmp/run-after -a com.example       # merged summary of all forks
+
+# before/after across two JMH runs — the diff header uses the directory names, so it stays
+# unambiguous even though every fork file is `profile.jfr`:
+java -jar jvmlens.jar analyze --baseline /tmp/run-before /tmp/run-after \
+  --assert "alloc-pct < 0, gc-pct < 10"
+----
+
+(JMH records the whole fork including warm-up; for measurement-only signal, configure JMH to
+delay the recording past warm-up, or compare steady-state runs.)
+
 == Report focus
 
 `-r` / `--report` narrows the output to one concern (reusing the same sections the MCP
