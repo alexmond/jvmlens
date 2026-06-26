@@ -6,16 +6,16 @@
 
 replicaCount: 1
 
-# Registry pull secret(s). The homelab Zot registry (nas1.home.int:5000) needs `zot-regcred`
+# Registry pull secret(s). The homelab Zot registry (registry.example.com:5000) needs `my-regcred`
 # in the target namespace — the same secret the unitrack release uses.
 imagePullSecrets:
-  - name: zot-regcred
+  - name: my-regcred
 
 # The JVM workload to profile. Default is the homelab unitrack image, but point `target.image`
 # at any JVM app. Supply the app's own env/config via `env` / `envFrom` (e.g. reuse the
 # app release's ConfigMap/Secret) so it actually starts.
 target:
-  image: nas1.home.int:5000/unitrack:0.2.0-SNAPSHOT
+  image: registry.example.com:5000/unitrack:0.2.0-SNAPSHOT
   imagePullPolicy: IfNotPresent
   args: []
   # Plain env pairs for the app (DB URL, etc.).
@@ -32,7 +32,7 @@ target:
 # The jvmlens agent. Build + push with scripts/deploy-agent.sh (tiny OCI image holding
 # jvmlens-agent.jar at /jvmlens-agent.jar; see deploy/agent-image/Dockerfile).
 agent:
-  image: nas1.home.int:5000/jvmlens-agent:0.1.0-SNAPSHOT
+  image: registry.example.com:5000/jvmlens-agent:0.1.0-SNAPSHOT
   imagePullPolicy: IfNotPresent
   # Appended after `-javaagent:/agent/jvmlens-agent.jar=`. See `jvmlens` agent docs.
   options: "out=/agent/jvmlens.md,interval=300"

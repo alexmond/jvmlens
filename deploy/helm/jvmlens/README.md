@@ -13,13 +13,13 @@ writes the summary on an interval. No attach, no JMX.
 == 1. Build & publish the agent image
 
 `scripts/deploy-agent.sh` builds the agent jar, wraps it in the tiny OCI image, and pushes
-it to the registry (default `nas1.home.int:5000`, the homelab Zot). It mirrors unitrack's
+it to the registry (default `registry.example.com:5000`, the homelab Zot). It mirrors unitrack's
 `deploy-k8s.sh` (podman/docker, `--tls-verify=false` for the self-signed wildcard):
 
 [source,bash]
 ----
-podman login nas1.home.int:5000      # once
-scripts/deploy-agent.sh              # → nas1.home.int:5000/jvmlens-agent:<version>
+podman login registry.example.com:5000      # once
+scripts/deploy-agent.sh              # → registry.example.com:5000/jvmlens-agent:<version>
 ----
 
 == 2. Deploy (separate release)
@@ -55,7 +55,7 @@ helm upgrade --install unitrack-profiled deploy/helm/jvmlens --namespace unitrac
 
 Reusing the app release's `ConfigMap`/`Secret` via `target.envFrom` gives the profiled copy
 the same DB/config as the real app — it connects to the **same database**, so point it at a
-throwaway DB (or run it read-mostly) if that matters. The pull secret `zot-regcred` must
+throwaway DB (or run it read-mostly) if that matters. The pull secret `my-regcred` must
 exist in the namespace (it already does in `unitrack`).
 
 == 3. Read the summary
