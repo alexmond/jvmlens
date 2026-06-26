@@ -9,7 +9,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -56,7 +55,7 @@ public class McpServerCommand implements Callable<Integer> {
 
 	@Override
 	public Integer call() throws Exception {
-		StdioServerTransportProvider transport = new StdioServerTransportProvider(new ObjectMapper());
+		StdioServerTransportProvider transport = new StdioServerTransportProvider();
 		McpSyncServer server = McpServer.sync(transport)
 			.serverInfo("jvmlens", "0.1.0")
 			.capabilities(ServerCapabilities.builder().tools(true).build())

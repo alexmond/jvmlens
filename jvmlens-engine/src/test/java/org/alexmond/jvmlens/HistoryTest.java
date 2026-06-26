@@ -3,7 +3,7 @@ package org.alexmond.jvmlens;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import org.alexmond.jvmlens.History.Sample;

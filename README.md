@@ -87,7 +87,7 @@ mvn -q clean package
 
 ```bash
 # analyze an existing JFR recording (markdown by default) — use the downloaded jar,
-# or target/jvmlens.jar if you built from source
+# or jvmlens-cli/target/jvmlens.jar if you built from source
 java -jar jvmlens.jar analyze recording.jfr
 
 # or emit scoped JSON / an LLM-ready prompt
