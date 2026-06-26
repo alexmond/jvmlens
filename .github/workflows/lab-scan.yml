@@ -1,0 +1,22 @@
+name: lab-scan
+
+# Block PRs/pushes that introduce new lab-internal references (internal DNS, private
+# IPs, lab registry/secret names). Existing debt is baselined in
+# scripts/lab-scan-baseline.txt; only NEW references fail. Fast, independent of the
+# Java build so a leak is caught even if the build is skipped.
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  lab-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan tracked files for lab-internal references
+        run: scripts/lab-scan.sh
