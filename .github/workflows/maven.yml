@@ -27,6 +27,41 @@ jobs:
       - name: Build with Maven
         run: mvn -B package --file pom.xml -Pdefault --no-transfer-progress
 
+      # Early-access distribution: every green build on main refreshes a single rolling
+      # `latest` pre-release so people can use jvmlens before a formal release. The asset
+      # filenames are stable (version stripped), so the download URLs never change:
+      #   https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
+      - name: Publish rolling 'latest' pre-release
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Stable, version-less names so the download URLs are permanent.
+          cp target/jvmlens.jar jvmlens.jar
+          cp target/jvmlens-*-agent.jar jvmlens-agent.jar
+          cp target/jvmlens-*-jmh.jar jvmlens-jmh.jar
+          NOTES=$(cat <<EOF
+          Rolling pre-release, auto-published from the latest green build on \`main\` (commit ${GITHUB_SHA}). **Unstable — APIs may change before the first tagged release.**
+
+          \`\`\`
+          curl -L -o jvmlens.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
+          java -jar jvmlens.jar analyze recording.jfr
+          \`\`\`
+
+          Assets: \`jvmlens.jar\` (CLI) · \`jvmlens-agent.jar\` (in-process agent) · \`jvmlens-jmh.jar\` (JMH profiler).
+          EOF
+          )
+          # One rolling release: clobber assets on the existing one (no re-notification),
+          # or create it the first time. Asset names are stable, so the URLs never change.
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest jvmlens.jar jvmlens-agent.jar jvmlens-jmh.jar --clobber
+            gh release edit latest --prerelease --notes "$NOTES"
+          else
+            gh release create latest jvmlens.jar jvmlens-agent.jar jvmlens-jmh.jar \
+              --prerelease --target "$GITHUB_SHA" --title "Latest build (unreleased)" --notes "$NOTES"
+          fi
+
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
