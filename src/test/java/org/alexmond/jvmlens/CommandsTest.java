@@ -117,6 +117,49 @@ class CommandsTest {
 	}
 
 	@Test
+	void analyzeMergesAJmhDirectory() throws Exception {
+		Path dir = Files.createTempDirectory("jmh-run");
+		Files.move(tinyRecording(), dir.resolve("fork1.jfr"));
+		Files.move(tinyRecording(), dir.resolve("fork2.jfr"));
+		try {
+			int rc = new CommandLine(new AnalyzeCommand()).execute(dir.toString());
+			assertThat(rc).isZero();
+		}
+		finally {
+			Files.deleteIfExists(dir.resolve("fork1.jfr"));
+			Files.deleteIfExists(dir.resolve("fork2.jfr"));
+			Files.deleteIfExists(dir);
+		}
+	}
+
+	@Test
+	void analyzeDiffsJmhDirectoriesWithDisambiguatedHeader() throws Exception {
+		Path root = Files.createTempDirectory("jmh");
+		Path beforeDir = Files.createDirectory(root.resolve("before"));
+		Path afterDir = Files.createDirectory(root.resolve("after"));
+		Files.move(tinyRecording(), beforeDir.resolve("profile.jfr"));
+		Files.move(tinyRecording(), afterDir.resolve("profile.jfr"));
+		java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream original = System.out;
+		int rc;
+		try {
+			System.setOut(new java.io.PrintStream(captured, true, java.nio.charset.StandardCharsets.UTF_8));
+			rc = new CommandLine(new AnalyzeCommand()).execute("--baseline", beforeDir.toString(), afterDir.toString());
+		}
+		finally {
+			System.setOut(original);
+			Files.deleteIfExists(beforeDir.resolve("profile.jfr"));
+			Files.deleteIfExists(afterDir.resolve("profile.jfr"));
+			Files.deleteIfExists(beforeDir);
+			Files.deleteIfExists(afterDir);
+			Files.deleteIfExists(root);
+		}
+		assertThat(rc).isZero();
+		assertThat(captured.toString(java.nio.charset.StandardCharsets.UTF_8))
+			.contains("# JVM profile diff (before → after)");
+	}
+
+	@Test
 	void rootCommandPrintsUsageAndReturnsZero() {
 		int rc = new CommandLine(new JvmlensCommand()).execute();
 		assertThat(rc).isZero();
