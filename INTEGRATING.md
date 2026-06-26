@@ -72,6 +72,28 @@ java -XX:StartFlightRecording=duration=30s,filename=builder-run.jfr,settings=pro
 java -jar tools/jvmlens.jar analyze builder-run.jfr
 ```
 
+### Optimize → measure loop (diff, gate, JMH)
+
+When you're making something *faster*, point `analyze` at a **directory** (a JMH `-prof jfr`
+run — every fork merged), **diff** a before/after, **gate** a regression in CI, and get hedged
+fix directions:
+
+```bash
+java -jar tools/jvmlens.jar analyze /tmp/run-after -a com.example.builder        # merge JMH forks
+java -jar tools/jvmlens.jar analyze --baseline /tmp/run-before /tmp/run-after     # diff (absolute-anchored)
+java -jar tools/jvmlens.jar analyze -b before.jfr after.jfr --assert "alloc-pct < 0, gc-pct < 10"  # CI gate (exit ≠0)
+java -jar tools/jvmlens.jar analyze builder-run.jfr --hints                       # hedged [possible] fix directions
+java -jar tools/jvmlens.jar analyze builder-run.jfr --top-k 3                     # or --max-tokens 250 to budget size
+```
+
+Or print the summary **inline from a JMH benchmark** with the profiler plugin (put
+`jvmlens-<version>-jmh.jar` on the benchmark classpath):
+
+```bash
+java -cp benchmarks.jar:tools/jvmlens-<version>-jmh.jar org.openjdk.jmh.Main \
+  -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example.builder;report=cpu"
+```
+
 ## Path B — profile a running process
 
 `profile <pid>` attaches to a live JVM, records a timed window, and summarizes it —

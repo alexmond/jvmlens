@@ -23,17 +23,27 @@ a confident "leak").
 
 | Command | What |
 |---|---|
-| `analyze <file.jfr>` | Summarize an existing recording (offline). |
+| `analyze <file.jfr\|dir>` | Summarize a recording, or a **JMH `-prof jfr` directory** (forks merged). |
 | `profile <pid>` | Live attach + timed JFR capture; `--engine async` for native frames; `-w/--warmup`, `-k/--keep`. |
 | `watch <pid>` | Continuous ring buffer — periodic, or **dump-on-trigger** (`--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects`). |
 | `trend <history.jsonl>` | Reduce a multi-day agent run to a **change-over-time** digest. |
 | `control <file> <cmd…>` | **In-flight** control of a running agent (no ports/JMX). |
 | `mcp` | Stdio MCP server — scoped tools per dimension; reachable over `ssh`. Serves data only. |
 | `-javaagent:jvmlens-agent.jar` | In-process, container-native; periodic summaries, `history=`, per-dimension opt-in. |
+| `-prof …JvmlensProfiler` | JMH profiler plugin — prints the summary inline after a benchmark trial. |
 
 Output is markdown / JSON / LLM-prompt (`-f`), narrowable to one concern (`-r`), and scoped
 to your packages (`-a`/`-x`). For remote servers, run jvmlens *on the host* (ssh / kubectl /
 docker exec) — only the few-hundred-token summary travels back.
+
+## Optimize → measure loop
+
+The agent perf loop, all from the one engine: **diff** two recordings (`analyze --baseline
+before after` — anchored on absolute bytes/ms/samples, so an optimize-loop reduction isn't
+mislabelled a regression), **gate** a regression in CI (`--assert "alloc-pct < 0, gc-pct <
+10"` — non-zero exit), get hedged **fix directions** (`--hints`), and **budget** the size
+(`--top-k` / `--max-tokens`). Pairs with JMH — JMH gives the number, jvmlens gives the
+where/why.
 
 ## Runtime control (in-flight)
 
