@@ -54,6 +54,31 @@ class ProfileDiffTest {
 	}
 
 	@Test
+	void flagsAllocSiteRisingAgainstAFallingTotalAsSamplingRedistribution() {
+		// #52: total allocation fell, but a stable cached site's *attributed* bytes
+		// ballooned — JFR sampling reattributing weight as the dominant allocator shrank,
+		// not a real per-site regression. Annotate (hedge), don't suppress.
+		ProfileSummary before = summary(0, 9_000_000_000L, List.of(),
+				List.of(new Ranked("com.acme.GoFmt.floatString", 0.72, 7_000_000_000L, null),
+						new Ranked("com.acme.Executor.accessorFor", 0.05, 510_000_000L, null)));
+		ProfileSummary after = summary(0, 8_300_000_000L, List.of(),
+				List.of(new Ranked("com.acme.GoFmt.floatString", 0.55, 5_000_000_000L, null),
+						new Ranked("com.acme.Executor.accessorFor", 0.22, 2_000_000_000L, null)));
+		String d = ProfileDiff.diff(before, after);
+
+		String accLine = line(d, "accessorFor");
+		String floatLine = line(d, "floatString");
+		// the site that ROSE while the total FELL is hedged
+		assertThat(accLine).contains("▲").contains("(possible sampling redistribution — total alloc fell 8%)");
+		// the site moving WITH the total (it fell too) is a real win — no hedge
+		assertThat(floatLine).contains("▼").doesNotContain("redistribution");
+	}
+
+	private static String line(String diff, String needle) {
+		return List.of(diff.split("\n")).stream().filter((l) -> l.contains(needle)).findFirst().orElse("");
+	}
+
+	@Test
 	void dropsNegligibleChange() {
 		ProfileSummary s = summary(10, 1000, List.of(new Ranked("com.acme.Svc.run", 1.0, 100, null)), List.of());
 		assertThat(ProfileDiff.diff(s, s)).contains("## Hot paths\n- (no significant change)");

@@ -6,11 +6,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
 import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.profile.ExternalProfiler;
+import org.openjdk.jmh.profile.ProfilerException;
 import org.openjdk.jmh.results.BenchmarkResult;
 import org.openjdk.jmh.results.Result;
 
@@ -25,12 +27,19 @@ import org.alexmond.jvmlens.Summarizer;
  *
  * <p>
  * Options (after a colon, {@code key=value} separated by {@code ;}): {@code appPackage}
- * (application-frame scope, {@code +}-separate several) and {@code report}
- * (full/cpu/memory/locks/gc/...). Ships in the dependency-light {@code jvmlens-*-jmh.jar}
- * (engine + this profiler, no Spring/picocli/jmh) — put it and {@code jmh-core} on the
- * benchmark's classpath.
+ * (application-frame scope; {@code +} or {@code ,}-separate several — {@code appPackages}
+ * is accepted as an alias so the scope syntax matches the CLI's {@code -a}) and
+ * {@code report} (full/cpu/memory/locks/gc/...). An <em>unknown</em> option key is a hard
+ * error (a {@link ProfilerException} with a did-you-mean suggestion) rather than a silent
+ * no-op — a misspelled {@code appPackage} that produced an unscoped summary used to cost
+ * a whole capture before you noticed (field-finding #53 item 6). Ships in the
+ * dependency-light {@code jvmlens-*-jmh.jar} (engine + this profiler, no
+ * Spring/picocli/jmh) — put it and {@code jmh-core} on the benchmark's classpath.
  */
 public class JvmlensProfiler implements ExternalProfiler {
+
+	/** Recognized option keys, used for the did-you-mean suggestion on a typo. */
+	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report");
 
 	private final Path jfr;
 
@@ -45,30 +54,63 @@ public class JvmlensProfiler implements ExternalProfiler {
 
 	/**
 	 * Options form: {@code -prof "...JvmlensProfiler:appPackage=com.acme;report=cpu"}.
+	 * @param initLine the JMH option string, or {@code null}
+	 * @throws IOException if the temp recording file cannot be created
+	 * @throws ProfilerException if an option key is unknown or a pair is malformed
 	 */
-	public JvmlensProfiler(String initLine) throws IOException {
+	public JvmlensProfiler(String initLine) throws IOException, ProfilerException {
 		this();
 		parse(initLine);
 	}
 
-	private void parse(String initLine) {
+	private void parse(String initLine) throws ProfilerException {
 		if (initLine == null) {
 			return;
 		}
-		for (String pair : initLine.split("[;,]")) {
-			int eq = pair.indexOf('=');
-			if (eq <= 0) {
+		for (String pair : initLine.split(";")) {
+			String trimmed = pair.trim();
+			if (trimmed.isEmpty()) {
 				continue;
 			}
-			String key = pair.substring(0, eq).trim();
-			String value = pair.substring(eq + 1).trim();
-			if ("appPackage".equals(key)) {
-				this.appPackages = List.of(value.split("\\+"));
+			int eq = trimmed.indexOf('=');
+			if (eq <= 0) {
+				throw new ProfilerException("jvmlens: malformed option `" + trimmed + "` — expected key=value");
 			}
-			else if ("report".equals(key)) {
-				applyReport(value);
+			applyOption(trimmed.substring(0, eq).trim(), trimmed.substring(eq + 1).trim());
+		}
+	}
+
+	private void applyOption(String key, String value) throws ProfilerException {
+		switch (key) {
+			case "appPackage", "appPackages" -> {
+				this.appPackages = List.of(value.split("[+,]"));
+			}
+			case "report" -> applyReport(value);
+			default -> throw new ProfilerException(unknownOption(key));
+		}
+	}
+
+	private static String unknownOption(String key) {
+		String nearest = KNOWN_KEYS.stream().min(Comparator.comparingInt((k) -> distance(key, k))).orElse("appPackage");
+		return "jvmlens: unknown profiler option `" + key + "` — did you mean `" + nearest + "`? (valid: "
+				+ String.join(", ", KNOWN_KEYS) + ")";
+	}
+
+	private static int distance(String a, String b) {
+		int[][] d = new int[a.length() + 1][b.length() + 1];
+		for (int i = 0; i <= a.length(); i++) {
+			d[i][0] = i;
+		}
+		for (int j = 0; j <= b.length(); j++) {
+			d[0][j] = j;
+		}
+		for (int i = 1; i <= a.length(); i++) {
+			for (int j = 1; j <= b.length(); j++) {
+				int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
+				d[i][j] = Math.min(Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1), d[i - 1][j - 1] + cost);
 			}
 		}
+		return d[a.length()][b.length()];
 	}
 
 	private void applyReport(String value) {

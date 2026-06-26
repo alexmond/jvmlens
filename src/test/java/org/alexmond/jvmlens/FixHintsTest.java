@@ -27,6 +27,21 @@ class FixHintsTest {
 		assertThat(md).contains("number→string formatting").contains("`com.acme.GoFmt.floatString`");
 		assertThat(md).contains("per-iteration iterator allocation").contains("`com.acme.parse.ListNode.iterator`");
 		assertThat(md).contains("BigDecimal/BigInteger math").contains("`java.math.BigDecimal`");
+		// the lever classification is the point of #53 item 2: iterator alloc is a safe
+		// (structural) lever, number→string formatting is parity-sensitive (inherent)
+		assertThat(md).contains("[structural] per-iteration iterator allocation");
+		assertThat(md).contains("[inherent] number→string formatting");
+		// structural levers are listed before inherent ones (pull the safe one first)
+		assertThat(md.indexOf("[structural]")).isLessThan(md.indexOf("[inherent]"));
+	}
+
+	@Test
+	void namesACapturedLambdaInAHotPathAsStructural() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0,
+				List.of(new Ranked("com.acme.Svc.dispatch", 0.6, 510,
+						"com.acme.Svc$$Lambda$42.apply <- java.util.concurrent.Executor")),
+				List.of(), List.of(), List.of(), List.of(), List.of(), "cause", "com.acme");
+		assertThat(FixHints.render(s)).contains("[structural] lambda captured per call");
 	}
 
 	@Test
