@@ -13,7 +13,7 @@
 #    throwaway DB (override target.env UNITRACK_DB_URL) rather than the live one.
 
 target:
-  image: nas1.home.int:5000/unitrack:0.2.0-SNAPSHOT
+  image: registry.example.com:5000/unitrack:0.2.0-SNAPSHOT
   port: 8080
   envFrom:
     - configMapRef:
@@ -28,10 +28,10 @@ target:
           key: db-password
 
 agent:
-  image: nas1.home.int:5000/jvmlens-agent:0.1.0-SNAPSHOT
+  image: registry.example.com:5000/jvmlens-agent:0.1.0-SNAPSHOT
   options: "out=/agent/jvmlens.md,interval=300"
   # Optional non-breaking variable snapshots on hot endpoints:
   # snapshot: "org.alexmond.unitrack.web.ReportController#ingest"
 
 imagePullSecrets:
-  - name: zot-regcred
+  - name: my-regcred

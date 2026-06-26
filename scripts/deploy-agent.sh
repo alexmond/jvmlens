@@ -7,7 +7,7 @@
 #
 # Usage:
 #   scripts/deploy-agent.sh [options]
-#     --registry HOST[:PORT]  image registry          (default: nas1.home.int:5000)
+#     --registry HOST[:PORT]  image registry          (default: registry.example.com:5000)
 #     --tag TAG               image tag               (default: project version from Maven)
 #     --release NAME          if set, helm upgrade --install the jvmlens chart with this name
 #     --namespace NS          target namespace        (default: unitrack)
@@ -22,7 +22,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REGISTRY=nas1.home.int:5000
+REGISTRY=registry.example.com:5000
 TAG=""
 RELEASE=""
 NAMESPACE=unitrack

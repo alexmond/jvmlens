@@ -104,7 +104,7 @@ keep analysis logic in the engine, not the command.
 - **Dogfood loop**: profile real projects → file `field-finding` issues (`scripts/field-finding.sh`)
   → fix → revalidate. Methodology: small CPU/memory/wait workloads, not giant cold inputs.
 - **Infra**: k3s is managed via kubectl/helm (ns `unitrack`); **Portainer is only the Docker
-  host**; images live in the Zot registry `nas1.home.int:5000` (pull secret `zot-regcred`).
+  host**; images live in the Zot registry `registry.example.com:5000` (pull secret `my-regcred`).
 
 ## Gotchas
 
