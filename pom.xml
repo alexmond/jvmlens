@@ -42,6 +42,11 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
 
+        <!-- Extra surefire JVM args injected per running JDK (see the jdk21-plus profile).
+             Empty on JDK 17 because the flags below don't exist there. The artifact stays
+             Java 17 bytecode regardless of the JDK running the build. -->
+        <surefire.jdk.args></surefire.jdk.args>
+
         <picocli.version>4.7.7</picocli.version>
         <mcp.version>0.10.0</mcp.version>
         <ap-loader.version>3.0-9</ap-loader.version>
@@ -280,7 +285,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>${jacoco.agent.arg} -Xmx512m -Djdk.attach.allowAttachSelf=true</argLine>
+                    <argLine>${jacoco.agent.arg} -Xmx512m -Djdk.attach.allowAttachSelf=true ${surefire.jdk.args}</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -352,6 +357,20 @@
     </build>
 
     <profiles>
+        <!-- Auto-activated when the build runs on JDK 21 or newer. The artifact is still
+             Java 17 bytecode (compiler source/target unchanged) — this only adds test-JVM
+             flags that don't exist on 17, so the same jar can be exercised on 17/21/25:
+             EnableDynamicAgentLoading silences/permits the self-attach the agent tests use
+             (dynamic agent loading warns by default on 21+, and is slated to be disallowed). -->
+        <profile>
+            <id>jdk21-plus</id>
+            <activation>
+                <jdk>[21,)</jdk>
+            </activation>
+            <properties>
+                <surefire.jdk.args>-XX:+EnableDynamicAgentLoading</surefire.jdk.args>
+            </properties>
+        </profile>
         <profile>
             <id>release</id>
             <build>
