@@ -268,6 +268,38 @@ public final class Summarizer {
 				|| endpoint.endsWith(".jfr");
 	}
 
+	/**
+	 * A compact, readable type name: package stripped and JVM array descriptors decoded —
+	 * {@code java.lang.String} → {@code String}, {@code [B} → {@code byte[]},
+	 * {@code [Ljava.lang.String;} → {@code String[]}.
+	 */
+	private static String simpleType(String type) {
+		int dims = 0;
+		while (dims < type.length() && type.charAt(dims) == '[') {
+			dims++;
+		}
+		String base = (dims == 0) ? type : arrayBase(type.substring(dims));
+		int dot = base.lastIndexOf('.');
+		String simple = (dot >= 0) ? base.substring(dot + 1) : base;
+		return simple + "[]".repeat(dims);
+	}
+
+	/** The element type of a JVM array descriptor (e.g. {@code B} → {@code byte}). */
+	private static String arrayBase(String descriptor) {
+		return switch (descriptor.isEmpty() ? ' ' : descriptor.charAt(0)) {
+			case 'B' -> "byte";
+			case 'S' -> "short";
+			case 'I' -> "int";
+			case 'J' -> "long";
+			case 'F' -> "float";
+			case 'D' -> "double";
+			case 'C' -> "char";
+			case 'Z' -> "boolean";
+			case 'L' -> descriptor.substring(1, descriptor.length() - 1);
+			default -> descriptor;
+		};
+	}
+
 	/** Human-readable bytes (e.g. {@code 2.1 MB}) for I/O teasers. */
 	private static String humanBytes(long bytes) {
 		if (bytes < 1024) {
@@ -316,6 +348,12 @@ public final class Summarizer {
 	/** Mutable accumulator for the events of a single recording. */
 	private static final class Aggregates {
 
+		/** How many top allocation sites get a per-type breakdown teaser (#53 item 1). */
+		private static final int ALLOC_TEASER_SITES = 2;
+
+		/** How many types to list per site in that breakdown. */
+		private static final int ALLOC_TEASER_TYPES = 3;
+
 		private final Scope scope;
 
 		private final Map<String, Long> cpuByApp = new HashMap<>();
@@ -327,6 +365,8 @@ public final class Summarizer {
 		private final Map<String, Long> allocBySite = new HashMap<>();
 
 		private final Map<String, Long> allocByType = new HashMap<>();
+
+		private final Map<String, Map<String, Long>> allocBySiteType = new HashMap<>();
 
 		private final Map<String, Long> lockByMethod = new HashMap<>();
 
@@ -431,12 +471,17 @@ public final class Summarizer {
 		private void addAllocation(RecordedEvent e) {
 			long w = e.hasField("weight") ? e.getLong("weight") : 0;
 			this.allocBytes += w;
-			if (e.hasField("objectClass") && e.getClass("objectClass") != null) {
-				this.allocByType.merge(e.getClass("objectClass").getName(), w, Long::sum);
+			String type = (e.hasField("objectClass") && e.getClass("objectClass") != null)
+					? e.getClass("objectClass").getName() : null;
+			if (type != null) {
+				this.allocByType.merge(type, w, Long::sum);
 			}
 			String site = appFrame(e.getStackTrace(), this.scope);
 			if (site != null) {
 				this.allocBySite.merge(site, w, Long::sum);
+				if (type != null) {
+					this.allocBySiteType.computeIfAbsent(site, (k) -> new HashMap<>()).merge(type, w, Long::sum);
+				}
 			}
 		}
 
@@ -460,7 +505,7 @@ public final class Summarizer {
 			return new ProfileSummary(source, this.execSamples, this.allocByType.size(), this.oldObjects, this.gcPauses,
 					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, this.appStack, "cpu"),
 					ranked(this.cpuByLeaf, this.execSamples, null, "cpu"),
-					ranked(this.allocBySite, this.allocBytes, null, "memory"),
+					ranked(this.allocBySite, this.allocBytes, allocTypeTeasers(), "memory"),
 					ranked(this.allocByType, this.allocBytes, null, "memory"),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
 					ranked(this.lockByMonitor, sum(this.lockByMonitor), null, "locks"), heuristic(),
@@ -479,6 +524,39 @@ public final class Summarizer {
 						true, ranked(this.pinnedBySite, sum(this.pinnedBySite), this.pinnedReason, "pinning")));
 			}
 			return out;
+		}
+
+		/**
+		 * Per-site type breakdown for the top allocation sites — turns the two separate
+		 * "top sites" + "top types" lists into the directly actionable
+		 * "{@code floatString} allocates 4.1 GB of String". Attached as the row teaser
+		 * (the {@code stack} field) only for the top {@value #ALLOC_TEASER_SITES} sites
+		 * and their top {@value #ALLOC_TEASER_TYPES} types, to stay token-cheap. #53 item
+		 * 1.
+		 */
+		private Map<String, String> allocTypeTeasers() {
+			Map<String, String> teasers = new HashMap<>();
+			this.allocBySite.entrySet()
+				.stream()
+				.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+				.limit(ALLOC_TEASER_SITES)
+				.forEach((site) -> {
+					Map<String, Long> byType = this.allocBySiteType.get(site.getKey());
+					if (byType != null && !byType.isEmpty()) {
+						teasers.put(site.getKey(), typeBreakdown(byType));
+					}
+				});
+			return teasers;
+		}
+
+		/** The top types of one site, formatted {@code Type bytes · Type bytes · …}. */
+		private static String typeBreakdown(Map<String, Long> byType) {
+			return byType.entrySet()
+				.stream()
+				.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+				.limit(ALLOC_TEASER_TYPES)
+				.map((t) -> simpleType(t.getKey()) + " " + humanBytes(t.getValue()))
+				.collect(java.util.stream.Collectors.joining(" · "));
 		}
 
 		/** Per-endpoint teaser: humanized bytes + op count. */

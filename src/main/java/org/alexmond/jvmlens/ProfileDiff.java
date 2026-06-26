@@ -50,13 +50,36 @@ public final class ProfileDiff {
 		scalar(md, "GC pause", before.gcPauseMillis(), after.gcPauseMillis(), "ms-direct");
 		scalar(md, "Old-object samples", before.oldObjects(), after.oldObjects(), "");
 		md.append('\n');
-		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths());
-		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites());
-		section(md, "Lock contention", "ms", before.locks(), after.locks());
+		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(), null);
+		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
+				redistributionNote(before.allocBytes(), after.allocBytes()));
+		section(md, "Lock contention", "ms", before.locks(), after.locks(), null);
 		for (String key : sectionKeys(before, after)) {
-			section(md, key, unit(before, after, key), sectionRows(before, key), sectionRows(after, key));
+			section(md, key, unit(before, after, key), sectionRows(before, key), sectionRows(after, key), null);
 		}
 		return md.toString();
+	}
+
+	/**
+	 * A hedge note for an allocation-site row whose absolute change <em>opposes</em> the
+	 * total-allocation change — almost certainly JFR allocation-<em>sampling</em>
+	 * redistribution (when the dominant allocator shrinks, the sampler reattributes
+	 * weight toward whatever's next, so a flat site's <em>attributed</em> bytes balloon),
+	 * not a real per-site regression. Returns {@code null} when the total didn't
+	 * meaningfully move (no redistribution context to give). Annotates only — never
+	 * suppresses or re-ranks the row, since a genuine localized regression on an
+	 * improving run looks the same and the absolute anchor (#43/#44) must stay legible.
+	 * Field-finding #52.
+	 */
+	private static RowNote redistributionNote(long totalBefore, long totalAfter) {
+		long totalDelta = totalAfter - totalBefore;
+		if (totalBefore <= 0 || Math.abs((double) totalDelta) / totalBefore < MIN_REL_CHANGE) {
+			return null;
+		}
+		String dir = (totalDelta < 0) ? "fell" : "rose";
+		long pct = Math.round(100.0 * Math.abs(totalDelta) / totalBefore);
+		return (delta) -> (delta != 0 && (delta > 0) != (totalDelta > 0))
+				? "  (possible sampling redistribution — total alloc " + dir + " " + pct + "%)" : "";
 	}
 
 	private static void scalar(StringBuilder md, String label, long before, long after, String unit) {
@@ -74,7 +97,8 @@ public final class ProfileDiff {
 			.append(")\n");
 	}
 
-	private static void section(StringBuilder md, String title, String unit, List<Ranked> before, List<Ranked> after) {
+	private static void section(StringBuilder md, String title, String unit, List<Ranked> before, List<Ranked> after,
+			RowNote note) {
 		Map<String, Long> bc = counts(before);
 		Map<String, Long> ac = counts(after);
 		Map<String, Double> bs = shares(before);
@@ -83,7 +107,7 @@ public final class ProfileDiff {
 		names.addAll(ac.keySet());
 		List<String[]> lines = new ArrayList<>();
 		for (String name : names) {
-			lines.add(line(name, bc.get(name), ac.get(name), share(bs, name), share(as, name), unit));
+			lines.add(line(name, bc.get(name), ac.get(name), share(bs, name), share(as, name), unit, note));
 		}
 		lines.removeIf((row) -> row == null);
 		lines.sort((x, y) -> Double.compare(Double.parseDouble(y[0]), Double.parseDouble(x[0])));
@@ -100,7 +124,8 @@ public final class ProfileDiff {
 	 * One delta row as {@code [sortKey, markdown]}, or {@code null} when negligible.
 	 * {@code sortKey} is the absolute change in the row's native unit.
 	 */
-	private static String[] line(String name, Long before, Long after, double bShare, double aShare, String unit) {
+	private static String[] line(String name, Long before, Long after, double bShare, double aShare, String unit,
+			RowNote note) {
 		if (before == null) {
 			return new String[] { String.valueOf(after), String.format(Locale.ROOT, "- `%s` — NEW %s (%.0f%% share)",
 					name, formatVal(after, unit), aShare * 100) };
@@ -115,10 +140,11 @@ public final class ProfileDiff {
 		}
 		String arrow = (delta > 0) ? "▲" : "▼";
 		double pct = (before > 0) ? (100.0 * delta / before) : 0;
+		String extra = (note != null) ? note.note(delta) : "";
 		return new String[] { String.valueOf(Math.abs(delta)),
-				String.format(Locale.ROOT, "- `%s` — %s → %s (%s %.0f%%) [share %.0f%%→%.0f%%]", name,
+				String.format(Locale.ROOT, "- `%s` — %s → %s (%s %.0f%%) [share %.0f%%→%.0f%%]%s", name,
 						formatVal(before, unit), formatVal(after, unit), arrow, Math.abs(pct), bShare * 100,
-						aShare * 100) };
+						aShare * 100, extra) };
 	}
 
 	/**
@@ -192,6 +218,17 @@ public final class ProfileDiff {
 			.findFirst()
 			.or(() -> after.sections().stream().filter((sec) -> sec.key().equals(key)).map(Section::unit).findFirst())
 			.orElse("");
+	}
+
+	/**
+	 * An optional per-row hedge note keyed on the row's absolute change ({@code ""} =
+	 * none).
+	 */
+	@FunctionalInterface
+	private interface RowNote {
+
+		String note(long delta);
+
 	}
 
 }

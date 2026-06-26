@@ -209,6 +209,30 @@ class SummarizerTest {
 		}
 	}
 
+	@Test
+	void crossTabsTypePerAllocationSite() throws Exception {
+		List<byte[]> keep = new ArrayList<>();
+		Path file = recordFile(() -> {
+			long end = System.nanoTime() + 1_500_000_000L;
+			while (System.nanoTime() < end) {
+				byte[] block = new byte[16 * 1024];
+				block[0] = 1;
+				if (keep.size() < 1024) {
+					keep.add(block);
+				}
+			}
+		});
+		try {
+			ProfileSummary s = Summarizer.analyze(file);
+			assertThat(s.allocSites()).isNotEmpty();
+			// the top allocation site carries a per-type breakdown teaser (#53 item 1)
+			assertThat(s.allocSites().get(0).stack()).contains("byte[]");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
 	private static String record(Work work) throws Exception {
 		Path file = recordFile(work);
 		try {
