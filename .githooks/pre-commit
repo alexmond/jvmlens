@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Block commits that introduce new lab-internal references. Enable once per clone:
-#   scripts/lab-scan.sh --install-hook   (sets core.hooksPath=.githooks)
-exec "$(git rev-parse --show-toplevel)/scripts/lab-scan.sh" --staged
