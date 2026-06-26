@@ -32,17 +32,20 @@ java -jar target/jvmlens.jar analyze -b before.jfr after.jfr -f prompt   # wrapp
 ----
 # JVM profile diff (before.jfr → after.jfr)
 ## Totals
-- Exec samples: 685 → 235 (-450, -66%)
-- GC pause (ms): 40 → 1550 (+1510, +3775%)
-## Hot paths (sample share)
-- `GoFmt.floatString` — 50%→8% (▼ 42pp)
-- `Cache.get` — NEW 40%
-- `ListNode.iterator` — GONE (was 16%)
+- Exec samples: 236 → 691 (+455, +193%)
+- Allocation: 9.6 GB → 3.4 GB (-6.2 GB, -64%)
+- GC pause: 1663 ms → 35 ms (-1628 ms, -98%)
+## Allocation sites
+- `GoFmt.floatString` — 517.6 KB → 299.8 KB (▼ 42%) [share 22%→51%]
 ----
 
-It diffs the totals, hot paths, allocation sites, locks, and every extended section by share
-(▲/▼ percentage-point change, plus `NEW` / `GONE`), ranked by the size of the change; rows
-that barely moved are dropped. `-a`/`-x` scoping applies to both recordings.
+It diffs the totals (incl. **total allocation bytes** — the absolute memory anchor), hot
+paths, allocation sites, locks, and every extended section. Each row is anchored on its
+**absolute** weight (bytes / ms / samples) with the direction (▲/▼) and the share change as
+secondary context, ranked by the size of the absolute change; `NEW` / `GONE` are called out,
+and rows that barely moved drop. Anchoring on absolute matters: in an optimize loop the total
+shrinks, so a site whose absolute bytes *fell* can show a *rising* share — share alone would
+mislabel a real win as a regression. `-a`/`-x` scoping applies to both recordings.
 
 ==== CI perf-gate (`--assert`)
 
@@ -56,10 +59,14 @@ pull request). Rules are comma-separated `metric < threshold`:
 
 | `gc-ms` | the *after* GC pause time (ms) is not under the limit
 | `gc-pct` | GC pause increased by more than the limit (%)
+| `alloc-pct` | **total** allocation bytes increased by more than the limit (%) — the absolute memory gate
 | `oldobj-delta` | retained (old-object) samples grew by more than the limit
 | `regression-pp` | a hot path's share rose by more than the limit (percentage points)
 | `new-hotpath-pp` | a *new* hot path appears at/above the limit (% share)
 |===
+
+Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC; the
+`*-pp` ones are share-based and can shuffle when the leader shrinks in an optimize loop.
 
 [source,bash]
 ----

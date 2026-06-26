@@ -49,6 +49,22 @@ class PerfGateTest {
 	}
 
 	@Test
+	void allocPctGatesTotalAllocationAbsolutely() {
+		// #43: the absolute memory gate — immune to the share shuffle
+		ProfileSummary before = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(), List.of(),
+				List.of(), List.of(), List.of(), "c", "com.acme", List.of(), 1_000_000L);
+		ProfileSummary after = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
+				List.of(), List.of(), "c", "com.acme", List.of(), 740_000L);
+		assertThat(PerfGate.evaluate(before, after, "alloc-pct < 0").passed()).isTrue(); // -26%
+																							// <
+																							// 0
+		assertThat(PerfGate.evaluate(after, before, "alloc-pct < 10").passed()).isFalse(); // +35%
+																							// not
+																							// <
+																							// 10
+	}
+
+	@Test
 	void failsOnRetentionGrowthAndUnrecognizedRule() {
 		ProfileSummary before = summary(0, 2, List.of());
 		ProfileSummary after = summary(0, 60, List.of());

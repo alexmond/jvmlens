@@ -449,7 +449,7 @@ public final class Summarizer {
 					ranked(this.allocByType, this.allocBytes, null, "memory"),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
 					ranked(this.lockByMonitor, sum(this.lockByMonitor), null, "locks"), heuristic(),
-					detectAppPackage(detectionWeights()), extendedSections());
+					detectAppPackage(detectionWeights()), extendedSections(), this.allocBytes);
 		}
 
 		/** The beyond-CPU/memory/wait dimensions, only those with any signal. */

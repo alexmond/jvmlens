@@ -156,6 +156,7 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-06-25 — **io-noise** — filter the JFR recorder's own sink from External-I/O (`Summarizer.isNoiseEndpoint`: null/blank/`file null`/`file unknown`/`unknown`/`*.jfr`), so a no-I/O microbenchmark stops reporting `file null` I/O and the correlation stops chaining it. Field-finding #39 gap 4 (gotmpl4j JMH). The one spot the engine over-correlated.
 - 2026-06-25 — **diff** — `analyze --baseline before.jfr after.jfr` → `ProfileDiff` names what changed (per-section share Δ as `50%→8% (▼42pp)` + NEW/GONE, totals Δ), ranked by change size. The agent optimize→measure loop. Field-finding #39 gap 1.
 - 2026-06-25 — **perf-gate** — `analyze --baseline … --assert "gc-pct < 10, regression-pp < 5, new-hotpath-pp < 20, gc-ms < N, oldobj-delta < N"` → `PerfGate` exits **1 on regression**, 0 pass, 2 bad-args. Backend-free CI gate (#39 gap 3). Open #39: JMH integration (2), fix-class hints (5), token budget (6).
+- 2026-06-25 — **diff-absolute** — `ProfileDiff`/`PerfGate` now anchor on **absolute** weight (bytes/ms/samples) not share — share alone *inverts* in an optimize loop (shrinking total → falling site shows rising share). Added total `allocBytes` to `ProfileSummary` (last component + delegating ctors), an Allocation Totals line, and `alloc-pct` gate. Field-finding #43. Lesson: don't diff normalized shares when the denominator is what you're optimizing.
 
 ### Historic
 
