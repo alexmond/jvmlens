@@ -30,6 +30,10 @@ public class AnalyzeCommand implements Callable<Integer> {
 					+ "(gc-ms, gc-pct, alloc-pct, oldobj-delta, regression-pp, new-hotpath-pp). Non-zero exit on regression.")
 	String assertSpec;
 
+	@Option(names = { "--hints" },
+			description = "Append a hedged `[possible]` fix-direction section (off by default — keeps output clean-data-only).")
+	boolean hints;
+
 	@Mixin
 	OutputOptions output;
 
@@ -62,8 +66,21 @@ public class AnalyzeCommand implements Callable<Integer> {
 			return 2;
 		}
 		ProfileSummary summary = Summarizer.analyze(afterFiles, output.scope(), Recordings.label(file, null));
-		System.out.print(Summarizer.render(summary, output.format, output.report));
+		System.out.print(render(summary));
 		return 0;
+	}
+
+	/**
+	 * Render the summary, appending hedged fix hints when {@code --hints} is set
+	 * (md/prompt).
+	 */
+	private String render(ProfileSummary summary) {
+		if (hints && output.format != Summarizer.Format.JSON) {
+			String body = Summarizer.render(summary, Summarizer.Format.MARKDOWN, output.report)
+					+ FixHints.render(summary);
+			return (output.format == Summarizer.Format.PROMPT) ? Renderers.promptOf(body) : body;
+		}
+		return Summarizer.render(summary, output.format, output.report);
 	}
 
 	private static List<Path> readable(Path arg) throws java.io.IOException {

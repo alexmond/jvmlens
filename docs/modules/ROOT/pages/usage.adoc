@@ -98,6 +98,21 @@ java -jar jvmlens.jar analyze --baseline /tmp/run-before /tmp/run-after \
 (JMH records the whole fork including warm-up; for measurement-only signal, configure JMH to
 delay the recording past warm-up, or compare steady-state runs.)
 
+=== Fix-direction hints (`--hints`, opt-in)
+
+`--hints` appends a hedged `## Likely fix directions [possible]` section that maps recognized
+hot-frame / allocation shapes to a one-line direction, each grounded in the row that
+triggered it — e.g. `DoubleToDecimal`/`formatUnsignedInt` → "number→string formatting", a
+`LinkedList$ListItr.<init>` self-time → "per-iteration iterator allocation",
+`AbstractStringBuilder.ensureCapacity` → "presize the buffer". It is **off by default** (the
+report stays clean data) and every line is tagged `[possible]` — a direction to investigate,
+never an assertion.
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze recording.jfr --hints
+----
+
 == Report focus
 
 `-r` / `--report` narrows the output to one concern (reusing the same sections the MCP
