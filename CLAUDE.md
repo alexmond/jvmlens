@@ -34,8 +34,8 @@ these all run as part of `package`:
   spring-javaformat uses **tabs** for indentation.
 - **JaCoCo**: `jvmlens-engine` (the substantive logic) holds the strict **≥80%** line gate;
   the thin front-end modules (`-cli`/`-agent`, mostly transport/bootstrap glue) hold a 50%
-  rot-guard floor with the bootstrap classes excluded. New engine logic needs a test or the
-  build fails at `package`.
+  rot-guard floor with the bootstrap classes excluded. The gate runs at the `verify` phase
+  (so `scripts/dev-verify.sh` and CI both enforce it; a bare `mvn package` does not).
 
 ## Run
 
@@ -95,8 +95,9 @@ keep analysis logic in the engine, not the command.
   locks/GC); a `⚠` caveat fires under 200 execution samples.
 - **The heuristic under-interprets** — hedges, no confident "leak" from sparse old-object
   samples. Give the LLM clean data over a confident wrong label.
-- **Build gates**: `mvn package` runs spring-javaformat + checkstyle + PMD (validate phase) and
-  JaCoCo ≥80% line — run `spring-javaformat:apply` first. Transport/bootstrap classes (`Main`,
+- **Build gates**: spring-javaformat + checkstyle + PMD run at the `validate` phase; the
+  JaCoCo ≥80% line gate runs at `verify` (use `scripts/dev-verify.sh` or `mvn verify`, not a
+  bare `package`). Run `spring-javaformat:apply` first. Transport/bootstrap classes (`Main`,
   `McpServerCommand`, agent, snapshot glue) are jacoco-excluded.
 - **Tests** synthesize real recordings via `jdk.jfr.Recording`/attach at runtime — no committed
   `.jfr` fixtures.
