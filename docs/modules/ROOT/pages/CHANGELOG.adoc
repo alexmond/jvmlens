@@ -21,6 +21,9 @@ JVM-evidence → LLM-ready summarizer with a live control plane.
 * `control <control-file> <cmd…>` — **in-flight** agent control (see _Runtime control_).
 * `mcp` — stdio MCP server exposing scoped, navigable tools (one per dimension) plus a live
   `profile` tool; reachable remotely over stdio-over-ssh. Serves data only — never calls an LLM.
+* **JMH profiler plugin** — `-prof org.alexmond.jvmlens.jmh.JvmlensProfiler` prints the summary
+  inline after a benchmark trial. Ships as a dependency-light `jvmlens-*-jmh.jar` (engine +
+  profiler, no Spring/picocli/jmh).
 
 === Dimensions summarized
 

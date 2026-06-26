@@ -45,6 +45,7 @@
         <picocli.version>4.7.7</picocli.version>
         <mcp.version>0.10.0</mcp.version>
         <ap-loader.version>3.0-9</ap-loader.version>
+        <jmh.version>1.37</jmh.version>
 
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
@@ -80,6 +81,14 @@
         <dependency>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy</artifactId>
+        </dependency>
+        <!-- JMH profiler SPI: provided so it never bundles into the engine/agent/CLI jars;
+             the jvmlens-*-jmh.jar consumer already has jmh-core on its benchmark classpath. -->
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>${jmh.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -152,6 +161,40 @@
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
+                        </configuration>
+                    </execution>
+                    <!-- A dependency-light jar (engine + the JMH profiler, no Spring/picocli/jmh)
+                         for `-prof org.alexmond.jvmlens.jmh.JvmlensProfiler` on a benchmark classpath. -->
+                    <execution>
+                        <id>jmh-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>jmh</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>${project.groupId}:${project.artifactId}</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>${project.groupId}:${project.artifactId}</artifact>
+                                    <includes>
+                                        <include>org/alexmond/jvmlens/jmh/**</include>
+                                        <include>org/alexmond/jvmlens/Summarizer*.class</include>
+                                        <include>org/alexmond/jvmlens/Renderers*.class</include>
+                                        <include>org/alexmond/jvmlens/ProfileSummary*.class</include>
+                                        <include>org/alexmond/jvmlens/ProfileDiff*.class</include>
+                                        <include>org/alexmond/jvmlens/Scope*.class</include>
+                                        <include>org/alexmond/jvmlens/RankLimits*.class</include>
+                                        <include>org/alexmond/jvmlens/Recordings*.class</include>
+                                    </includes>
+                                </filter>
+                            </filters>
                         </configuration>
                     </execution>
                 </executions>
@@ -296,6 +339,8 @@
                                         <exclude>org.alexmond.jvmlens.cache.CacheAdvice</exclude>
                                         <exclude>org.alexmond.jvmlens.cache.CacheCapture</exclude>
                                         <exclude>org.alexmond.jvmlens.consume.MicrometerSource</exclude>
+                                        <!-- JMH profiler glue; afterTrial needs a live JMH run, not a unit test -->
+                                        <exclude>org.alexmond.jvmlens.jmh.JvmlensProfiler</exclude>
                                     </excludes>
                                 </rule>
                             </rules>
