@@ -113,6 +113,29 @@ class RenderersTest {
 	}
 
 	@Test
+	void softensCorrelationOnStartupDominatedCaptures() {
+		// #70: top hot path is the JUnit runner, top I/O is a .m2 jar read, top SQL is
+		// DDL —
+		// classic startup/classload noise, not workload. Caveat + soften, don't assert a
+		// chain.
+		ProfileSummary s = new ProfileSummary("r.jfr", 100, 0, 0, 0, 354,
+				List.of(new Ranked(
+						"org.junit.jupiter.engine.descriptor.ClassBasedTestDescriptor.lambda$x", 1.0, 100, null)),
+				List.of(), List.of(), List.of(), List.of(), List.of(), "cause", "com.example", List.of(
+						new ProfileSummary.Section("io", "External I/O", "ms", true,
+								List.of(new Ranked("file …/.m2/repository/org/antlr/antlr4-runtime-4.13.1.jar", 1.0,
+										2_000_000_000L, null))),
+						new ProfileSummary.Section("db", "Top SQL", "ms", true,
+								List.of(new Ranked("create table if not exists \"public\".\"flyway_schema_history\"",
+										1.0, 1_000_000_000L, null)))));
+		String full = Renderers.markdown(s);
+		assertThat(full).contains("## Cross-dimension correlation (heuristic)");
+		assertThat(full).contains("startup/classload-dominated").contains("steady-state load");
+		// the misleading workload-chain assertion is dropped
+		assertThat(full).doesNotContain("likely chain is request");
+	}
+
+	@Test
 	void withSectionsAppendsAndIsEmptySafe() {
 		ProfileSummary base = sample();
 		assertThat(base.withSections(List.of())).isSameAs(base);

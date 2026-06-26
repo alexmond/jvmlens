@@ -87,10 +87,47 @@ final class Renderers {
 		if (parts.size() < 2) {
 			return;
 		}
-		md.append("## Cross-dimension correlation (heuristic)\n- Dominant signals co-occur: ")
+		md.append("## Cross-dimension correlation (heuristic)\n");
+		if (startupDominated(s)) {
+			// The dominant signals are bootstrap/classload/DDL, not workload — asserting
+			// a
+			// request→query→GC chain here is the most common misread (field-finding #70).
+			md.append("- ⚠ Capture appears **startup/classload-dominated** (bootstrap frames, "
+					+ "JAR/classpath I/O, or schema DDL among the top signals) — sample under "
+					+ "steady-state load for workload signal.\n"
+					+ "- Co-occurring (not necessarily a workload chain): ")
+				.append(String.join(", ", parts))
+				.append(".\n\n");
+			return;
+		}
+		md.append("- Dominant signals co-occur: ")
 			.append(String.join(", ", parts))
 			.append(". If they share a call path the likely chain is request → query / allocation → GC;"
 					+ " confirm with a focused capture.\n\n");
+	}
+
+	/**
+	 * Whether the dominant signals look like JVM startup / class-loading / schema setup
+	 * rather than the workload — the top hot path is a bootstrap/test-harness frame, or
+	 * the top external I/O is a JAR / Maven-repo read, or the top SQL is DDL. On such
+	 * captures the correlation chain is misleading; soften it and tell the reader to
+	 * profile under steady state (field-finding #70).
+	 */
+	private static boolean startupDominated(ProfileSummary s) {
+		String hot = s.hotPaths().isEmpty() ? "" : s.hotPaths().get(0).name();
+		boolean bootHot = hot.startsWith("org.junit.") || hot.startsWith("org.springframework.boot.")
+				|| hot.contains("SpringApplication") || hot.startsWith("org.gradle.")
+				|| hot.startsWith("worker.org.gradle.") || hot.startsWith("org.testng.");
+		String io = nz(topName(s, "io")).toLowerCase(Locale.ROOT);
+		boolean jarIo = io.contains(".jar") || io.contains("/.m2/") || io.contains("/repository/");
+		String sql = nz(topName(s, "db")).strip().toLowerCase(Locale.ROOT);
+		boolean ddlSql = sql.startsWith("create ") || sql.startsWith("alter ") || sql.startsWith("drop ")
+				|| sql.contains("flyway_schema_history");
+		return bootHot || jarIo || ddlSql;
+	}
+
+	private static String nz(String s) {
+		return (s != null) ? s : "";
 	}
 
 	private static void addPart(List<String> parts, String label, String name) {
