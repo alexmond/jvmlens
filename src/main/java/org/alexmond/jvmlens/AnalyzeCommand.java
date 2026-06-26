@@ -34,6 +34,14 @@ public class AnalyzeCommand implements Callable<Integer> {
 			description = "Append a hedged `[possible]` fix-direction section (off by default — keeps output clean-data-only).")
 	boolean hints;
 
+	@Option(names = { "--top-k" }, paramLabel = "<n>",
+			description = "Keep only the top <n> rows per section (budget-dial the summary size).")
+	Integer topK;
+
+	@Option(names = { "--max-tokens" }, paramLabel = "<n>",
+			description = "Shrink top-k until the summary fits roughly <n> tokens (chars/4).")
+	Integer maxTokens;
+
 	@Mixin
 	OutputOptions output;
 
@@ -65,9 +73,29 @@ public class AnalyzeCommand implements Callable<Integer> {
 			System.err.println("jvmlens: --assert needs --baseline (it gates a before→after diff)");
 			return 2;
 		}
+		if (topK != null && topK > 0) {
+			RankLimits.set("all", topK);
+		}
+		if (maxTokens != null && topK == null) {
+			System.out.print(withinBudget(afterFiles, Recordings.label(file, null), maxTokens));
+			return 0;
+		}
 		ProfileSummary summary = Summarizer.analyze(afterFiles, output.scope(), Recordings.label(file, null));
 		System.out.print(render(summary));
 		return 0;
+	}
+
+	/** Render at the largest top-k whose output fits {@code maxTokens} (~chars/4). */
+	private String withinBudget(List<Path> files, String label, int maxTokens) throws java.io.IOException {
+		String out = "";
+		for (int k : new int[] { RankLimits.DEFAULT, 4, 3, 2, 1 }) {
+			RankLimits.set("all", k);
+			out = render(Summarizer.analyze(files, output.scope(), label));
+			if (out.length() / 4 <= maxTokens) {
+				break;
+			}
+		}
+		return out;
 	}
 
 	/**

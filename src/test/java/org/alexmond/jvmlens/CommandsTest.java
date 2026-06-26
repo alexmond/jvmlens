@@ -160,6 +160,19 @@ class CommandsTest {
 	}
 
 	@Test
+	void analyzeAcceptsTopKAndMaxTokensBudgetOptions() throws Exception {
+		Path file = tinyRecording();
+		try {
+			assertThat(new CommandLine(new AnalyzeCommand()).execute("--top-k", "2", file.toString())).isZero();
+			assertThat(new CommandLine(new AnalyzeCommand()).execute("--max-tokens", "200", file.toString())).isZero();
+		}
+		finally {
+			RankLimits.reset(); // the budget options mutate the process-global limit
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
 	void rootCommandPrintsUsageAndReturnsZero() {
 		int rc = new CommandLine(new JvmlensCommand()).execute();
 		assertThat(rc).isZero();
