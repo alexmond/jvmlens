@@ -17,12 +17,12 @@ runs on 17/21/25. This is a **Maven reactor** — `jvmlens-engine` / `-cli` / `-
 `-jmh` modules under a parent pom. Run from the repo root (builds all modules in order).
 
 ```bash
+scripts/dev-verify.sh                         # ⭐ format + full-reactor verify (what to run before a PR)
+scripts/dev-test.sh SummarizerTest            # targeted test, any module (-pl to narrow)
+scripts/dev-test.sh -pl jvmlens-engine FixHintsTest
 ./mvnw -q clean package                       # full reactor build (runs all gates below)
-./mvnw -q test                                # tests only
-./mvnw -q test -Dtest=SummarizerTest -pl jvmlens-engine     # single test class (-pl = its module)
-./mvnw -q test -Dtest=SummarizerTest#summarizesCpuHotPath -pl jvmlens-engine
 ./mvnw -q -pl jvmlens-cli -am package         # build one module + what it depends on
-./mvnw spring-javaformat:apply                # auto-fix formatting before committing
+./mvnw spring-javaformat:apply                # auto-fix formatting (dev-verify does this for you)
 ```
 
 The build is **strict and will fail** on style/coverage, not just compile errors —
