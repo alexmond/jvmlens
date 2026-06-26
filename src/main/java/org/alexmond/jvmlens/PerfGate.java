@@ -16,10 +16,14 @@ import org.alexmond.jvmlens.ProfileSummary.Ranked;
  * field-finding (#39, gap 3).
  *
  * <p>
- * Metrics: {@code gc-ms} (after GC pause ms, absolute ceiling), {@code gc-pct} (GC pause
- * increase %), {@code oldobj-delta} (retained-sample growth), {@code regression-pp}
- * (largest hot-path share increase, percentage points), {@code new-hotpath-pp} (largest
- * NEW hot-path share). All use {@code <} ("must stay under").
+ * Metrics: {@code gc-ms} (after GC pause ms ceiling), {@code gc-pct} (GC pause increase
+ * %), {@code alloc-pct} (<em>total</em> allocation-byte increase % — the absolute memory
+ * gate, immune to the share-shuffle of field-finding #43), {@code oldobj-delta}
+ * (retained-sample growth), {@code regression-pp} (largest hot-path share increase, pp),
+ * {@code new-hotpath-pp} (largest NEW hot-path share). All use {@code <} ("must stay
+ * under"). Prefer the absolute gates ({@code gc-*}, {@code alloc-pct},
+ * {@code oldobj-delta}); the {@code *-pp} ones are share-based and can shuffle when the
+ * leader shrinks.
  */
 public final class PerfGate {
 
@@ -58,7 +62,8 @@ public final class PerfGate {
 	private static Eval check(String metric, double threshold, ProfileSummary before, ProfileSummary after) {
 		return switch (metric) {
 			case "gc-ms" -> num(after.gcPauseMillis(), threshold, "after GC = " + after.gcPauseMillis() + " ms");
-			case "gc-pct" -> pct(before.gcPauseMillis(), after.gcPauseMillis(), threshold);
+			case "gc-pct" -> pct("GC ms", before.gcPauseMillis(), after.gcPauseMillis(), threshold);
+			case "alloc-pct" -> pct("alloc bytes", before.allocBytes(), after.allocBytes(), threshold);
 			case "oldobj-delta" -> num(after.oldObjects() - before.oldObjects(), threshold,
 					"old-objects " + before.oldObjects() + " → " + after.oldObjects());
 			case "regression-pp" -> regression(before.hotPaths(), after.hotPaths(), threshold);
@@ -71,11 +76,11 @@ public final class PerfGate {
 		return new Eval(actual < threshold, detail + " (limit " + fmt(threshold) + ")");
 	}
 
-	private static Eval pct(long before, long after, double threshold) {
+	private static Eval pct(String label, long before, long after, double threshold) {
 		double pct = (before > 0) ? (100.0 * (after - before) / before) : ((after > 0) ? Double.POSITIVE_INFINITY : 0);
 		String shown = Double.isInfinite(pct) ? "∞" : String.format(Locale.ROOT, "%+.0f", pct);
 		return new Eval(pct < threshold,
-				"GC " + before + " → " + after + " ms (" + shown + "%, limit " + fmt(threshold) + "%)");
+				label + " " + before + " → " + after + " (" + shown + "%, limit " + fmt(threshold) + "%)");
 	}
 
 	private static Eval regression(List<Ranked> before, List<Ranked> after, double threshold) {
