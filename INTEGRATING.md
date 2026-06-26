@@ -22,20 +22,38 @@ the jvmlens jar from inside the builder checkout against the builder process.
 
 ## What you need first
 
-jvmlens is **not yet published to Maven Central** — build the two jars once from a
-checkout and copy them wherever you need them. Java 17+.
+jvmlens is **not yet released to Maven Central**, but every green build on `main`
+publishes a rolling **`latest`** pre-release, so you can grab the jars without
+building. Java 17+.
+
+```bash
+mkdir -p tools
+# CLI + MCP server (analyze/profile/watch/mcp):
+curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
+# the in-process -javaagent jar (Path C):
+curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-agent.jar
+# the JMH profiler jar (optimize loop, optional):
+curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-jmh.jar
+```
+
+These URLs are stable — `latest` always points at the most recent green build.
+It's a **pre-release**; APIs may change until the first tagged release.
+
+<details><summary>Or build from source</summary>
 
 ```bash
 git clone https://github.com/alexmond/jvmlens && cd jvmlens
 ./mvnw -q clean package
-# Two artifacts land in target/:
-#   target/jvmlens.jar                       <- the CLI + MCP server (analyze/profile/watch/mcp)
+#   target/jvmlens.jar                       <- the CLI + MCP server
 #   target/jvmlens-<version>-agent.jar       <- the in-process -javaagent jar
+#   target/jvmlens-<version>-jmh.jar         <- the JMH profiler jar
 ```
 
-Copy `target/jvmlens.jar` into your project (e.g. `builder/tools/jvmlens.jar`) or
-keep it on a shared path. Nothing about jvmlens needs to be a dependency of your
-build — it consumes JFR, which the JDK already produces.
+</details>
+
+Keep `jvmlens.jar` on a shared path or copy it into your project (e.g.
+`builder/tools/jvmlens.jar`). Nothing about jvmlens needs to be a dependency of
+your build — it consumes JFR, which the JDK already produces.
 
 > jvmlens never calls an LLM and never sends your recording anywhere. Every path
 > below runs locally and emits text you choose to share.
