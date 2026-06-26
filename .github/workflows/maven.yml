@@ -16,23 +16,36 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    # Verify the one (Java-17-bytecode) artifact builds + passes the full suite on every
+    # supported JDK runtime. The compiler target stays 17; only the running JDK varies, so
+    # all lanes produce the same bytecode — this is a runtime-compatibility check, not a
+    # multi-target build. Java 25 is informational for now: `--engine async` self-skips
+    # there (async-profiler 3.0 predates JDK 25; an ap-loader 4.x bump will close it).
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21', '25']
+
+    name: build (Java ${{ matrix.java }})
+    continue-on-error: ${{ matrix.java == '25' }}
+
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
           cache: maven
       - name: Build with Maven
-        run: mvn -B package --file pom.xml -Pdefault --no-transfer-progress
+        run: mvn -B package --no-transfer-progress   # JDK 21+ auto-activates the jdk21-plus profile
 
       # Early-access distribution: every green build on main refreshes a single rolling
       # `latest` pre-release so people can use jvmlens before a formal release. The asset
       # filenames are stable (version stripped), so the download URLs never change:
       #   https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
       - name: Publish rolling 'latest' pre-release
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: success() && matrix.java == '17' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -64,7 +77,7 @@ jobs:
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
+        if: always() && matrix.java == '17'
         continue-on-error: true   # reporting is decorative; the build is the gate
         with:
           files: |
@@ -72,6 +85,7 @@ jobs:
 
       - name: Add coverage to PR
         id: jacoco
+        if: matrix.java == '17'
         uses: madrapps/jacoco-report@v1.7.2
         continue-on-error: true   # reporting is decorative; the build is the gate
         with:
@@ -82,6 +96,7 @@ jobs:
           min-coverage-changed-files: 60
 
       - name: Add coverage to PR
+        if: matrix.java == '17'
         uses: codecov/codecov-action@v5
         continue-on-error: true   # reporting is decorative; the build is the gate
         with:
@@ -90,7 +105,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.java == '17' }}
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -98,7 +113,7 @@ jobs:
             **/surefire-reports/TEST-*.xml
 
       - name: Report tests + coverage to UniTrack
-        if: always()
+        if: always() && matrix.java == '17'
         uses: alexmond/unitrack/action@v0
         with:
           url: ${{ vars.UNITRACK_URL }}
@@ -108,5 +123,6 @@ jobs:
           soft-fail: "true"
 
       - name: Submit Dependency Snapshot
+        if: matrix.java == '17'
         uses: advanced-security/maven-dependency-submission-action@v5
         continue-on-error: true   # needs dependency-graph enabled; non-fatal on private repos
