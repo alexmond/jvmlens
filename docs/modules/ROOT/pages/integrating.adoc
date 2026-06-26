@@ -30,8 +30,8 @@ APIs may change until the first tagged release. Or build from source:
 ----
 git clone https://github.com/alexmond/jvmlens && cd jvmlens
 ./mvnw -q clean package
-#   target/jvmlens.jar                  <- CLI + MCP server (analyze/profile/watch/mcp)
-#   target/jvmlens-<version>-agent.jar  <- the in-process -javaagent jar
+#   jvmlens-cli/target/jvmlens.jar          <- CLI + MCP server (analyze/profile/watch/mcp)
+#   jvmlens-agent/target/jvmlens-agent.jar  <- the in-process -javaagent jar
 ----
 
 Nothing about jvmlens needs to be a dependency of your build — it consumes JFR, which

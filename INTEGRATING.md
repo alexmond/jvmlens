@@ -44,9 +44,9 @@ It's a **pre-release**; APIs may change until the first tagged release.
 ```bash
 git clone https://github.com/alexmond/jvmlens && cd jvmlens
 ./mvnw -q clean package
-#   target/jvmlens.jar                       <- the CLI + MCP server
-#   target/jvmlens-<version>-agent.jar       <- the in-process -javaagent jar
-#   target/jvmlens-<version>-jmh.jar         <- the JMH profiler jar
+#   jvmlens-cli/target/jvmlens.jar           <- the CLI + MCP server
+#   jvmlens-agent/target/jvmlens-agent.jar   <- the in-process -javaagent jar
+#   jvmlens-jmh/target/jvmlens-jmh.jar       <- the JMH profiler jar
 ```
 
 </details>

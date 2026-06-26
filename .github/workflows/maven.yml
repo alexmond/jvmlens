@@ -50,10 +50,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Stable, version-less names so the download URLs are permanent.
-          cp target/jvmlens.jar jvmlens.jar
-          cp target/jvmlens-*-agent.jar jvmlens-agent.jar
-          cp target/jvmlens-*-jmh.jar jvmlens-jmh.jar
+          # Stable, version-less names so the download URLs are permanent. Each jar is the
+          # main artifact of its own module after the multi-module split.
+          cp jvmlens-cli/target/jvmlens.jar jvmlens.jar
+          cp jvmlens-agent/target/jvmlens-agent.jar jvmlens-agent.jar
+          cp jvmlens-jmh/target/jvmlens-jmh.jar jvmlens-jmh.jar
           NOTES=$(cat <<EOF
           Rolling pre-release, auto-published from the latest green build on \`main\` (commit ${GITHUB_SHA}). **Unstable — APIs may change before the first tagged release.**
 

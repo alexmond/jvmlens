@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.alexmond</groupId>
+        <artifactId>jvmlens-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jvmlens-agent</artifactId>
+    <name>jvmlens-agent</name>
+    <description>The in-process -javaagent: periodic summaries, instrumentation, snapshots.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.alexmond</groupId>
+            <artifactId>jvmlens-engine</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>jvmlens-agent</finalName>
+        <plugins>
+            <!-- Rot-guard floor; the bytecode-instrumentation glue (premain, advice/capture,
+                 control-file watcher) is verified by integration tests, not unit coverage. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>check</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.50</minimum>
+                                        </limit>
+                                    </limits>
+                                    <excludes>
+                                        <exclude>org.alexmond.jvmlens.agent.JvmlensAgent</exclude>
+                                        <exclude>org.alexmond.jvmlens.agent.ControlChannel</exclude>
+                                        <exclude>org.alexmond.jvmlens.snapshot.SnapshotAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.snapshot.SnapshotCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.sql.SqlAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.sql.SqlCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.web.WebAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.web.WebCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.messaging.MessagingAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.messaging.MessagingCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.cache.CacheAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.cache.CacheCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.consume.MicrometerSource</exclude>
+                                    </excludes>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- The agent jar IS this module's artifact: a self-contained -javaagent with the
+                 dependency-free engine + ByteBuddy (relocated) and the agent manifest. Because
+                 this shade no longer shares a module with Spring Boot repackage, it can't
+                 corrupt the CLI fat jar. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>agent-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>${project.groupId}:jvmlens-engine</include>
+                                    <include>${project.groupId}:jvmlens-agent</include>
+                                    <include>net.bytebuddy:byte-buddy</include>
+                                </includes>
+                            </artifactSet>
+                            <relocations>
+                                <relocation>
+                                    <pattern>net.bytebuddy</pattern>
+                                    <shadedPattern>org.alexmond.jvmlens.shaded.bytebuddy</shadedPattern>
+                                </relocation>
+                            </relocations>
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Premain-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Premain-Class>
+                                        <Agent-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Agent-Class>
+                                        <Can-Redefine-Classes>true</Can-Redefine-Classes>
+                                        <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                                    </manifestEntries>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
