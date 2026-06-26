@@ -12,13 +12,16 @@ are JDK-provided (`jdk.jfr`). See `DESIGN.md` (the "why") and `ROADMAP.md` (the 
 
 ## Build & test
 
-Use the Maven wrapper (`./mvnw`); `mvn` works if installed. Java 17.
+Use the Maven wrapper (`./mvnw`); `mvn` works if installed. Java 17 bytecode; the build
+runs on 17/21/25. This is a **Maven reactor** — `jvmlens-engine` / `-cli` / `-agent` /
+`-jmh` modules under a parent pom. Run from the repo root (builds all modules in order).
 
 ```bash
-./mvnw -q clean package                       # full build (runs all gates below)
+./mvnw -q clean package                       # full reactor build (runs all gates below)
 ./mvnw -q test                                # tests only
-./mvnw -q test -Dtest=SummarizerTest          # single test class
-./mvnw -q test -Dtest=SummarizerTest#summarizesCpuHotPath   # single method
+./mvnw -q test -Dtest=SummarizerTest -pl jvmlens-engine     # single test class (-pl = its module)
+./mvnw -q test -Dtest=SummarizerTest#summarizesCpuHotPath -pl jvmlens-engine
+./mvnw -q -pl jvmlens-cli -am package         # build one module + what it depends on
 ./mvnw spring-javaformat:apply                # auto-fix formatting before committing
 ```
 
@@ -29,14 +32,16 @@ these all run as part of `package`:
   compile). Run `spring-javaformat:apply` to fix formatting; checkstyle/PMD config is
   in `checkstyle.xml`, `checkstyle-suppressions.xml`, `pmd-ruleset.xml`. Note
   spring-javaformat uses **tabs** for indentation.
-- **JaCoCo** enforces ≥80% line coverage on the bundle (only `Main` is excluded). New
-  logic generally needs a test or the build fails at `verify`/`package`.
+- **JaCoCo**: `jvmlens-engine` (the substantive logic) holds the strict **≥80%** line gate;
+  the thin front-end modules (`-cli`/`-agent`, mostly transport/bootstrap glue) hold a 50%
+  rot-guard floor with the bootstrap classes excluded. New engine logic needs a test or the
+  build fails at `package`.
 
 ## Run
 
 ```bash
-java -jar target/jvmlens.jar analyze recording.jfr           # built jar
-./mvnw -q spring-boot:run -Dspring-boot.run.arguments="analyze,recording.jfr"   # dev
+java -jar jvmlens-cli/target/jvmlens.jar analyze recording.jfr   # built CLI fat jar
+./mvnw -q -pl jvmlens-cli spring-boot:run -Dspring-boot.run.arguments="analyze,recording.jfr"   # dev
 ```
 
 To produce a recording to test against, `examples/Workload.java` plants one known
@@ -161,6 +166,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-06-26 — **fix-hints** — `analyze --hints` (opt-in) appends a hedged `Likely fix directions [possible]` section: `FixHints` regex-catalog maps hot-frame/alloc shapes (DoubleToDecimal, `$ListItr`, ensureCapacity, BigDecimal, regex, autobox, reflect) to a one-line direction, grounded in the triggering row. Default output stays clean-data-only. #39 gap 5.
 - 2026-06-26 — **token-budget** — `analyze --top-k <n>` (rows/section) + `--max-tokens <n>` (shrink top-k until ~chars/4 fits) via `RankLimits.set("all",…)`; the budget loop re-analyzes per candidate k. #39 gap 6.
 - 2026-06-26 — **jmh-plugin** — `org.alexmond.jvmlens.jmh.JvmlensProfiler` implements JMH `ExternalProfiler` (arms JFR via `addJVMOptions`, prints the summary in `afterTrial`). Invoked by **FQN** `-prof org.alexmond.jvmlens.jmh.JvmlensProfiler` (JMH has no ServiceLoader for profilers — earlier #48 note was wrong). `jmh-core` is **provided** (not bundled); a 2nd shade execution attaches `jvmlens-*-jmh.jar` (engine+profiler only). Profiler jacoco-excluded. #48 (was #39 gap 2b).
+- 2026-06-26 — **multi-module** — split into a Maven reactor: `jvmlens-engine` (plain jar) / `-cli` (Spring Boot fat jar) / `-agent` (shaded javaagent) / `-jmh` (shaded profiler). Why: shade + spring-boot:repackage in **one** module double-packed Spring into `BOOT-INF/classes` *and* `/lib` — latent on Boot 3.4, **fatal on Boot 4** (MR fat jar + Spring 7 `MetadataReaderFactoryDelegate` classloader split → `IllegalAccessError`). One packaging plugin per module fixes it. Engine keeps 80%; front-ends a 50% floor.
+- 2026-06-26 — **spring-boot-4** — bumped to **Spring Boot 4.0.7** (Spring Framework 7) — pulls byte-buddy 1.17.8 (helps JDK 25) + Jackson 3 BOM. Migrated to **Jackson 3** (`tools.jackson`): `trend` uses `tools.jackson.databind.ObjectMapper`; `mcp` drops its explicit `ObjectMapper` (no-arg `StdioServerTransportProvider()`) as MCP SDK 0.10.0 is still Jackson-2-bound. Unblocked by the [[multi-module]] split. Verified 143 tests + boot on 17/21/25.
 - 2026-06-26 — **java-compat** — verified the **one** Java-17-bytecode jar builds + passes the full suite on JDK **17/21/25** (locally + a CI matrix; runtime check, not multi-target — compiler stays release 17, only the running JDK varies). Reporting/publish gated to the 17 lane; 25 is `continue-on-error` because `--engine async` self-skips there (async-profiler 3.0 predates 25 → future ap-loader 4.x). pom `jdk21-plus` profile (JDK≥21) adds `-XX:+EnableDynamicAgentLoading` to surefire. **One jar suffices — no multi-jar.**
 - 2026-06-26 — **diff-redistribution** — `ProfileDiff` hedges an allocation-**site** row whose absolute Δ *opposes* the total-allocation Δ with `(possible sampling redistribution — total alloc fell N%)` — JFR reattributes sampled weight to the next site as the dominant allocator shrinks. **Annotate, never suppress/re-rank** (a real localized regression looks identical; absolute anchor #43/#44 stays legible). Closes #52, covers #53 item 8 (`PerfGate` has no per-site alloc gate to harden).
 - 2026-06-26 — **hints-levers** — `FixHints` tags each direction **structural** (mechanical/safe — iterator+lambda alloc, presize, reflect, autobox) vs **inherent** (parity-sensitive — number→string formatting, BigDecimal precision), sorts structural-first with a legend, adds the captured-lambda shape (`$$Lambda`). Why: the hardest call in the optimize loop is *which lever is safe to pull* — `floatString` was #1 but inherent (wrong), `ListNode.iterator` #2 was structural (right). #53 item 2.
