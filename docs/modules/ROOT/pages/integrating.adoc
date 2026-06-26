@@ -12,8 +12,19 @@ reference see xref:usage.adoc[Usage].
 
 == What you need first
 
-jvmlens is **not yet on Maven Central** — build the two jars once and copy them where
-you need them. Java 17+.
+jvmlens is **not yet on Maven Central**, but every green build on `main` publishes a
+rolling **`latest`** pre-release, so you can grab the jars without building. Java 17+.
+
+[source,bash]
+----
+mkdir -p tools
+curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
+curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-agent.jar
+curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-jmh.jar
+----
+
+The URLs are stable (always the most recent green build); it's a **pre-release**, so
+APIs may change until the first tagged release. Or build from source:
 
 [source,bash]
 ----

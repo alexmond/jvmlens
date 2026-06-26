@@ -61,6 +61,22 @@ raw `jfr print` — too big to paste. jvmlens turns the same recording into a
 allocation site, or the contended lock. For an LLM, the summary isn't just
 cheaper — for non-trivial recordings it's the only input that fits.
 
+## Download (early access)
+
+jvmlens isn't released to Maven Central yet, but every green build on `main`
+publishes a rolling **[`latest`](https://github.com/alexmond/jvmlens/releases/tag/latest)**
+pre-release — so you can use it now, no build required (Java 17+):
+
+```bash
+curl -L -o jvmlens.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
+java -jar jvmlens.jar analyze recording.jfr
+```
+
+The download URL is stable (it always points at the latest green build). The
+release also carries `jvmlens-agent.jar` (the in-process `-javaagent`) and
+`jvmlens-jmh.jar` (the JMH profiler). It's a **pre-release** — APIs may change
+until the first tagged release.
+
 ## Build
 
 ```bash
@@ -70,12 +86,13 @@ mvn -q clean package
 ## Use
 
 ```bash
-# analyze an existing JFR recording (markdown by default)
-java -jar target/jvmlens.jar analyze recording.jfr
+# analyze an existing JFR recording (markdown by default) — use the downloaded jar,
+# or target/jvmlens.jar if you built from source
+java -jar jvmlens.jar analyze recording.jfr
 
 # or emit scoped JSON / an LLM-ready prompt
-java -jar target/jvmlens.jar analyze -f json recording.jfr
-java -jar target/jvmlens.jar analyze -f prompt recording.jfr
+java -jar jvmlens.jar analyze -f json recording.jfr
+java -jar jvmlens.jar analyze -f prompt recording.jfr
 
 # or during development
 mvn -q spring-boot:run -Dspring-boot.run.arguments="analyze,recording.jfr"
