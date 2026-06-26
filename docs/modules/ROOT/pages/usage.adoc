@@ -98,6 +98,19 @@ java -jar jvmlens.jar analyze --baseline /tmp/run-before /tmp/run-after \
 (JMH records the whole fork including warm-up; for measurement-only signal, configure JMH to
 delay the recording past warm-up, or compare steady-state runs.)
 
+Or skip the separate step entirely with the **JMH profiler plugin** — it records the fork and
+prints the summary inline when the trial ends. Put `jvmlens-<version>-jmh.jar` (a tiny
+engine+profiler jar, no Spring/picocli/jmh) on the benchmark's classpath and:
+
+[source,bash]
+----
+java -cp benchmarks.jar:jvmlens-<version>-jmh.jar org.openjdk.jmh.Main \
+  -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example;report=cpu"
+----
+
+`appPackage` (`+`-separate several) scopes to your code; `report` focuses the summary. The
+plugin runs in JMH's host process and reuses the same engine as `analyze`.
+
 === Fix-direction hints (`--hints`, opt-in)
 
 `--hints` appends a hedged `## Likely fix directions [possible]` section that maps recognized
