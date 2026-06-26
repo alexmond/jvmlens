@@ -103,6 +103,20 @@
                                     <include>net.bytebuddy:byte-buddy</include>
                                 </includes>
                             </artifactSet>
+                            <!-- Drop ByteBuddy's multi-release (META-INF/versions/N) copies. shade
+                                 relocates the base classes' paths but NOT the versioned ones, leaving
+                                 3000+ entries whose path stays `net/bytebuddy/...` while their bytecode
+                                 is relocated → "wrong name" NoClassDefFoundError, which also shadows a
+                                 ByteBuddy/Hibernate host app's own ByteBuddy. The relocated base
+                                 classes are functional on all supported JDKs. Field-finding #68. -->
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/versions/**</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                             <relocations>
                                 <relocation>
                                     <pattern>net.bytebuddy</pattern>
@@ -117,9 +131,44 @@
                                         <Agent-Class>org.alexmond.jvmlens.agent.JvmlensAgent</Agent-Class>
                                         <Can-Redefine-Classes>true</Can-Redefine-Classes>
                                         <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                                        <!-- No META-INF/versions content remains after the filter above;
+                                             flagging Multi-Release would make the JVM look for versioned
+                                             classes that aren't there. #68 -->
+                                        <Multi-Release>false</Multi-Release>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Regression gate for #68: fail the build if the shaded agent jar contains ANY
+                 `net/bytebuddy/` entry. Everything ByteBuddy must be relocated to
+                 `org/alexmond/jvmlens/shaded/bytebuddy/`; a stray `net/bytebuddy/` (base OR
+                 under META-INF/versions) is the multi-release shade gap that crashes a
+                 ByteBuddy/Hibernate host app with NoClassDefFoundError "wrong name". -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>verify-no-unrelocated-bytebuddy</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <resourcecount property="strayBb">
+                                    <zipfileset src="${project.build.directory}/jvmlens-agent.jar"
+                                                includes="**/net/bytebuddy/**"/>
+                                </resourcecount>
+                                <fail message="agent jar has ${strayBb} un-relocated net/bytebuddy entr(ies) — multi-release shade gap (#68); all ByteBuddy must be under org/alexmond/jvmlens/shaded/bytebuddy/">
+                                    <condition>
+                                        <not><equals arg1="${strayBb}" arg2="0"/></not>
+                                    </condition>
+                                </fail>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
