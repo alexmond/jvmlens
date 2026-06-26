@@ -164,13 +164,29 @@ public final class Summarizer {
 	 * @throws IOException if the recording cannot be read
 	 */
 	public static ProfileSummary analyze(Path file, Scope scope) throws IOException {
+		return analyze(List.of(file), scope, file.getFileName().toString());
+	}
+
+	/**
+	 * Read one or more JFR recordings into a single merged summary — e.g. all the
+	 * per-fork {@code .jfr} files JMH's {@code -prof jfr} writes for a benchmark, so the
+	 * signal isn't split across forks.
+	 * @param files the {@code .jfr} recordings to read and merge
+	 * @param scope which frames count as application code
+	 * @param source the label for the merged summary (e.g. the JMH run directory name)
+	 * @return the structured summary
+	 * @throws IOException if a recording cannot be read
+	 */
+	public static ProfileSummary analyze(List<Path> files, Scope scope, String source) throws IOException {
 		Aggregates agg = new Aggregates(scope);
-		try (RecordingFile rf = new RecordingFile(file)) {
-			while (rf.hasMoreEvents()) {
-				agg.add(rf.readEvent());
+		for (Path file : files) {
+			try (RecordingFile rf = new RecordingFile(file)) {
+				while (rf.hasMoreEvents()) {
+					agg.add(rf.readEvent());
+				}
 			}
 		}
-		return agg.toSummary(file);
+		return agg.toSummary(source);
 	}
 
 	/** The leaf (top-of-stack) java frame — the self-time view, runtime included. */
@@ -440,10 +456,9 @@ public final class Summarizer {
 			this.gcPauseNanos += e.getDuration().toNanos();
 		}
 
-		private ProfileSummary toSummary(Path file) {
-			return new ProfileSummary(file.getFileName().toString(), this.execSamples, this.allocByType.size(),
-					this.oldObjects, this.gcPauses, this.gcPauseNanos / 1_000_000,
-					ranked(this.cpuByApp, this.execSamples, this.appStack, "cpu"),
+		private ProfileSummary toSummary(String source) {
+			return new ProfileSummary(source, this.execSamples, this.allocByType.size(), this.oldObjects, this.gcPauses,
+					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, this.appStack, "cpu"),
 					ranked(this.cpuByLeaf, this.execSamples, null, "cpu"),
 					ranked(this.allocBySite, this.allocBytes, null, "memory"),
 					ranked(this.allocByType, this.allocBytes, null, "memory"),

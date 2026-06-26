@@ -172,6 +172,24 @@ class SummarizerTest {
 		assertThat(Summarizer.isNoiseEndpoint("file /var/data/orders.csv")).isFalse();
 	}
 
+	@Test
+	void mergesMultipleRecordingsIntoOneSummary() throws Exception {
+		Path one = cpuRecording();
+		Path two = cpuRecording();
+		try {
+			ProfileSummary single = Summarizer.analyze(one);
+			ProfileSummary merged = Summarizer.analyze(List.of(one, two), Scope.defaults(), "jmh-run");
+			assertThat(merged.source()).isEqualTo("jmh-run");
+			// merging two forks accumulates the signal
+			assertThat(merged.execSamples()).isGreaterThanOrEqualTo(single.execSamples());
+			assertThat(merged.hotPaths().get(0).name()).contains("SummarizerTest");
+		}
+		finally {
+			Files.deleteIfExists(one);
+			Files.deleteIfExists(two);
+		}
+	}
+
 	private static Path cpuRecording() throws Exception {
 		return recordFile(() -> {
 			long end = System.nanoTime() + 2_000_000_000L;
