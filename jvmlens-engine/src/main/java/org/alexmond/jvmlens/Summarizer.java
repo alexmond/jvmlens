@@ -239,9 +239,9 @@ public final class Summarizer {
 		return (min != null) ? min : Instant.EPOCH;
 	}
 
-	/** The leaf (top-of-stack) java frame — the self-time view, runtime included. */
-	private static String leafFrame(RecordedStackTrace st) {
-		return firstFrame(st, (owner) -> true);
+	/** The leaf (top-of-stack) java frame with its source line — self-time view (#87). */
+	private static Frame leafFrameWithLine(RecordedStackTrace st) {
+		return firstFrameWithLine(st, (owner) -> true);
 	}
 
 	/** The first application frame walking down from the leaf, per {@code scope}. */
@@ -249,7 +249,20 @@ public final class Summarizer {
 		return firstFrame(st, scope::isApplication);
 	}
 
+	/**
+	 * As {@link #appFrame}, but carrying the frame's source line (the alloc call site,
+	 * #87).
+	 */
+	private static Frame appFrameWithLine(RecordedStackTrace st, Scope scope) {
+		return firstFrameWithLine(st, scope::isApplication);
+	}
+
 	private static String firstFrame(RecordedStackTrace st, Predicate<String> ownerMatches) {
+		Frame f = firstFrameWithLine(st, ownerMatches);
+		return (f != null) ? f.method() : null;
+	}
+
+	private static Frame firstFrameWithLine(RecordedStackTrace st, Predicate<String> ownerMatches) {
 		if (st == null) {
 			return null;
 		}
@@ -257,7 +270,7 @@ public final class Summarizer {
 			.stream()
 			.filter((f) -> f.isJavaFrame() && f.getMethod() != null)
 			.filter((f) -> ownerMatches.test(f.getMethod().getType().getName()))
-			.map((f) -> f.getMethod().getType().getName() + "." + f.getMethod().getName())
+			.map((f) -> new Frame(f.getMethod().getType().getName() + "." + f.getMethod().getName(), f.getLineNumber()))
 			.findFirst()
 			.orElse(null);
 	}
@@ -280,6 +293,24 @@ public final class Summarizer {
 		boolean diffuse = pathTotal <= 0 || top.isEmpty()
 				|| (double) top.get(0).getValue() / pathTotal < LEAF_CONFIDENCE;
 		return diffuse ? leaves + " ⚠ diffuse — no leaf >" + (int) (LEAF_CONFIDENCE * 100) + "% of path" : leaves;
+	}
+
+	/**
+	 * Accumulate {@code weight} against {@code line} in {@code key}'s line histogram
+	 * (#87).
+	 */
+	private static void recordLine(Map<String, Map<Integer, Long>> lines, String key, int line, long weight) {
+		if (line > 0) {
+			lines.computeIfAbsent(key, (k) -> new HashMap<>()).merge(line, weight, Long::sum);
+		}
+	}
+
+	/** The most-weighted source line in a histogram, or 0 if none was recorded (#87). */
+	private static int dominantLine(Map<Integer, Long> hist) {
+		if (hist == null || hist.isEmpty()) {
+			return 0;
+		}
+		return hist.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(0);
 	}
 
 	private static long sum(Map<String, Long> m) {
@@ -440,6 +471,13 @@ public final class Summarizer {
 		return "No dominant signal." + lockNote;
 	}
 
+	/**
+	 * A resolved stack frame: its {@code Type.method} name and source line (≤0 if
+	 * unknown).
+	 */
+	private record Frame(String method, int line) {
+	}
+
 	private static final class Aggregates {
 
 		/** How many top allocation sites get a per-type breakdown teaser (#53 item 1). */
@@ -456,6 +494,11 @@ public final class Summarizer {
 		private final Map<String, Long> cpuByApp = new HashMap<>();
 
 		private final Map<String, Map<String, Long>> leafByApp = new HashMap<>();
+
+		/** Per leaf/alloc-site method: source-line → weight, for line anchoring (#87). */
+		private final Map<String, Map<Integer, Long>> leafLine = new HashMap<>();
+
+		private final Map<String, Map<Integer, Long>> allocSiteLine = new HashMap<>();
 
 		private final Map<String, Long> cpuByLeaf = new HashMap<>();
 
@@ -540,7 +583,7 @@ public final class Summarizer {
 		private void addPinned(RecordedEvent e) {
 			String site = appFrame(e.getStackTrace(), this.scope);
 			if (site == null) {
-				site = leafFrame(e.getStackTrace());
+				site = firstFrame(e.getStackTrace(), (owner) -> true);
 			}
 			if (site == null) {
 				site = "unknown";
@@ -556,9 +599,11 @@ public final class Summarizer {
 
 		private void addExecution(RecordedEvent e) {
 			this.execSamples++;
-			String leaf = leafFrame(e.getStackTrace());
+			Frame leafF = leafFrameWithLine(e.getStackTrace());
+			String leaf = (leafF != null) ? leafF.method() : null;
 			if (leaf != null) {
 				this.cpuByLeaf.merge(leaf, 1L, Long::sum);
+				recordLine(this.leafLine, leaf, leafF.line(), 1L);
 			}
 			String app = appFrame(e.getStackTrace(), this.scope);
 			if (app != null) {
@@ -578,9 +623,11 @@ public final class Summarizer {
 			if (type != null) {
 				this.allocByType.merge(type, w, Long::sum);
 			}
-			String site = appFrame(e.getStackTrace(), this.scope);
+			Frame siteF = appFrameWithLine(e.getStackTrace(), this.scope);
+			String site = (siteF != null) ? siteF.method() : null;
 			if (site != null) {
 				this.allocBySite.merge(site, w, Long::sum);
+				recordLine(this.allocSiteLine, site, siteF.line(), Math.max(w, 1));
 				if (type != null) {
 					this.allocBySiteType.computeIfAbsent(site, (k) -> new HashMap<>()).merge(type, w, Long::sum);
 				}
@@ -606,7 +653,7 @@ public final class Summarizer {
 		private ProfileSummary toSummary(String source) {
 			return new ProfileSummary(source, this.execSamples, this.allocByType.size(), this.oldObjects, this.gcPauses,
 					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu"),
-					ranked(this.cpuByLeaf, this.execSamples, null, "cpu"),
+					ranked(this.cpuByLeaf, this.execSamples, leafLineTeasers(), "cpu"),
 					ranked(this.allocBySite, this.allocBytes, allocTypeTeasers(), "memory"),
 					ranked(this.allocByType, this.allocBytes, null, "memory"),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
@@ -629,14 +676,6 @@ public final class Summarizer {
 		}
 
 		/**
-		 * Per-site type breakdown for the top allocation sites — turns the two separate
-		 * "top sites" + "top types" lists into the directly actionable
-		 * "{@code floatString} allocates 4.1 GB of String". Attached as the row teaser
-		 * (the {@code stack} field) only for the top {@value #ALLOC_TEASER_SITES} sites
-		 * and their top {@value #ALLOC_TEASER_TYPES} types, to stay token-cheap. #53 item
-		 * 1.
-		 */
-		/**
 		 * Per hot-path teaser: the top {@value #LEAF_TEASER_COUNT} leaves (where time
 		 * actually goes) with counts, instead of one possibly-unrepresentative first-seen
 		 * stack. Flags the teaser {@code diffuse} when no single leaf holds
@@ -652,9 +691,36 @@ public final class Summarizer {
 				.forEach((path) -> {
 					Map<String, Long> byLeaf = this.leafByApp.get(path.getKey());
 					if (byLeaf != null && !byLeaf.isEmpty()) {
-						teasers.put(path.getKey(), leafBreakdown(byLeaf, path.getValue()));
+						teasers.put(path.getKey(), leafBreakdown(withLines(byLeaf), path.getValue()));
 					}
 				});
+			return teasers;
+		}
+
+		/**
+		 * Decorate each leaf label with its dominant line ({@code method:line}); counts
+		 * kept (#87).
+		 */
+		private Map<String, Long> withLines(Map<String, Long> byLeaf) {
+			Map<String, Long> out = new HashMap<>();
+			byLeaf.forEach((leaf, count) -> {
+				int line = dominantLine(this.leafLine.get(leaf));
+				out.put((line > 0) ? leaf + ":" + line : leaf, count);
+			});
+			return out;
+		}
+
+		/**
+		 * Per hot-leaf row: a {@code line N} locator from the leaf's dominant line (#87).
+		 */
+		private Map<String, String> leafLineTeasers() {
+			Map<String, String> teasers = new HashMap<>();
+			this.leafLine.forEach((leaf, hist) -> {
+				int line = dominantLine(hist);
+				if (line > 0) {
+					teasers.put(leaf, "line " + line);
+				}
+			});
 			return teasers;
 		}
 
@@ -667,7 +733,9 @@ public final class Summarizer {
 				.forEach((site) -> {
 					Map<String, Long> byType = this.allocBySiteType.get(site.getKey());
 					if (byType != null && !byType.isEmpty()) {
-						teasers.put(site.getKey(), typeBreakdown(byType));
+						int line = dominantLine(this.allocSiteLine.get(site.getKey()));
+						String prefix = (line > 0) ? ":" + line + " · " : "";
+						teasers.put(site.getKey(), prefix + typeBreakdown(byType));
 					}
 				});
 			return teasers;
