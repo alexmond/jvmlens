@@ -30,6 +30,25 @@ class RenderersTest {
 	}
 
 	@Test
+	void warnsWhenAllocationSamplesAreFew() {
+		// #50 item 3: few alloc samples → per-site byte shares are noisy (total is fine).
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(),
+				List.of(new Ranked("com.example.Svc.alloc", 1.0, 1_000_000, null)), List.of(), List.of(), List.of(),
+				"cause", "com.example", List.of(), 1_000_000L, 40L);
+		String md = Renderers.markdown(s);
+		assertThat(md).contains("Only 40 allocation samples");
+		assertThat(Renderers.json(s)).contains("\"allocSamples\": 40");
+	}
+
+	@Test
+	void noAllocationCaveatWhenSamplesAreAdequate() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(),
+				List.of(new Ranked("com.example.Svc.alloc", 1.0, 1_000_000, null)), List.of(), List.of(), List.of(),
+				"cause", "com.example", List.of(), 1_000_000L, 5_000L);
+		assertThat(Renderers.markdown(s)).doesNotContain("allocation samples —");
+	}
+
+	@Test
 	void surfacesDetectedAppPackageInMarkdownAndJson() {
 		assertThat(Renderers.markdown(sample())).contains("Application code under `com.example.*`.");
 		assertThat(Renderers.json(sample())).contains("\"appPackage\": \"com.example\"");
