@@ -6,7 +6,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import jdk.jfr.Recording;
 import org.junit.jupiter.api.Assumptions;
@@ -262,6 +264,36 @@ class SummarizerTest {
 		String cause = Summarizer.suspectedCause(new Summarizer.CauseSignals(0, 0, 0, 5_000, 0, 0, "com.acme.Svc.run",
 				80.0, null, null, null, null, null));
 		assertThat(cause).isEqualTo("CPU-bound — `com.acme.Svc.run` accounts for the majority of samples.");
+	}
+
+	@Test
+	void hotPathTeaserShowsLeafDistributionWithCounts() throws Exception {
+		Path file = cpuRecording();
+		try {
+			ProfileSummary s = Summarizer.analyze(file);
+			String teaser = s.hotPaths().get(0).stack();
+			// #53 item 3: the teaser names the leaf(es) where time actually goes, with
+			// per-leaf counts as a fraction of the path's samples (c/total) — not one
+			// possibly-unrepresentative first-seen stack.
+			assertThat(teaser).isNotBlank().containsPattern("\\d+/\\d+");
+			// a tight CPU loop concentrates on one leaf, so it is NOT flagged diffuse.
+			assertThat(teaser).doesNotContain("diffuse");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
+	void diffuseHotPathIsFlaggedLowConfidence() {
+		// when no single leaf holds ≥20% of the path's samples, the teaser warns the
+		// reader not to chase any one frame (the jhelm URLClassPath.getResource case).
+		Map<String, Long> byLeaf = new LinkedHashMap<>();
+		byLeaf.put("a.B.x", 30L);
+		byLeaf.put("a.B.y", 28L);
+		byLeaf.put("a.B.z", 25L);
+		String teaser = Summarizer.leafBreakdown(byLeaf, 168L);
+		assertThat(teaser).contains("a.B.x 30/168").contains("diffuse").contains("20%");
 	}
 
 	@Test
