@@ -42,6 +42,11 @@ public class AnalyzeCommand implements Callable<Integer> {
 			description = "Shrink top-k until the summary fits roughly <n> tokens (chars/4).")
 	Integer maxTokens;
 
+	@Option(names = { "--skip-warmup" }, paramLabel = "<ms>",
+			description = "Drop samples from the first <ms> of each recording, so hot paths reflect steady "
+					+ "state, not JIT/classload warmup (useful for `profile`/JMH fresh-JVM captures).")
+	Integer skipWarmup;
+
 	@Mixin
 	OutputOptions output;
 
@@ -58,8 +63,10 @@ public class AnalyzeCommand implements Callable<Integer> {
 				System.err.println("jvmlens: no readable baseline .jfr at: " + baseline);
 				return 2;
 			}
-			ProfileSummary before = Summarizer.analyze(beforeFiles, output.scope(), Recordings.label(baseline, file));
-			ProfileSummary after = Summarizer.analyze(afterFiles, output.scope(), Recordings.label(file, baseline));
+			ProfileSummary before = Summarizer.analyze(beforeFiles, output.scope(),
+					labeled(Recordings.label(baseline, file)), warmupMs());
+			ProfileSummary after = Summarizer.analyze(afterFiles, output.scope(),
+					labeled(Recordings.label(file, baseline)), warmupMs());
 			String delta = ProfileDiff.diff(before, after);
 			if (assertSpec != null) {
 				PerfGate.Result gate = PerfGate.evaluate(before, after, assertSpec);
@@ -77,12 +84,26 @@ public class AnalyzeCommand implements Callable<Integer> {
 			RankLimits.set("all", topK);
 		}
 		if (maxTokens != null && topK == null) {
-			System.out.print(withinBudget(afterFiles, Recordings.label(file, null), maxTokens));
+			System.out.print(withinBudget(afterFiles, labeled(Recordings.label(file, null)), maxTokens));
 			return 0;
 		}
-		ProfileSummary summary = Summarizer.analyze(afterFiles, output.scope(), Recordings.label(file, null));
+		ProfileSummary summary = Summarizer.analyze(afterFiles, output.scope(), labeled(Recordings.label(file, null)),
+				warmupMs());
 		System.out.print(render(summary));
 		return 0;
+	}
+
+	/** The warmup window to drop, in ms (0 = keep everything). */
+	private long warmupMs() {
+		return (skipWarmup != null && skipWarmup > 0) ? skipWarmup : 0L;
+	}
+
+	/**
+	 * Annotate the summary's source label when a warmup window was skipped (trust
+	 * signal).
+	 */
+	private String labeled(String base) {
+		return (warmupMs() > 0) ? base + " (warmup " + warmupMs() + "ms skipped)" : base;
 	}
 
 	/** Render at the largest top-k whose output fits {@code maxTokens} (~chars/4). */
@@ -90,7 +111,7 @@ public class AnalyzeCommand implements Callable<Integer> {
 		String out = "";
 		for (int k : new int[] { RankLimits.DEFAULT, 4, 3, 2, 1 }) {
 			RankLimits.set("all", k);
-			out = render(Summarizer.analyze(files, output.scope(), label));
+			out = render(Summarizer.analyze(files, output.scope(), label, warmupMs()));
 			if (out.length() / 4 <= maxTokens) {
 				break;
 			}

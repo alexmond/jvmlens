@@ -264,6 +264,21 @@ class SummarizerTest {
 		assertThat(cause).isEqualTo("CPU-bound — `com.acme.Svc.run` accounts for the majority of samples.");
 	}
 
+	@Test
+	void skipWarmupDropsEarlyEvents() throws Exception {
+		Path file = cpuRecording(); // ~2s of CPU samples
+		try {
+			long full = Summarizer.analyze(List.of(file), Scope.defaults(), "x", 0L).execSamples();
+			// a cutoff far past the recording's span drops every event (#53 gap 4)
+			long trimmed = Summarizer.analyze(List.of(file), Scope.defaults(), "x", 60_000L).execSamples();
+			assertThat(full).isPositive();
+			assertThat(trimmed).isZero();
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
 	private static String record(Work work) throws Exception {
 		Path file = recordFile(work);
 		try {
