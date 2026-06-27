@@ -1,0 +1,38 @@
+name: Maven Release
+
+# Builder analog of .github/workflows/maven_release.yml — a manual release pipeline.
+# Sets the release version, deploys all modules to Maven Central under the `release`
+# profile with GPG signing, then bumps to the next development version.
+#
+# GAP (git write-back): builder has no native git push-back, so this does NOT commit the
+# version bumps, create/push the release tag, or open a GitHub release. It performs the
+# Central deploy only; the tag + next-dev-version commit must still be done out-of-band
+# (or via a `claude-code`/script step with a checkout `repo:` that carries push creds).
+on: [manual]
+
+inputs:
+  releaseVersion:
+    type: string
+    description: Release version
+    required: true
+  nextVersion:
+    type: string
+    description: Next development version (with -SNAPSHOT suffix)
+    required: true
+
+jobs:
+  release:
+    image: eclipse-temurin:17-jdk
+    secrets: [OSSRH_USERNAME, OSSRH_PASSWORD, GPG_PRIVATE_KEY, GPG_PASSPHRASE]
+    cache:
+      key: m2-jvmlens
+      paths: [.m2/repository]
+    steps:
+      - name: Checkout
+        run: git clone https://github.com/alexmond/jvmlens.git .
+      - name: Prepare release version
+        run: mvn versions:set -DnewVersion=$releaseVersion -DprocessAllModules=true --no-transfer-progress -Dmaven.repo.local=.m2/repository
+      - name: Deploy to Maven Central
+        run: mvn --batch-mode -Dgpg.passphrase=$GPG_PASSPHRASE clean deploy -Prelease --no-transfer-progress -Dmaven.repo.local=.m2/repository
+      - name: Prepare next development version
+        run: mvn versions:set -DnewVersion=$nextVersion -DprocessAllModules=true --no-transfer-progress -Dmaven.repo.local=.m2/repository

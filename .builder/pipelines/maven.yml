@@ -1,0 +1,40 @@
+name: Java CI with Maven
+
+# Builder analog of .github/workflows/maven.yml.
+# Verify the Java-17-bytecode artifact builds + passes the full suite on every supported
+# JDK runtime (17, 21, 25). The compiler target stays 17; only the running JDK varies.
+# Java 25 is informational (allow-failure) — `--engine async` self-skips there until an
+# ap-loader 4.x bump.
+on: [push, manual]
+push:
+  branches: [main]
+
+jobs:
+  build:
+    image: eclipse-temurin:17-jdk
+    matrix:
+      java: ['17', '21', '25']
+    cache:
+      key: m2-jvmlens
+      paths: [.m2/repository]
+    steps:
+      - name: Checkout
+        run: git clone --depth 1 https://github.com/alexmond/jvmlens.git .
+      - name: Build with Maven
+        # verify (not package) so the JaCoCo gate runs; JDK 21+ auto-activates jdk21-plus.
+        run: mvn -B verify --no-transfer-progress -Dmaven.repo.local=.m2/repository
+
+  # Java 25 lane is informational only (async-profiler 3.0 predates JDK 25). Split out as
+  # its own allow-failure job because builder matrix expansion can't carry a per-cell
+  # continue-on-error; the matrix above still covers 17/21 as the gating lanes.
+  build-java25:
+    image: eclipse-temurin:25-jdk
+    allow-failure: true
+    cache:
+      key: m2-jvmlens
+      paths: [.m2/repository]
+    steps:
+      - name: Checkout
+        run: git clone --depth 1 https://github.com/alexmond/jvmlens.git .
+      - name: Build with Maven (Java 25, informational)
+        run: mvn -B verify --no-transfer-progress -Dmaven.repo.local=.m2/repository
