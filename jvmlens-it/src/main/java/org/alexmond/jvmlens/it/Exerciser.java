@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class Exerciser {
 
-	private final WidgetRepository repo;
+	private final WidgetService service;
 
 	private final ApplicationContext ctx;
 
@@ -25,8 +25,8 @@ public class Exerciser {
 	// sequentially on the boot thread, so no cross-thread visibility concern.
 	private int port;
 
-	public Exerciser(WidgetRepository repo, ApplicationContext ctx) {
-		this.repo = repo;
+	public Exerciser(WidgetService service, ApplicationContext ctx) {
+		this.service = service;
 		this.ctx = ctx;
 	}
 
@@ -37,8 +37,10 @@ public class Exerciser {
 
 	@EventListener
 	public void onReady(ApplicationReadyEvent event) throws Exception {
-		this.repo.save(new Widget("it")); // db: INSERT (+ DDL on first run)
-		long count = this.repo.count(); // db: SELECT
+		long count = this.service.persistAndCount("it"); // db: INSERT+SELECT via
+															// @Transactional proxy
+		this.service.fireHostileSql(); // db: SqlSanitizer stress (long literal + IN-list,
+										// #79)
 		HttpClient.newHttpClient()
 			.send(HttpRequest.newBuilder(URI.create("http://localhost:" + this.port + "/widgets")).build(),
 					HttpResponse.BodyHandlers.ofString()); // web: HTTP → servlet
