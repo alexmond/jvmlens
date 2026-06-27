@@ -22,6 +22,14 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * and gates both #68 failure modes that the in-JVM unit tests miss: the un-relocated
  * multi-release ByteBuddy crash (Bug 1) and the Hibernate {@code EntityManagerFactory}
  * StackOverflow from instrumenting synthetic/generated classes (Bug 2).
+ *
+ * <p>
+ * The host is deliberately widened (#79) to stress the matchers/sanitizers on a real
+ * boot: a {@code @Transactional} Spring-proxied service (CGLIB/AOP-proxy surface) and a
+ * raw {@code JdbcTemplate} path that fires SQL carrying the {@code SqlSanitizer}-SOE
+ * shapes (a long quoted literal + a long {@code IN} list). The agent must survive all of
+ * it — boot clean and still capture SQL — proving the fix and the fail-open guard (#74)
+ * hold together.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class AgentBootIT {
