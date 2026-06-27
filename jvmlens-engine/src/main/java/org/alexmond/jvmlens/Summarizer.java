@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 import jdk.jfr.consumer.RecordedEvent;
-import jdk.jfr.consumer.RecordedFrame;
 import jdk.jfr.consumer.RecordedStackTrace;
 import jdk.jfr.consumer.RecordingFile;
 
@@ -28,6 +27,17 @@ import org.alexmond.jvmlens.ProfileSummary.Ranked;
  * same structured result.
  */
 public final class Summarizer {
+
+	/**
+	 * How many leaves to list per hot path in its leaf-distribution teaser (#53 item 3).
+	 */
+	private static final int LEAF_TEASER_COUNT = 3;
+
+	/**
+	 * A path's top leaf must hold this share or the teaser is flagged diffuse (#53 item
+	 * 3).
+	 */
+	private static final double LEAF_CONFIDENCE = 0.20;
 
 	/** Output formats the CLI can request. */
 	public enum Format {
@@ -252,20 +262,24 @@ public final class Summarizer {
 			.orElse(null);
 	}
 
-	private static String topFrames(RecordedStackTrace st, int n) {
-		if (st == null) {
-			return "";
-		}
-		List<String> out = new ArrayList<>();
-		for (RecordedFrame f : st.getFrames()) {
-			if (f.isJavaFrame() && f.getMethod() != null) {
-				out.add(f.getMethod().getType().getName() + "." + f.getMethod().getName());
-				if (out.size() >= n) {
-					break;
-				}
-			}
-		}
-		return String.join(" <- ", out);
+	/**
+	 * The top {@value #LEAF_TEASER_COUNT} leaves of one hot path, formatted
+	 * {@code leaf c/total · …} — where the path's time actually goes. Flagged
+	 * {@code diffuse} when no single leaf holds {@value #LEAF_CONFIDENCE} of the path, so
+	 * the reader doesn't chase a 2/168 frame (#53 item 3).
+	 */
+	static String leafBreakdown(Map<String, Long> byLeaf, long pathTotal) {
+		List<Map.Entry<String, Long>> top = byLeaf.entrySet()
+			.stream()
+			.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+			.limit(LEAF_TEASER_COUNT)
+			.toList();
+		String leaves = top.stream()
+			.map((l) -> l.getKey() + " " + l.getValue() + "/" + pathTotal)
+			.collect(java.util.stream.Collectors.joining(" · "));
+		boolean diffuse = pathTotal <= 0 || top.isEmpty()
+				|| (double) top.get(0).getValue() / pathTotal < LEAF_CONFIDENCE;
+		return diffuse ? leaves + " ⚠ diffuse — no leaf >" + (int) (LEAF_CONFIDENCE * 100) + "% of path" : leaves;
 	}
 
 	private static long sum(Map<String, Long> m) {
@@ -434,11 +448,14 @@ public final class Summarizer {
 		/** How many types to list per site in that breakdown. */
 		private static final int ALLOC_TEASER_TYPES = 3;
 
+		/** How many top hot paths get a leaf-distribution teaser (#53 item 3). */
+		private static final int LEAF_TEASER_PATHS = 5;
+
 		private final Scope scope;
 
 		private final Map<String, Long> cpuByApp = new HashMap<>();
 
-		private final Map<String, String> appStack = new HashMap<>();
+		private final Map<String, Map<String, Long>> leafByApp = new HashMap<>();
 
 		private final Map<String, Long> cpuByLeaf = new HashMap<>();
 
@@ -544,7 +561,9 @@ public final class Summarizer {
 			String app = appFrame(e.getStackTrace(), this.scope);
 			if (app != null) {
 				this.cpuByApp.merge(app, 1L, Long::sum);
-				this.appStack.putIfAbsent(app, topFrames(e.getStackTrace(), 3));
+				if (leaf != null) {
+					this.leafByApp.computeIfAbsent(app, (k) -> new HashMap<>()).merge(leaf, 1L, Long::sum);
+				}
 			}
 		}
 
@@ -583,7 +602,7 @@ public final class Summarizer {
 
 		private ProfileSummary toSummary(String source) {
 			return new ProfileSummary(source, this.execSamples, this.allocByType.size(), this.oldObjects, this.gcPauses,
-					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, this.appStack, "cpu"),
+					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu"),
 					ranked(this.cpuByLeaf, this.execSamples, null, "cpu"),
 					ranked(this.allocBySite, this.allocBytes, allocTypeTeasers(), "memory"),
 					ranked(this.allocByType, this.allocBytes, null, "memory"),
@@ -614,6 +633,28 @@ public final class Summarizer {
 		 * and their top {@value #ALLOC_TEASER_TYPES} types, to stay token-cheap. #53 item
 		 * 1.
 		 */
+		/**
+		 * Per hot-path teaser: the top {@value #LEAF_TEASER_COUNT} leaves (where time
+		 * actually goes) with counts, instead of one possibly-unrepresentative first-seen
+		 * stack. Flags the teaser {@code diffuse} when no single leaf holds
+		 * {@value #LEAF_CONFIDENCE} of the path — the reader shouldn't chase a 2/168
+		 * frame (#53 item 3).
+		 */
+		private Map<String, String> leafTeasers() {
+			Map<String, String> teasers = new HashMap<>();
+			this.cpuByApp.entrySet()
+				.stream()
+				.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+				.limit(LEAF_TEASER_PATHS)
+				.forEach((path) -> {
+					Map<String, Long> byLeaf = this.leafByApp.get(path.getKey());
+					if (byLeaf != null && !byLeaf.isEmpty()) {
+						teasers.put(path.getKey(), leafBreakdown(byLeaf, path.getValue()));
+					}
+				});
+			return teasers;
+		}
+
 		private Map<String, String> allocTypeTeasers() {
 			Map<String, String> teasers = new HashMap<>();
 			this.allocBySite.entrySet()
