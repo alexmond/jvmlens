@@ -31,6 +31,11 @@ public final class ProfileDiff {
 	/** Relative change below this (vs the baseline value) is noise, not signal. */
 	private static final double MIN_REL_CHANGE = 0.05;
 
+	/**
+	 * Below this many allocation samples (either side), per-site byte deltas are noise.
+	 */
+	private static final long LOW_ALLOC_SAMPLES = 200;
+
 	private ProfileDiff() {
 	}
 
@@ -53,11 +58,30 @@ public final class ProfileDiff {
 		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(), null);
 		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
 				redistributionNote(before.allocBytes(), after.allocBytes()));
+		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
+				before.allocBytes() > 0 || after.allocBytes() > 0);
 		section(md, "Lock contention", "ms", before.locks(), after.locks(), null);
 		for (String key : sectionKeys(before, after)) {
 			section(md, key, unit(before, after, key), sectionRows(before, key), sectionRows(after, key), null);
 		}
 		return md.toString();
+	}
+
+	/**
+	 * A section-level caveat when either recording has too few allocation samples for the
+	 * per-site byte deltas to be trustworthy — the absolute total stays reliable, the
+	 * per-site splits don't (field-finding #50 item 3). Emitted only when there was
+	 * allocation activity at all.
+	 */
+	private static void lowAllocSampleNote(StringBuilder md, long before, long after, boolean hasAlloc) {
+		boolean noisy = (before > 0 && before < LOW_ALLOC_SAMPLES) || (after > 0 && after < LOW_ALLOC_SAMPLES);
+		if (hasAlloc && noisy) {
+			md.append("> ⚠ Low allocation samples (before ")
+				.append(before)
+				.append(" / after ")
+				.append(after)
+				.append(") — per-site byte deltas are statistically noisy; trust the absolute total.\n\n");
+		}
 	}
 
 	/**

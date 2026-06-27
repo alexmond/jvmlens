@@ -47,6 +47,7 @@ final class Renderers {
 			mdSection(md, HOT_LEAVES, s.hotLeaves(), "samples", false);
 		}
 		if (mem) {
+			appendAllocAdequacy(md, s.allocSamples(), !s.allocSites().isEmpty());
 			mdSection(md, ALLOC_SITES, s.allocSites(), "bytes", false);
 			mdSection(md, ALLOC_TYPES, s.allocatedTypes(), "bytes", false);
 		}
@@ -182,6 +183,21 @@ final class Renderers {
 		}
 	}
 
+	/**
+	 * A caveat when there are too few allocation samples to trust the per-site byte
+	 * splits — the absolute total stays reliable, the per-site shares (and their diff
+	 * deltas) do not (field-finding #50 item 3). Silent when there's no allocation
+	 * activity at all.
+	 */
+	private static void appendAllocAdequacy(StringBuilder md, long allocSamples, boolean hasSites) {
+		if (hasSites && allocSamples > 0 && allocSamples < LOW_SAMPLE_THRESHOLD) {
+			md.append("> ⚠ Only ")
+				.append(allocSamples)
+				.append(" allocation samples — the total bytes are reliable, but per-site\n"
+						+ "> byte shares (and before→after per-site deltas) are statistically noisy.\n\n");
+		}
+	}
+
 	/** One ranked section rendered on its own — the unit the MCP tools hand back. */
 	static String section(String title, List<Ranked> rows, String countUnit, boolean measured) {
 		StringBuilder md = new StringBuilder();
@@ -249,6 +265,8 @@ final class Renderers {
 			.append(s.gcPauses())
 			.append(", \"gcPauseMillis\": ")
 			.append(s.gcPauseMillis())
+			.append(", \"allocSamples\": ")
+			.append(s.allocSamples())
 			.append("},\n");
 		jsonArray(j, "hotPaths", s.hotPaths());
 		jsonArray(j, "hotLeaves", s.hotLeaves());

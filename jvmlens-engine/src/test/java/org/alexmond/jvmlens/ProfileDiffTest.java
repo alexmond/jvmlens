@@ -97,4 +97,26 @@ class ProfileDiffTest {
 		assertThat(ProfileDiff.diff(before, after)).contains("## db").contains("9000 ms → 2000 ms (▼ 78%)");
 	}
 
+	@Test
+	void hedgesPerSiteDeltasWhenAllocationSamplesAreFew() {
+		// #50 item 3: a short trial → few alloc samples → per-site byte deltas are noisy.
+		ProfileSummary before = new ProfileSummary("a.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(),
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 1_000_000, null)), List.of(), List.of(), List.of(), "c",
+				"com.acme", List.of(), 1_000_000L, 40L);
+		ProfileSummary after = new ProfileSummary("b.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(),
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 600_000, null)), List.of(), List.of(), List.of(), "c",
+				"com.acme", List.of(), 600_000L, 35L);
+		assertThat(ProfileDiff.diff(before, after)).contains("Low allocation samples (before 40 / after 35)");
+	}
+
+	@Test
+	void noLowAllocNoteWhenSamplesUntracked() {
+		// the 16-arg ctor leaves allocSamples at 0 → no false "low samples" alarm.
+		ProfileSummary before = summary(0, 1_000_000, List.of(),
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 1_000_000, null)));
+		ProfileSummary after = summary(0, 600_000, List.of(),
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 600_000, null)));
+		assertThat(ProfileDiff.diff(before, after)).doesNotContain("Low allocation samples");
+	}
+
 }

@@ -483,6 +483,8 @@ public final class Summarizer {
 
 		private long allocBytes;
 
+		private long allocSamples;
+
 		private long oldObjects;
 
 		private long gcPauses;
@@ -568,6 +570,7 @@ public final class Summarizer {
 		}
 
 		private void addAllocation(RecordedEvent e) {
+			this.allocSamples++;
 			long w = e.hasField("weight") ? e.getLong("weight") : 0;
 			this.allocBytes += w;
 			String type = (e.hasField("objectClass") && e.getClass("objectClass") != null)
@@ -608,7 +611,7 @@ public final class Summarizer {
 					ranked(this.allocByType, this.allocBytes, null, "memory"),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
 					ranked(this.lockByMonitor, sum(this.lockByMonitor), null, "locks"), heuristic(),
-					detectAppPackage(detectionWeights()), extendedSections(), this.allocBytes);
+					detectAppPackage(detectionWeights()), extendedSections(), this.allocBytes, this.allocSamples);
 		}
 
 		/** The beyond-CPU/memory/wait dimensions, only those with any signal. */

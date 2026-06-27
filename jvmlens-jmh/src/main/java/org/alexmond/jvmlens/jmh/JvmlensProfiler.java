@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -16,6 +17,8 @@ import org.openjdk.jmh.profile.ProfilerException;
 import org.openjdk.jmh.results.BenchmarkResult;
 import org.openjdk.jmh.results.Result;
 
+import org.alexmond.jvmlens.ProfileDiff;
+import org.alexmond.jvmlens.ProfileSummary;
 import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
 
@@ -28,8 +31,12 @@ import org.alexmond.jvmlens.Summarizer;
  * <p>
  * Options (after a colon, {@code key=value} separated by {@code ;}): {@code appPackage}
  * (application-frame scope; {@code +} or {@code ,}-separate several — {@code appPackages}
- * is accepted as an alias so the scope syntax matches the CLI's {@code -a}) and
- * {@code report} (full/cpu/memory/locks/gc/...). An <em>unknown</em> option key is a hard
+ * is accepted as an alias so the scope syntax matches the CLI's {@code -a}),
+ * {@code report} (full/cpu/memory/locks/gc/...), {@code keep} (write the fork's recording
+ * to this path instead of deleting it — so it can be the next run's baseline), and
+ * {@code baseline} (a prior recording to diff this run against — prints the change report
+ * instead of the plain summary, so {@code run → "what changed vs last run"} happens in
+ * one JMH command; field-finding #50 item 2). An <em>unknown</em> option key is a hard
  * error (a {@link ProfilerException} with a did-you-mean suggestion) rather than a silent
  * no-op — a misspelled {@code appPackage} that produced an unscoped summary used to cost
  * a whole capture before you noticed (field-finding #53 item 6). Ships in the
@@ -39,13 +46,17 @@ import org.alexmond.jvmlens.Summarizer;
 public class JvmlensProfiler implements ExternalProfiler {
 
 	/** Recognized option keys, used for the did-you-mean suggestion on a typo. */
-	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report");
+	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report", "keep", "baseline");
 
 	private final Path jfr;
 
 	private List<String> appPackages = List.of();
 
 	private Summarizer.Report report = Summarizer.Report.FULL;
+
+	private Path keep;
+
+	private Path baseline;
 
 	/** No-arg form: {@code -prof org.alexmond.jvmlens.jmh.JvmlensProfiler}. */
 	public JvmlensProfiler() throws IOException {
@@ -86,6 +97,12 @@ public class JvmlensProfiler implements ExternalProfiler {
 				this.appPackages = List.of(value.split("[+,]"));
 			}
 			case "report" -> applyReport(value);
+			case "keep" -> {
+				this.keep = Path.of(value);
+			}
+			case "baseline" -> {
+				this.baseline = Path.of(value);
+			}
 			default -> throw new ProfilerException(unknownOption(key));
 		}
 	}
@@ -141,20 +158,42 @@ public class JvmlensProfiler implements ExternalProfiler {
 	public Collection<? extends Result> afterTrial(BenchmarkResult result, long pid, File stdOut, File stdErr) {
 		try {
 			Scope scope = Scope.of(this.appPackages, List.of());
-			System.out.println("\n" + Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report));
+			if (this.baseline != null) {
+				ProfileSummary before = Summarizer.analyze(this.baseline, scope);
+				ProfileSummary after = Summarizer.analyze(this.jfr, scope);
+				System.out.println("\n" + ProfileDiff.diff(before, after));
+			}
+			else {
+				System.out
+					.println("\n" + Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report));
+			}
 		}
 		catch (IOException ex) {
 			System.out.println("jvmlens: could not summarize the benchmark recording: " + ex.getMessage());
 		}
 		finally {
-			try {
-				Files.deleteIfExists(this.jfr);
-			}
-			catch (IOException ignored) {
-				// best-effort cleanup of the temp recording
-			}
+			retainRecording();
 		}
 		return Collections.<Result>emptyList();
+	}
+
+	/**
+	 * Keep the fork's recording at {@code keep} (for the next run's baseline), else
+	 * delete it.
+	 */
+	private void retainRecording() {
+		try {
+			if (this.keep != null) {
+				Files.move(this.jfr, this.keep, StandardCopyOption.REPLACE_EXISTING);
+				System.out.println("jvmlens: recording kept at " + this.keep);
+			}
+			else {
+				Files.deleteIfExists(this.jfr);
+			}
+		}
+		catch (IOException ignored) {
+			// best-effort retention/cleanup of the temp recording
+		}
 	}
 
 	@Override
