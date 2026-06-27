@@ -229,6 +229,8 @@ class SummarizerTest {
 			assertThat(s.allocSites()).isNotEmpty();
 			// the top allocation site carries a per-type breakdown teaser (#53 item 1)
 			assertThat(s.allocSites().get(0).stack()).contains("byte[]");
+			// …prefixed with the allocation call-site's source line (#87)
+			assertThat(s.allocSites().get(0).stack()).containsPattern(":\\d+ · ");
 		}
 		finally {
 			Files.deleteIfExists(file);
@@ -264,6 +266,40 @@ class SummarizerTest {
 		String cause = Summarizer.suspectedCause(new Summarizer.CauseSignals(0, 0, 0, 5_000, 0, 0, "com.acme.Svc.run",
 				80.0, null, null, null, null, null));
 		assertThat(cause).isEqualTo("CPU-bound — `com.acme.Svc.run` accounts for the majority of samples.");
+	}
+
+	@Test
+	void anchorsHotRowsWithSourceLines() throws Exception {
+		// #87: a pure-arithmetic app loop → the leaf is app code with a known line.
+		Path file = recordFile(() -> {
+			long end = System.nanoTime() + 2_000_000_000L;
+			long acc = 1;
+			while (System.nanoTime() < end) {
+				acc = lineChurn(acc);
+			}
+			if (acc == 0) {
+				throw new IllegalStateException("unreachable");
+			}
+		});
+		try {
+			String md = Summarizer.summarize(file);
+			// the hot-path leaf teaser carries the leaf's source line (method:line
+			// c/total)
+			assertThat(md).containsPattern(":\\d+ \\d+/\\d+");
+			// the hot-leaf row carries a `(line N)` locator
+			assertThat(md).containsPattern("\\(line \\d+\\)");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	private static long lineChurn(long seed) {
+		long acc = seed;
+		for (int i = 1; i < 200_000; i++) {
+			acc += (i * 2654435761L) ^ (acc >>> 7);
+		}
+		return acc;
 	}
 
 	@Test
