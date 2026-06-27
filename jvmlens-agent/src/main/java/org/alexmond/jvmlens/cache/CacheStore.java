@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens.cache;
 
+import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.List;
 
 import org.alexmond.jvmlens.ProfileSummary.Section;
@@ -19,7 +20,7 @@ public final class CacheStore {
 
 	/** Record one cache operation {@code op} taking {@code nanos}; called from advice. */
 	public static void record(String op, long nanos) {
-		STORE.record(op, nanos);
+		FailGuard.run("cache", () -> STORE.record(op, nanos));
 	}
 
 	/** Clear all captured operations (used by tests). */

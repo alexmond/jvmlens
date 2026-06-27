@@ -13,7 +13,7 @@ public final class SnapshotAdvice {
 	private SnapshotAdvice() {
 	}
 
-	@Advice.OnMethodEnter
+	@Advice.OnMethodEnter(suppress = Throwable.class)
 	public static void enter(@Advice.Origin("#t.#m") String site, @Advice.AllArguments(readOnly = true) Object[] args) {
 		SnapshotStore.record(site, args);
 	}
