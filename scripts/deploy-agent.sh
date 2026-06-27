@@ -7,12 +7,12 @@
 #
 # Usage:
 #   scripts/deploy-agent.sh [options]
-#     --registry HOST[:PORT]  image registry          (default: registry.example.com:5000)
+#     --registry HOST[:PORT]  image registry          (default: localhost:5000)
 #     --tag TAG               image tag               (default: project version from Maven)
 #     --release NAME          if set, helm upgrade --install the jvmlens chart with this name
-#     --namespace NS          target namespace        (default: unitrack)
+#     --namespace NS          target namespace        (default: default)
 #     --target-image IMAGE    JVM image to profile    (passed to the chart's target.image)
-#     --values FILE           extra Helm values file  (default: values-homelab.yaml if present)
+#     --values FILE           extra Helm values file  (your own overrides; no default)
 #     --no-build              skip the build (reuse the image already in the registry)
 #     --no-push               build the image but don't publish
 #
@@ -22,10 +22,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REGISTRY=registry.example.com:5000
+REGISTRY=localhost:5000
 TAG=""
 RELEASE=""
-NAMESPACE=unitrack
+NAMESPACE=default
 TARGET_IMAGE=""
 VALUES=""
 BUILD=1
@@ -45,10 +45,6 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-
-if [[ -z "$VALUES" && -f deploy/helm/jvmlens/values-homelab.yaml ]]; then
-  VALUES=deploy/helm/jvmlens/values-homelab.yaml
-fi
 
 if [[ -z "$TAG" ]]; then
   TAG="$(./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1)"
