@@ -1,4 +1,42 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/skills/evolving-claude-md/audit-claude-md.py 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/skills/evolving-claude-md/lint-claude-md.py 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/skills/evolving-claude-md/audit-claude-md.py 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(scripts/dev-verify.sh:*)",
@@ -8,7 +46,6 @@
   "enabledPlugins": {
     "roles@alexmskills": true,
     "brainstorm-panel@alexmskills": true,
-    "research-sweep@alexmskills": true,
-    "evolving-claude-md@alexmskills": true
+    "research-sweep@alexmskills": true
   }
 }
