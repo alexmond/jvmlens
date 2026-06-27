@@ -346,6 +346,46 @@ public final class Summarizer {
 	}
 
 	/** Mutable accumulator for the events of a single recording. */
+	/**
+	 * Pick the single suspected-cause line, weighting each dimension by
+	 * <em>magnitude</em> rather than mere presence. A lock is the headline only when its
+	 * measured blocked time is substantial <em>and</em> exceeds the estimated CPU work
+	 * and GC — so a small lock no longer outranks a real CPU hot path or large allocation
+	 * (field-finding #67); a present but secondary lock is demoted to a hedged trailing
+	 * note. {@code estCpuMs} is a rough estimate (sample count × ~10 ms ExecutionSample
+	 * period) — only the order-of-magnitude comparison matters here.
+	 */
+	static String suspectedCause(CauseSignals s) {
+		boolean lockDominates = s.topLock() != null && s.lockMs() >= 100 && s.lockMs() >= s.estCpuMs()
+				&& s.lockMs() >= s.gcMs();
+		String lockNote = (s.topLock() != null && s.lockMs() >= 5 && !lockDominates)
+				? " Minor lock contention in `" + s.topLock() + "` (" + s.lockMs() + " ms)." : "";
+		if (lockDominates) {
+			return "Lock contention — blocked time concentrated in `" + s.topLock() + "`"
+					+ ((s.topMonitor() != null) ? " on a `" + s.topMonitor() + "` monitor." : ".");
+		}
+		if (s.gcMs() > 500 && s.topAlloc() != null) {
+			return "High allocation pressure (GC paused " + s.gcMs() + " ms) — sustained allocation at `" + s.topAlloc()
+					+ "`" + ((s.oldObjects() > 0) ? "; retained (old-object) samples suggest a leak." : ".") + lockNote;
+		}
+		if (s.topApp() != null && s.topAppShare() > 40) {
+			return "CPU-bound — `" + s.topApp() + "` accounts for the majority of samples." + lockNote;
+		}
+		if (s.topPinned() != null && s.pinnedMs() > 100) {
+			return "Virtual-thread pinning — carrier threads pinned at `" + s.topPinned()
+					+ "`; a synchronized block or native call is blocking the carrier." + lockNote;
+		}
+		if (s.topApp() == null && s.topIo() != null) {
+			return "I/O-bound — blocked time concentrated on `" + s.topIo() + "`." + lockNote;
+		}
+		if (s.topApp() != null) {
+			String alloc = (s.topAlloc() != null && s.allocMb() >= 50) ? "; top allocation at `" + s.topAlloc() + "`"
+					: "";
+			return "Hot path is `" + s.topApp() + "`" + alloc + "." + lockNote;
+		}
+		return "No dominant signal." + lockNote;
+	}
+
 	private static final class Aggregates {
 
 		/** How many top allocation sites get a per-type breakdown teaser (#53 item 1). */
@@ -577,34 +617,25 @@ public final class Summarizer {
 		}
 
 		private String heuristic() {
-			String topLock = top(this.lockByMethod);
-			String topMon = top(this.lockByMonitor);
-			String topAlloc = top(this.allocBySite);
 			String topApp = top(this.cpuByApp);
-			long gcMs = this.gcPauseNanos / 1_000_000;
-			if (topLock != null && sum(this.lockByMethod) > 50_000_000L) {
-				return "Lock contention — blocked time concentrated in `" + topLock + "`"
-						+ ((topMon != null) ? " on a `" + topMon + "` monitor." : ".");
-			}
-			if (gcMs > 500 && topAlloc != null) {
-				return "High allocation pressure (GC paused " + gcMs + " ms) — sustained allocation at `" + topAlloc
-						+ "`" + ((this.oldObjects > 0) ? "; retained (old-object) samples suggest a leak." : ".");
-			}
-			if (topApp != null && this.execSamples > 0 && this.cpuByApp.get(topApp) * 100.0 / this.execSamples > 40) {
-				return "CPU-bound — `" + topApp + "` accounts for the majority of samples.";
-			}
-			String topPinned = top(this.pinnedBySite);
-			if (topPinned != null && sum(this.pinnedBySite) > 100_000_000L) {
-				return "Virtual-thread pinning — carrier threads pinned at `" + topPinned
-						+ "`; a synchronized block or native call is blocking the carrier.";
-			}
-			String topIo = top(this.ioByEndpoint);
-			if (topApp == null && topIo != null) {
-				return "I/O-bound — blocked time concentrated on `" + topIo + "`.";
-			}
-			return (topApp != null) ? "Hot path is `" + topApp + "`." : "No dominant signal.";
+			double topShare = (topApp != null && this.execSamples > 0)
+					? this.cpuByApp.get(topApp) * 100.0 / this.execSamples : 0.0;
+			CauseSignals signals = new CauseSignals(sum(this.lockByMethod) / 1_000_000L, this.gcPauseNanos / 1_000_000L,
+					this.allocBytes / (1024L * 1024L), this.execSamples * 10L, sum(this.pinnedBySite) / 1_000_000L,
+					this.oldObjects, topApp, topShare, top(this.allocBySite), top(this.lockByMethod),
+					top(this.lockByMonitor), top(this.ioByEndpoint), top(this.pinnedBySite));
+			return suspectedCause(signals);
 		}
 
+	}
+
+	/**
+	 * The inputs the suspected-cause heuristic weighs, in comparable magnitudes (measured
+	 * lock/GC/pinning in ms, allocation in MB, a rough CPU-work estimate in ms).
+	 */
+	record CauseSignals(long lockMs, long gcMs, long allocMb, long estCpuMs, long pinnedMs, long oldObjects,
+			String topApp, double topAppShare, String topAlloc, String topLock, String topMonitor, String topIo,
+			String topPinned) {
 	}
 
 }
