@@ -6,6 +6,8 @@ import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.matcher.ElementMatchers;
 
+import org.alexmond.jvmlens.probe.AgentIgnores;
+
 /**
  * Installs {@link CacheAdvice} on Spring's {@code org.springframework.cache.Cache}
  * abstraction (get/put/evict/putIfAbsent), matched by name so jvmlens needs no Spring
@@ -24,7 +26,7 @@ public final class CacheCapture {
 	public static void install(Instrumentation instrumentation) {
 		new AgentBuilder.Default().disableClassFormatChanges()
 			.with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-			.ignore(ElementMatchers.nameStartsWith("org.alexmond.jvmlens."))
+			.ignore(AgentIgnores.base())
 			.type(ElementMatchers.hasSuperType(ElementMatchers.named("org.springframework.cache.Cache")))
 			.transform((b, td, classLoader, module,
 					pd) -> b.visit(Advice.to(CacheAdvice.class)

@@ -7,6 +7,8 @@ import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.matcher.ElementMatchers;
 
+import org.alexmond.jvmlens.probe.AgentIgnores;
+
 /**
  * Installs {@link SqlAdvice} on every concrete {@code java.sql.Statement}
  * implementation's {@code execute*} methods via runtime retransformation, so JDBC timing
@@ -25,7 +27,7 @@ public final class SqlCapture {
 	public static void install(Instrumentation instrumentation) {
 		new AgentBuilder.Default().disableClassFormatChanges()
 			.with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-			.ignore(ElementMatchers.nameStartsWith("org.alexmond.jvmlens."))
+			.ignore(AgentIgnores.base())
 			.type(ElementMatchers.isSubTypeOf(Statement.class).and(ElementMatchers.not(ElementMatchers.isInterface())))
 			.transform((b, td, classLoader, module,
 					pd) -> b.visit(Advice.to(SqlAdvice.class)

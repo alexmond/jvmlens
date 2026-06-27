@@ -27,6 +27,9 @@
         <module>jvmlens-cli</module>
         <module>jvmlens-agent</module>
         <module>jvmlens-jmh</module>
+        <!-- Last: launches a real Spring Boot + JPA host under the built agent jar, so it
+             must build after jvmlens-agent. Integration tests only — ships nothing. -->
+        <module>jvmlens-it</module>
     </modules>
 
     <licenses>
@@ -62,6 +65,7 @@
         <mcp.version>0.10.0</mcp.version>
         <ap-loader.version>3.0-9</ap-loader.version>
         <jmh.version>1.37</jmh.version>
+        <testcontainers.version>1.20.6</testcontainers.version>
 
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
@@ -84,6 +88,14 @@
                 <groupId>org.alexmond</groupId>
                 <artifactId>jvmlens-engine</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <!-- Testcontainers BOM (not managed by the Spring Boot BOM) for the jvmlens-it tests. -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>info.picocli</groupId>
