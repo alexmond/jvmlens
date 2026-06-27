@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens.sql;
 
+import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,7 +35,7 @@ public final class SqlStore {
 
 	/** Record one execution of {@code sql} taking {@code nanos}; called from advice. */
 	public static void record(String sql, long nanos) {
-		SHAPES.computeIfAbsent(SqlSanitizer.sanitize(sql), (k) -> new Stat()).add(nanos);
+		FailGuard.run("db", () -> SHAPES.computeIfAbsent(SqlSanitizer.sanitize(sql), (k) -> new Stat()).add(nanos));
 	}
 
 	/** Clear all captured statements (used by tests). */

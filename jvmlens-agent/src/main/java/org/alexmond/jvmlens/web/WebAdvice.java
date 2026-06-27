@@ -15,13 +15,13 @@ public final class WebAdvice {
 	}
 
 	/** Capture the start time before the request is handled. */
-	@Advice.OnMethodEnter
+	@Advice.OnMethodEnter(suppress = Throwable.class)
 	public static long enter() {
 		return System.nanoTime();
 	}
 
 	/** Record the elapsed time against the request's method + route shape. */
-	@Advice.OnMethodExit(onThrowable = Throwable.class)
+	@Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
 	public static void exit(@Advice.Enter long start, @Advice.Argument(0) Object request,
 			@Advice.Argument(1) Object response) {
 		long elapsed = System.nanoTime() - start;

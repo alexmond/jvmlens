@@ -13,13 +13,13 @@ public final class MessagingAdvice {
 	}
 
 	/** Capture the start time before the operation runs. */
-	@Advice.OnMethodEnter
+	@Advice.OnMethodEnter(suppress = Throwable.class)
 	public static long enter() {
 		return System.nanoTime();
 	}
 
 	/** Record the elapsed time against the operation's origin label. */
-	@Advice.OnMethodExit(onThrowable = Throwable.class)
+	@Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
 	public static void exit(@Advice.Enter long start, @Advice.Origin("#t.#m") String op) {
 		MessagingStore.record(op, System.nanoTime() - start);
 	}

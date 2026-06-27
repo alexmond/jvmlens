@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens.web;
 
+import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -27,8 +28,10 @@ public final class WebStore {
 
 	/** Record one request; called from advice. {@code status} 0 if unknown. */
 	public static void record(String method, String path, int status, long nanos) {
-		String key = ((method != null) ? method : "?") + " " + WebSanitizer.route(path);
-		ENDPOINTS.computeIfAbsent(key, (k) -> new Stat()).add(nanos, status);
+		FailGuard.run("web", () -> {
+			String key = ((method != null) ? method : "?") + " " + WebSanitizer.route(path);
+			ENDPOINTS.computeIfAbsent(key, (k) -> new Stat()).add(nanos, status);
+		});
 	}
 
 	/** Clear all captured endpoints (used by tests). */

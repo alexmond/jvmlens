@@ -30,4 +30,13 @@ class WebSanitizerTest {
 		assertThat(WebSanitizer.route("/")).isEqualTo("/");
 	}
 
+	@Test
+	void pathologicalLongPathDoesNotBlowUp() {
+		// #73 item 2: agent-path regexes must survive hostile/framework-controlled input.
+		// WebSanitizer's matchers are linear char-class quantifiers (no recursive group),
+		// so a very long path normalizes without StackOverflow/exception.
+		String huge = "/api/" + "a1b2c3d4e5f6/".repeat(20_000);
+		assertThat(WebSanitizer.route(huge)).startsWith("/api/");
+	}
+
 }

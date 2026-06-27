@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens.snapshot;
 
+import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,7 +33,7 @@ public final class SnapshotStore {
 
 	/** Record one method-entry observation; called from inlined advice on every call. */
 	public static void record(String site, Object[] args) {
-		SITES.computeIfAbsent(site, (k) -> new Site()).add(args);
+		FailGuard.run("snapshot", () -> SITES.computeIfAbsent(site, (k) -> new Site()).add(args));
 	}
 
 	/** Clear all captured snapshots (used by tests). */

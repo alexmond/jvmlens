@@ -15,13 +15,13 @@ public final class SqlAdvice {
 	}
 
 	/** Capture the start time before the query runs. */
-	@Advice.OnMethodEnter
+	@Advice.OnMethodEnter(suppress = Throwable.class)
 	public static long enter() {
 		return System.nanoTime();
 	}
 
 	/** Record the elapsed time against the statement's sanitized shape. */
-	@Advice.OnMethodExit(onThrowable = Throwable.class)
+	@Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
 	public static void exit(@Advice.Enter long start, @Advice.This Object statement,
 			@Advice.AllArguments Object[] args) {
 		String sql = null;
