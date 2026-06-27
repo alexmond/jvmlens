@@ -36,4 +36,15 @@ class SqlSanitizerTest {
 		assertThat(shape).hasSizeLessThanOrEqualTo(201).endsWith("…");
 	}
 
+	@Test
+	void hugeQuotedLiteralDoesNotOverflowTheStack() {
+		// #68 Bug 2: '(?:[^']|'')*' recurses one stack frame per char, so a long quoted
+		// literal (a big IN-list or driver metadata SQL) blew the stack at the call site
+		// — which during Hibernate EntityManagerFactory build crashed the host. Bounding
+		// the scanned input keeps sanitize() safe regardless of statement size.
+		String huge = "SELECT * FROM t WHERE k = '" + "x".repeat(200_000) + "'";
+		String shape = SqlSanitizer.sanitize(huge); // must not StackOverflowError
+		assertThat(shape).hasSizeLessThanOrEqualTo(201);
+	}
+
 }
