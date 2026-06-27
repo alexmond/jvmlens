@@ -50,4 +50,16 @@ class JvmlensProfilerTest {
 			.hasMessageContaining("expected key=value");
 	}
 
+	@Test
+	void acceptsKeepAndBaselineOptions() throws Exception {
+		// #50 item 2: keep the fork's recording + diff against a prior one, inside JMH
+		assertThat(new JvmlensProfiler("keep=/tmp/run.jfr;baseline=/tmp/prev.jfr").addJVMOptions(null)).isNotEmpty();
+	}
+
+	@Test
+	void stillSuggestsForATypoNearTheNewKeys() {
+		assertThatThrownBy(() -> new JvmlensProfiler("baselin=/tmp/prev.jfr")).isInstanceOf(ProfilerException.class)
+			.hasMessageContaining("did you mean `baseline`");
+	}
+
 }

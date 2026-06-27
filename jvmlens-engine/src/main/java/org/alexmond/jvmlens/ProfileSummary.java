@@ -31,33 +31,50 @@ import java.util.List;
  * @param allocBytes total estimated bytes allocated across the recording — the
  * <em>absolute</em> memory anchor, so a before→after diff isn't fooled by share alone
  * (optimizing shrinks the denominator; see field-finding #43)
+ * @param allocSamples number of allocation samples seen — the confidence behind the
+ * per-site byte splits: the total is reliable, but on a short trial the per-site shares
+ * are statistically noisy (field-finding #50 item 3), so the renderer hedges when this is
+ * low
  */
 public record ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
 		long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
 		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage,
-		List<Section> sections, long allocBytes) {
+		List<Section> sections, long allocBytes, long allocSamples) {
 
 	/**
 	 * Back-compatible constructor for callers (and tests) predating the extended
-	 * {@code sections}; defaults them to empty and {@code allocBytes} to 0.
+	 * {@code sections}; defaults them to empty and
+	 * {@code allocBytes}/{@code allocSamples} to 0.
 	 */
 	public ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
 			long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
 			List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage) {
 		this(source, execSamples, allocTypes, oldObjects, gcPauses, gcPauseMillis, hotPaths, hotLeaves, allocSites,
-				allocatedTypes, locks, monitors, cause, appPackage, List.of(), 0L);
+				allocatedTypes, locks, monitors, cause, appPackage, List.of(), 0L, 0L);
 	}
 
 	/**
 	 * Back-compatible constructor for callers (and tests) predating {@code allocBytes};
-	 * defaults it to 0.
+	 * defaults it and {@code allocSamples} to 0.
 	 */
 	public ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
 			long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
 			List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage,
 			List<Section> sections) {
 		this(source, execSamples, allocTypes, oldObjects, gcPauses, gcPauseMillis, hotPaths, hotLeaves, allocSites,
-				allocatedTypes, locks, monitors, cause, appPackage, sections, 0L);
+				allocatedTypes, locks, monitors, cause, appPackage, sections, 0L, 0L);
+	}
+
+	/**
+	 * Back-compatible constructor for callers (and tests) predating {@code allocSamples};
+	 * defaults it to 0.
+	 */
+	public ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
+			long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
+			List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage,
+			List<Section> sections, long allocBytes) {
+		this(source, execSamples, allocTypes, oldObjects, gcPauses, gcPauseMillis, hotPaths, hotLeaves, allocSites,
+				allocatedTypes, locks, monitors, cause, appPackage, sections, allocBytes, 0L);
 	}
 
 	/**
@@ -75,7 +92,7 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 		merged.addAll(extra);
 		return new ProfileSummary(this.source, this.execSamples, this.allocTypes, this.oldObjects, this.gcPauses,
 				this.gcPauseMillis, this.hotPaths, this.hotLeaves, this.allocSites, this.allocatedTypes, this.locks,
-				this.monitors, this.cause, this.appPackage, List.copyOf(merged), this.allocBytes);
+				this.monitors, this.cause, this.appPackage, List.copyOf(merged), this.allocBytes, this.allocSamples);
 	}
 
 	/**
