@@ -6,6 +6,8 @@ import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.matcher.ElementMatchers;
 
+import org.alexmond.jvmlens.probe.AgentIgnores;
+
 /**
  * Installs {@link WebAdvice} on the {@code service(request, response)} method of every
  * {@code HttpServlet} subtype (both {@code jakarta.servlet} and {@code javax.servlet}, by
@@ -25,7 +27,7 @@ public final class WebCapture {
 	public static void install(Instrumentation instrumentation) {
 		new AgentBuilder.Default().disableClassFormatChanges()
 			.with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-			.ignore(ElementMatchers.nameStartsWith("org.alexmond.jvmlens."))
+			.ignore(AgentIgnores.base())
 			.type(ElementMatchers.hasSuperType(ElementMatchers.named("jakarta.servlet.http.HttpServlet")
 				.or(ElementMatchers.named("javax.servlet.http.HttpServlet"))))
 			.transform((b, td, classLoader, module,
