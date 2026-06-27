@@ -24,17 +24,17 @@ scripts/deploy-agent.sh              # → registry.example.com:5000/jvmlens-age
 
 == 2. Deploy (separate release)
 
-For the homelab, `values-homelab.yaml` already pins the unitrack image and reuses the live
-release's `unitrack` ConfigMap + Secret (DB password), so it's one flag — the deploy script
-picks the file up automatically:
+Supply your own overrides via `--values my-values.yaml` (image, namespace, the app's
+ConfigMap/Secret to reuse). A values file that reuses a live app's ConfigMap + Secret lets the
+profiled copy start with the same config in one flag:
 
 [source,bash]
 ----
-scripts/deploy-agent.sh --release unitrack-profiled
+scripts/deploy-agent.sh --release my-app-profiled --values my-values.yaml
 ----
 
-CAUTION: that reuses the **live** DB — two app instances can race on Flyway startup
-migration. Point `target.env.UNITRACK_DB_URL` at a throwaway DB for anything beyond a look.
+CAUTION: reusing a **live** app's config points the profiled copy at the **same DB** — two app
+instances can race on startup migration. Point it at a throwaway DB for anything beyond a look.
 
 Generic form (any app), building + pushing + installing in one go:
 
