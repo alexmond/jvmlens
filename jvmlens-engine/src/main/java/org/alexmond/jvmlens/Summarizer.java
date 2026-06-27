@@ -2,6 +2,7 @@ package org.alexmond.jvmlens;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -178,15 +179,54 @@ public final class Summarizer {
 	 * @throws IOException if a recording cannot be read
 	 */
 	public static ProfileSummary analyze(List<Path> files, Scope scope, String source) throws IOException {
+		return analyze(files, scope, source, 0L);
+	}
+
+	/**
+	 * As {@link #analyze(List, Scope, String)}, but drops every event recorded in the
+	 * first {@code skipWarmupMs} of each recording — so JIT-compilation/classload churn
+	 * at startup doesn't contaminate the steady-state hot-path ranking (field-finding #53
+	 * gap 4). The cutoff is measured <em>per file</em> from that file's earliest event,
+	 * so each JMH fork (a fresh JVM) gets its own warmup trimmed.
+	 * @param files the {@code .jfr} recordings to read and merge
+	 * @param scope which frames count as application code
+	 * @param source the label for the merged summary
+	 * @param skipWarmupMs drop events in the first this-many ms of each recording (0 =
+	 * keep all)
+	 * @return the structured summary
+	 * @throws IOException if a recording cannot be read
+	 */
+	public static ProfileSummary analyze(List<Path> files, Scope scope, String source, long skipWarmupMs)
+			throws IOException {
 		Aggregates agg = new Aggregates(scope);
 		for (Path file : files) {
+			Instant cutoff = (skipWarmupMs > 0) ? recordingStart(file).plusMillis(skipWarmupMs) : null;
 			try (RecordingFile rf = new RecordingFile(file)) {
 				while (rf.hasMoreEvents()) {
-					agg.add(rf.readEvent());
+					RecordedEvent event = rf.readEvent();
+					if (cutoff == null || !event.getStartTime().isBefore(cutoff)) {
+						agg.add(event);
+					}
 				}
 			}
 		}
 		return agg.toSummary(source);
+	}
+
+	/**
+	 * The earliest event start in a recording — the warmup cutoff is measured from here.
+	 */
+	private static Instant recordingStart(Path file) throws IOException {
+		Instant min = null;
+		try (RecordingFile rf = new RecordingFile(file)) {
+			while (rf.hasMoreEvents()) {
+				Instant start = rf.readEvent().getStartTime();
+				if (min == null || start.isBefore(min)) {
+					min = start;
+				}
+			}
+		}
+		return (min != null) ? min : Instant.EPOCH;
 	}
 
 	/** The leaf (top-of-stack) java frame — the self-time view, runtime included. */
