@@ -9,6 +9,7 @@ name: Maven Release
 # Central deploy only; the tag + next-dev-version commit must still be done out-of-band
 # (or via a `claude-code`/script step with a checkout `repo:` that carries push creds).
 on: [manual]
+checkout: true
 
 inputs:
   releaseVersion:
@@ -28,8 +29,6 @@ jobs:
       key: m2-jvmlens
       paths: [.m2/repository]
     steps:
-      - name: Checkout
-        run: git clone https://github.com/alexmond/jvmlens.git .
       - name: Prepare release version
         run: mvn versions:set -DnewVersion=$releaseVersion -DprocessAllModules=true --no-transfer-progress -Dmaven.repo.local=.m2/repository
       - name: Deploy to Maven Central

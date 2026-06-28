@@ -12,16 +12,15 @@ name: lab-scan
 on: [push, manual]
 push:
   branches: [main]
+checkout: true
 
 jobs:
   lab-scan:
     image: alpine:3.20
     secrets: [LAB_DENY_PATTERNS, LAB_SCAN_BASELINE]
     steps:
-      - name: Checkout
-        run: |
-          apk add --no-cache git grep
-          git clone --depth 1 https://github.com/alexmond/jvmlens.git .
+      - name: Install git + grep
+        run: apk add --no-cache git grep
       - name: Scan tracked files for lab-internal references
         run: |
           set -euo pipefail
