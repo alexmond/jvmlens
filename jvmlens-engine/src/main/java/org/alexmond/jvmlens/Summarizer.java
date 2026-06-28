@@ -28,17 +28,6 @@ import org.alexmond.jvmlens.ProfileSummary.Ranked;
  */
 public final class Summarizer {
 
-	/**
-	 * How many leaves to list per hot path in its leaf-distribution teaser (#53 item 3).
-	 */
-	private static final int LEAF_TEASER_COUNT = 3;
-
-	/**
-	 * A path's top leaf must hold this share or the teaser is flagged diffuse (#53 item
-	 * 3).
-	 */
-	private static final double LEAF_CONFIDENCE = 0.20;
-
 	/** Output formats the CLI can request. */
 	public enum Format {
 
@@ -273,26 +262,6 @@ public final class Summarizer {
 			.map((f) -> new Frame(f.getMethod().getType().getName() + "." + f.getMethod().getName(), f.getLineNumber()))
 			.findFirst()
 			.orElse(null);
-	}
-
-	/**
-	 * The top {@value #LEAF_TEASER_COUNT} leaves of one hot path, formatted
-	 * {@code leaf c/total · …} — where the path's time actually goes. Flagged
-	 * {@code diffuse} when no single leaf holds {@value #LEAF_CONFIDENCE} of the path, so
-	 * the reader doesn't chase a 2/168 frame (#53 item 3).
-	 */
-	static String leafBreakdown(Map<String, Long> byLeaf, long pathTotal) {
-		List<Map.Entry<String, Long>> top = byLeaf.entrySet()
-			.stream()
-			.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-			.limit(LEAF_TEASER_COUNT)
-			.toList();
-		String leaves = top.stream()
-			.map((l) -> l.getKey() + " " + l.getValue() + "/" + pathTotal)
-			.collect(java.util.stream.Collectors.joining(" · "));
-		boolean diffuse = pathTotal <= 0 || top.isEmpty()
-				|| (double) top.get(0).getValue() / pathTotal < LEAF_CONFIDENCE;
-		return diffuse ? leaves + " ⚠ diffuse — no leaf >" + (int) (LEAF_CONFIDENCE * 100) + "% of path" : leaves;
 	}
 
 	/**
@@ -676,11 +645,10 @@ public final class Summarizer {
 		}
 
 		/**
-		 * Per hot-path teaser: the top {@value #LEAF_TEASER_COUNT} leaves (where time
-		 * actually goes) with counts, instead of one possibly-unrepresentative first-seen
-		 * stack. Flags the teaser {@code diffuse} when no single leaf holds
-		 * {@value #LEAF_CONFIDENCE} of the path — the reader shouldn't chase a 2/168
-		 * frame (#53 item 3).
+		 * Per hot-path teaser: the top leaves (where time actually goes) with counts, via
+		 * {@link Teasers#leafBreakdown}, instead of one possibly-unrepresentative
+		 * first-seen stack — flagged {@code diffuse} when no single leaf dominates the
+		 * path (#53 item 3).
 		 */
 		private Map<String, String> leafTeasers() {
 			Map<String, String> teasers = new HashMap<>();
@@ -691,7 +659,7 @@ public final class Summarizer {
 				.forEach((path) -> {
 					Map<String, Long> byLeaf = this.leafByApp.get(path.getKey());
 					if (byLeaf != null && !byLeaf.isEmpty()) {
-						teasers.put(path.getKey(), leafBreakdown(withLines(byLeaf), path.getValue()));
+						teasers.put(path.getKey(), Teasers.leafBreakdown(withLines(byLeaf), path.getValue()));
 					}
 				});
 			return teasers;
@@ -738,7 +706,27 @@ public final class Summarizer {
 						teasers.put(site.getKey(), prefix + typeBreakdown(byType));
 					}
 				});
+			// #103: flag any site dominated by an escape-analysis-prone type (boxed
+			// primitive /
+			// captured lambda) — C2 may scalar-replace non-escaping instances, so the
+			// sampled
+			// bytes can overstate steady-state allocation. Hedged; verify with `-prof
+			// gc`.
+			this.allocBySiteType.forEach((site, byType) -> {
+				String dom = dominantType(byType);
+				if (Teasers.escapeProneType(dom)) {
+					String caveat = "⚠ " + simpleType(dom) + " may be scalar-replaced (escape analysis) — verify "
+							+ "steady-state with -prof gc";
+					teasers.merge(site, caveat, (have, add) -> have + " " + add);
+				}
+			});
 			return teasers;
+		}
+
+		/** The most-allocated type at a site, or {@code null} if none recorded. */
+		private static String dominantType(Map<String, Long> byType) {
+			return (byType == null || byType.isEmpty()) ? null
+					: byType.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
 		}
 
 		/** The top types of one site, formatted {@code Type bytes · Type bytes · …}. */
