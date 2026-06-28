@@ -16,6 +16,11 @@ class ProfileDiffTest {
 				List.of(), "cause", "com.acme", List.of(), allocBytes);
 	}
 
+	private static ProfileSummary withSamples(long execSamples, List<Ranked> hotPaths) {
+		return new ProfileSummary("rec.jfr", execSamples, 1, 0, 0, 0, hotPaths, List.of(), List.of(), List.of(),
+				List.of(), List.of(), "cause", "com.acme", List.of(), 0);
+	}
+
 	@Test
 	void anchorsOnAbsoluteSoAFallingSiteIsNotLabelledRising() {
 		// #43: floatString's absolute bytes FELL but its share ROSE (the total shrank).
@@ -72,6 +77,26 @@ class ProfileDiffTest {
 		assertThat(accLine).contains("▲").contains("(possible sampling redistribution — total alloc fell 8%)");
 		// the site moving WITH the total (it fell too) is a real win — no hedge
 		assertThat(floatLine).contains("▼").doesNotContain("redistribution");
+	}
+
+	@Test
+	void flagsHotPathRisingAgainstAFallingSampleTotalAsRedistribution() {
+		// #110 finding 2: total exec samples fell, but a method's absolute samples rose —
+		// its
+		// share rises mostly because the rest of the profile shrank, not because it got
+		// slower. Hedge the CPU ▲ row like the alloc one (#43/#44); annotate, never
+		// suppress.
+		ProfileSummary before = withSamples(1000, List.of(new Ranked("com.acme.GoFmt.floatString", 0.20, 200, null),
+				new Ranked("com.acme.Executor.printText", 0.50, 500, null)));
+		ProfileSummary after = withSamples(800, List.of(new Ranked("com.acme.GoFmt.floatString", 0.30, 240, null),
+				new Ranked("com.acme.Executor.printText", 0.10, 80, null)));
+		String d = ProfileDiff.diff(before, after);
+
+		// floatString rose in absolute while the sample total fell → hedged
+		assertThat(line(d, "floatString")).contains("▲")
+			.contains("(possible sampling redistribution — total samples fell 20%)");
+		// printText fell with the total → a real drop, no hedge
+		assertThat(line(d, "printText")).contains("▼").doesNotContain("redistribution");
 	}
 
 	private static String line(String diff, String needle) {
