@@ -10,16 +10,20 @@ jar="$root/jvmlens-cli/target/jvmlens.jar"
 [ -f "$jar" ] || ( cd "$root" && ./mvnw -q -pl jvmlens-cli -am package -DskipTests )
 cp "$jar" "$here/jvmlens.jar"
 
-# 2. ensure the seed recording exists, and stage the workload source for the code beat
+# 2. ensure the seed recording exists
 [ -f "$here/recording.jfr" ] || "$here/seed.sh"
-cp "$root/examples/Workload.java" "$here/Workload.java"   # so the GIF shows a clean path
 
 # 3. ensure the JDK `jfr` tool is on PATH
 command -v jfr >/dev/null || export PATH="$(dirname "$(readlink -f "$(command -v java)")"):$PATH"
 
-# 4. render the GIF
+# 4. put the demo bin/ first on PATH so `jvmlens` (launcher) and `claude` (golden replay
+#    stub — deterministic, offline) resolve here instead of the real binaries.
+chmod +x "$here/bin/jvmlens" "$here/bin/claude"
+export PATH="$here/bin:$PATH"
+
+# 5. render the GIF
 ( cd "$here" && vhs demo.tape )
 
-# 5. drop the staged jar + source copy (keep the repo lean; recording.jfr stays committed)
-rm -f "$here/jvmlens.jar" "$here/Workload.java"
+# 6. drop the staged jar (keep the repo lean; recording.jfr + golden txt stay committed)
+rm -f "$here/jvmlens.jar"
 echo "rendered: $here/jvmlens-demo.gif"
