@@ -1,0 +1,109 @@
+= jvmlens + your AI agent
+
+jvmlens in one page: a JVM profile is rich, but **raw it doesn't fit in an LLM's context** —
+and once it's small, an AI debugs from it in one shot. Every number, command, and transcript
+below is real and reproducible (see _Reproduce it yourself_); the sample artifacts are
+committed under `assets/demo/`.
+
+== The problem — a raw JFR overflows the model
+
+A short recording's raw `jfr print` dump is enormous. Hand it straight to an AI:
+
+[source,bash]
+----
+jfr print recording.jfr | claude -p "why is this slow and how do I fix it?"
+----
+
+The model can't even read it:
+
+[source]
+----
+Prompt is too long · the request is ~683,988 tokens (limit 1,000,000) —
+a raw JFR dump overflows the context window. The model can't even read it.
+----
+
+That dump is 2,717,300 characters ≈ **684K tokens**; as an actual `claude -p` request (with the
+system prompt + tool definitions) it totalled ~1.49M tokens — over the 1M limit, rejected outright.
+
+== The fix — summarize with jvmlens first
+
+Pipe the *same* recording through jvmlens. It reduces to ~1 KB (~250 tokens) of ranked,
+source-attributed signal:
+
+[source,bash]
+----
+jvmlens analyze recording.jfr -r cpu | claude -p "why is this slow and how do I fix it?"
+----
+
+The jvmlens summary — the model's entire input, ~250 tokens:
+
+[source]
+----
+# JVM profile summary (recording.jfr)
+
+Events: 869 exec samples, 8 alloc types, 2 old-object samples, 6 GC pauses (38 ms).
+
+## Top hot paths (application code, by sample share) [sampled]
+- `Workload.expensiveHashLoop` — 99% (862 samples)  (java.lang.invoke.VarHandleByteArrayAsInts$ArrayHandle.index:101 363/862 · java.lang.Integer.formatUnsignedInt:394 345/862 · java.lang.AbstractStringBuilder.ensureCapacityInternal:243 53/862)
+
+## Hot leaf methods (self-time, incl. runtime) [sampled]
+- `java.lang.invoke.VarHandleByteArrayAsInts$ArrayHandle.index` — 42% (363 samples)  (line 101)
+- `java.lang.Integer.formatUnsignedInt` — 40% (345 samples)  (line 394)
+- `java.lang.AbstractStringBuilder.ensureCapacityInternal` — 6% (53 samples)  (line 243)
+- `java.util.Arrays.fill` — 4% (34 samples)  (line 3287)
+- `sun.security.provider.SHA2.implCompress` — 2% (18 samples)  (line 135)
+
+## Suspected cause (heuristic)
+- CPU-bound — `Workload.expensiveHashLoop` accounts for the majority of samples.
+----
+
+And the AI solves it in one shot (real Claude response):
+
+[source]
+----
+Workload.expensiveHashLoop — 99% (862 of 869 samples), and it's CPU-bound, not blocked.
+The time goes to byte-array VarHandle indexing (42%) and Integer→hex string formatting (40%), so the loop is rebuilding hash/hex strings every iteration.
+Hoist the per-iteration work out of the loop (reuse a buffer / precompute the hex, or use a primitive hash instead of building strings).
+----
+
+It pins the hot method, the byte→hex formatting that dominates self-time, and the fix —
+from ~250 tokens instead of ~684,000.
+
+== The numbers (checkable)
+
+[cols="1,1,1"]
+|===
+| | Raw `jfr print` | jvmlens `analyze -r cpu`
+
+| Size | 2.7 MB | ~1 KB
+| Tokens (approx) | ~684,000 | ~250
+| Fits a 1M-token context | no — the request overflowed | yes — ~2,700× smaller
+|===
+
+== Or let the agent fetch it — MCP
+
+A coding agent can call jvmlens directly instead of piping: `jvmlens mcp` is a stdio
+xref:usage.adoc#_mcp_server[MCP server] exposing scoped, navigable tools (`overview` →
+`hot_paths` / `allocations` / `lock_contention`, plus a live `profile` tool). It serves the
+same compact data and never calls an LLM itself.
+
+== Reproduce it yourself
+
+Everything above comes from the committed sample under `assets/demo/`. To regenerate from
+scratch (JDK 17+):
+
+[source,bash]
+----
+# 1. record a slow workload (examples/Workload.java plants a CPU hot path)
+java -XX:StartFlightRecording=duration=12s,filename=recording.jfr,settings=profile \
+     examples/Workload.java cpu 10
+
+# 2. raw → your agent: overflows the context window
+jfr print recording.jfr | claude -p "why is this slow and how do I fix it?"
+
+# 3. jvmlens → your agent: ~250 tokens, and it solves it
+java -jar jvmlens.jar analyze recording.jfr -r cpu | claude -p "why is this slow and how do I fix it?"
+----
+
+The seed recording (`assets/demo/recording.jfr`), the real jvmlens output, and the real Claude
+transcript are committed, so the token counts are checkable without re-running anything.

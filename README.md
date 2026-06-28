@@ -2,12 +2,20 @@
 
 Turn JVM runtime evidence into a compact, **LLM-ready** diagnosis.
 
-![jvmlens demo: a raw JFR dump overflows Claude's context so the AI can't help; piped through jvmlens first, Claude pins the hot method and the fix](assets/demo/jvmlens-demo.gif)
+**Ask an AI to "debug this."** A raw `jfr print` dump of a short recording is **2.7 MB ≈ 684K
+tokens** — pipe it to a model and the request overflows the context window; it can't even read
+it. The *same* recording through jvmlens is **~1 KB (~250 tokens)**:
 
-> _Ask an AI to "debug this": a raw JFR dump is ~680K tokens and **overflows the model's
-> context** — it can't even read it. Piped through `jvmlens analyze` first (~400 tokens),
-> Claude pins `Workload.expensiveHashLoop` (99%) and the fix. The demo is reproducible and
-> renders offline (golden-replay) — see [`assets/demo/`](assets/demo/) (`./render.sh`)._
+```console
+$ jvmlens analyze recording.jfr -r cpu | claude -p "why is this slow and how do I fix it?"
+Workload.expensiveHashLoop — 99% (862 of 869 samples), CPU-bound, not blocked.
+The time goes to byte-array VarHandle indexing (42%) and Integer→hex formatting (40%) —
+the loop rebuilds hash/hex strings every iteration. Hoist that work out of the loop.
+```
+
+Real, checkable numbers and the full before/after Claude transcript:
+**[jvmlens + your AI agent](https://www.alexmond.org/jvmlens/current/ai-agent.html)** — every
+artifact is committed under [`assets/demo/`](assets/demo/) so you can reproduce it yourself.
 
 Profiling a JVM is well-served for *humans* — async-profiler, JFR, and the
 commercial GUIs all produce flamegraphs and recordings. None of those formats
