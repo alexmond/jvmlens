@@ -36,17 +36,24 @@ import org.alexmond.jvmlens.Summarizer;
  * to this path instead of deleting it — so it can be the next run's baseline), and
  * {@code baseline} (a prior recording to diff this run against — prints the change report
  * instead of the plain summary, so {@code run → "what changed vs last run"} happens in
- * one JMH command; field-finding #50 item 2). An <em>unknown</em> option key is a hard
- * error (a {@link ProfilerException} with a did-you-mean suggestion) rather than a silent
- * no-op — a misspelled {@code appPackage} that produced an unscoped summary used to cost
- * a whole capture before you noticed (field-finding #53 item 6). Ships in the
- * dependency-light {@code jvmlens-*-jmh.jar} (engine + this profiler, no
+ * one JMH command; field-finding #50 item 2), and {@code socketio} (default {@code false}
+ * — drops socket I/O events, which on a JMH fork are just the harness control socket; set
+ * {@code socketio=true} to keep them; field-finding #100). An <em>unknown</em> option key
+ * is a hard error (a {@link ProfilerException} with a did-you-mean suggestion) rather
+ * than a silent no-op — a misspelled {@code appPackage} that produced an unscoped summary
+ * used to cost a whole capture before you noticed (field-finding #53 item 6).
+ *
+ * <p>
+ * When the run also enables JMH's GC profiler ({@code -prof gc}), the summary is headed
+ * with JMH's <em>exact</em> {@code gc.alloc.rate.norm} (bytes/op) so the measured rate
+ * sits next to jvmlens's <em>sampled</em> per-site bytes (field-finding #100). Ships in
+ * the dependency-light {@code jvmlens-jmh.jar} (engine + this profiler, no
  * Spring/picocli/jmh) — put it and {@code jmh-core} on the benchmark's classpath.
  */
 public class JvmlensProfiler implements ExternalProfiler {
 
 	/** Recognized option keys, used for the did-you-mean suggestion on a typo. */
-	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report", "keep", "baseline");
+	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report", "keep", "baseline", "socketio");
 
 	private final Path jfr;
 
@@ -57,6 +64,12 @@ public class JvmlensProfiler implements ExternalProfiler {
 	private Path keep;
 
 	private Path baseline;
+
+	/**
+	 * Keep socket I/O events? Default false — drops the JMH harness control socket
+	 * (#100).
+	 */
+	private boolean socketIo;
 
 	/** No-arg form: {@code -prof org.alexmond.jvmlens.jmh.JvmlensProfiler}. */
 	public JvmlensProfiler() throws IOException {
@@ -103,6 +116,9 @@ public class JvmlensProfiler implements ExternalProfiler {
 			case "baseline" -> {
 				this.baseline = Path.of(value);
 			}
+			case "socketio" -> {
+				this.socketIo = "true".equalsIgnoreCase(value) || "on".equalsIgnoreCase(value);
+			}
 			default -> throw new ProfilerException(unknownOption(key));
 		}
 	}
@@ -146,7 +162,17 @@ public class JvmlensProfiler implements ExternalProfiler {
 
 	@Override
 	public Collection<String> addJVMOptions(BenchmarkParams params) {
-		return List.of("-XX:StartFlightRecording=filename=" + this.jfr + ",settings=profile,dumponexit=true");
+		String rec = "-XX:StartFlightRecording=filename=" + this.jfr + ",settings=profile,dumponexit=true";
+		if (!this.socketIo) {
+			// On a JMH fork the only socket traffic is the harness control socket (a
+			// rotating
+			// localhost:<ephemeral> port) — noise that skews External I/O + the
+			// cross-dimension
+			// correlation (field-finding #100). Drop it at the source; `socketio=true`
+			// keeps it.
+			rec += ",jdk.SocketRead#enabled=false,jdk.SocketWrite#enabled=false";
+		}
+		return List.of(rec);
 	}
 
 	@Override
@@ -158,14 +184,15 @@ public class JvmlensProfiler implements ExternalProfiler {
 	public Collection<? extends Result> afterTrial(BenchmarkResult result, long pid, File stdOut, File stdErr) {
 		try {
 			Scope scope = Scope.of(this.appPackages, List.of());
+			String jmhAlloc = jmhAllocNote(result);
 			if (this.baseline != null) {
 				ProfileSummary before = Summarizer.analyze(this.baseline, scope);
 				ProfileSummary after = Summarizer.analyze(this.jfr, scope);
-				System.out.println("\n" + ProfileDiff.diff(before, after));
+				System.out.println("\n" + jmhAlloc + ProfileDiff.diff(before, after));
 			}
 			else {
-				System.out
-					.println("\n" + Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report));
+				System.out.println("\n" + jmhAlloc
+						+ Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report));
 			}
 		}
 		catch (IOException ex) {
@@ -175,6 +202,38 @@ public class JvmlensProfiler implements ExternalProfiler {
 			retainRecording();
 		}
 		return Collections.<Result>emptyList();
+	}
+
+	/**
+	 * A one-line note pairing JMH's <em>exact</em> measured allocation
+	 * ({@code gc.alloc.rate.norm}, bytes/op) with jvmlens's <em>sampled</em> totals
+	 * below, so the two sit together and any divergence is visible rather than hidden
+	 * (field-finding #100). Only present when the run also enabled JMH's GC profiler
+	 * ({@code -prof gc}); otherwise a hint to add it.
+	 */
+	private static String jmhAllocNote(BenchmarkResult result) {
+		Result<?> norm = result.getSecondaryResults().get("gc.alloc.rate.norm");
+		if (norm == null) {
+			return "> jvmlens allocation figures below are **[sampled]** estimates — add `-prof gc` "
+					+ "for JMH's exact bytes/op next to them.\n\n";
+		}
+		String exact = humanBytesPerOp(norm.getScore());
+		return "> JMH measured allocation **[exact]**: " + exact + "/op (gc.alloc.rate.norm). "
+				+ "jvmlens's per-site bytes below are **[sampled]** — a gap vs this exact rate is "
+				+ "expected; trust this number for the rate, jvmlens for *where*.\n\n";
+	}
+
+	/**
+	 * Humanize a bytes-per-op figure (JMH reports {@code gc.alloc.rate.norm} in B/op).
+	 */
+	private static String humanBytesPerOp(double bytes) {
+		if (bytes >= 1024.0 * 1024.0) {
+			return String.format(Locale.ROOT, "%.2f MB", bytes / (1024.0 * 1024.0));
+		}
+		if (bytes >= 1024.0) {
+			return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+		}
+		return String.format(Locale.ROOT, "%.0f B", bytes);
 	}
 
 	/**
