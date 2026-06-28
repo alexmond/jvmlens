@@ -24,8 +24,9 @@ cheaper — for non-trivial recordings it's the only input that fits.
 | Area | Capability
 
 | Inputs | An existing `.jfr` or a **JMH `-prof jfr` directory** (`analyze`, forks merged), a
-live JVM (`profile <pid>`, JFR or async-profiler), a continuous ring buffer (`watch`, periodic
-or dump-on-trigger), or an in-process `-javaagent` (container-native).
+live JVM (`profile <pid>`, JFR or async-profiler), a **warm-loop of any `main`** (`bench`, no
+JMH module needed), a continuous ring buffer (`watch`, periodic or dump-on-trigger), or an
+in-process `-javaagent` (container-native).
 | Dimensions | CPU hot paths/leaves, memory + GC, lock contention, **external I/O**,
 **virtual-thread pinning**, **deadlocks**, and — via the agent — **SQL**, **HTTP endpoints**,
 **messaging**, **cache**, and **Micrometer** timers, plus **variable snapshots** and a hedged
@@ -41,7 +42,8 @@ multi-day run to a change-over-time digest.
 | Live control | Steer a running agent in-flight (start/stop, enable/disable dimensions,
 sampling density, filtering, top-N) via a watched control file + the `jvmlens control` CLI — no
 ports, no JMX.
-| Trust | Per-row hit counts, `[sampled]` vs `[measured]` tags, a low-sample `⚠` caveat, and an
+| Trust | Per-row hit counts and **source-line anchors** (`Svc.compute:88`), `[sampled]` vs
+`[measured]` tags, low-sample `⚠` caveats (CPU and per-site allocation), and an
 under-interpreting heuristic.
 |===
 

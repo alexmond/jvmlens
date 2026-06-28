@@ -13,6 +13,12 @@
     <name>jvmlens-agent</name>
     <description>The in-process -javaagent: periodic summaries, instrumentation, snapshots.</description>
 
+    <properties>
+        <!-- A shaded -javaagent jar (a tool, not a library): ships via the GitHub release,
+             not Maven Central. Central scope for 0.1.0 is parent + jvmlens-engine. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.alexmond</groupId>
