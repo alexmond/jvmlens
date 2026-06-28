@@ -2,6 +2,12 @@
 
 Turn JVM runtime evidence into a compact, **LLM-ready** diagnosis.
 
+![jvmlens: debug a slow JVM — analyze a profile, jvmlens names the hot method and line, jump to the code](assets/demo/jvmlens-demo.gif)
+
+> _"Debug this" → jvmlens turns a 2.7 MB JFR dump (~680K tokens) into ~400 tokens of ranked,
+> source-attributed signal that points straight at the hot method and line. The demo is
+> reproducible — see [`assets/demo/`](assets/demo/) (`./render.sh`)._
+
 Profiling a JVM is well-served for *humans* — async-profiler, JFR, and the
 commercial GUIs all produce flamegraphs and recordings. None of those formats
 are built for an **LLM** to reason over: a `jfr print` dump of a short recording
