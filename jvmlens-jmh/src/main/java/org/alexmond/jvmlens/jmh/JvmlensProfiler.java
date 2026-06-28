@@ -182,16 +182,18 @@ public class JvmlensProfiler implements ExternalProfiler {
 
 	@Override
 	public Collection<? extends Result> afterTrial(BenchmarkResult result, long pid, File stdOut, File stdErr) {
+		Result<?> norm = result.getSecondaryResults().get("gc.alloc.rate.norm");
 		try {
 			Scope scope = Scope.of(this.appPackages, List.of());
-			String jmhAlloc = jmhAllocNote(result);
 			if (this.baseline != null) {
 				ProfileSummary before = Summarizer.analyze(this.baseline, scope);
 				ProfileSummary after = Summarizer.analyze(this.jfr, scope);
-				System.out.println("\n" + jmhAlloc + ProfileDiff.diff(before, after));
+				double sampledPct = (before.allocBytes() > 0)
+						? 100.0 * (after.allocBytes() - before.allocBytes()) / before.allocBytes() : 0;
+				System.out.println("\n" + measuredAbHead(norm, result, sampledPct) + ProfileDiff.diff(before, after));
 			}
 			else {
-				System.out.println("\n" + jmhAlloc
+				System.out.println("\n" + jmhAllocNote(result)
 						+ Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report));
 			}
 		}
@@ -199,9 +201,80 @@ public class JvmlensProfiler implements ExternalProfiler {
 			System.out.println("jvmlens: could not summarize the benchmark recording: " + ex.getMessage());
 		}
 		finally {
-			retainRecording();
+			retainRecording(norm, result.getParams().getForks());
 		}
 		return Collections.<Result>emptyList();
+	}
+
+	/**
+	 * The header for a {@code baseline=} run: a measured allocation A/B verdict (#104)
+	 * when both this run and the kept baseline have JMH's exact
+	 * {@code gc.alloc.rate.norm}, reconciled against the sampled diff total. Falls back
+	 * to the {@link #jmhAllocNote} hint otherwise.
+	 */
+	private String measuredAbHead(Result<?> norm, BenchmarkResult result, double sampledPct) {
+		if (norm == null) {
+			return jmhAllocNote(result);
+		}
+		double[] base = readMeasured(this.baseline);
+		if (base == null) {
+			return "> Measured A/B unavailable — re-run the baseline with `-prof gc` (and `keep=`) so the "
+					+ "next diff can gate on exact bytes/op (#104). Sampled diff below.\n\n";
+		}
+		int forks = Math.min(result.getParams().getForks(), (int) base[2]);
+		return allocVerdict(base[0], base[1], norm.getScore(), errOrZero(norm), forks, sampledPct) + "\n";
+	}
+
+	/**
+	 * A measured allocation A/B verdict with a significance call: the change is
+	 * SIGNIFICANT only if the relative Δ exceeds the combined noise band <em>and</em> the
+	 * confidence intervals don't overlap — otherwise the sampled diff may be a phantom
+	 * (JIT elision / sampling redistribution). Reconciles the sampled total Δ against the
+	 * measured Δ (#104). Pure.
+	 */
+	static String allocVerdict(double bMean, double bErr, double aMean, double aErr, int forks, double sampledPct) {
+		double measuredPct = (bMean != 0) ? 100.0 * (aMean - bMean) / bMean : 0;
+		double band = (bMean != 0 && aMean != 0) ? 100.0 * (bErr / bMean + aErr / aMean) : 0;
+		boolean ciOverlap = !(aMean + aErr < bMean - bErr || aMean - aErr > bMean + bErr);
+		boolean significant = Math.abs(measuredPct) > band && !ciOverlap;
+		StringBuilder b = new StringBuilder("> **Measured allocation A/B [exact]**: ");
+		b.append(humanBytesPerOp(bMean)).append("/op → ").append(humanBytesPerOp(aMean)).append("/op ");
+		b.append(String.format(Locale.ROOT, "(Δ %+.1f%%, n=%d fork(s) each, noise band ±%.1f%%) → **%s**.", measuredPct,
+				forks, band, significant ? "SIGNIFICANT" : "NOT significant"));
+		if (forks < 2) {
+			b.append(" ⚠ a single fork understates cross-fork variance — re-run with `-f 2`+ for a real band.");
+		}
+		boolean disagree = (!significant && Math.abs(sampledPct) >= 5.0)
+				|| (sampledPct * measuredPct < 0 && Math.abs(sampledPct) >= 5.0 && Math.abs(measuredPct) >= 5.0);
+		if (disagree) {
+			b.append(String.format(Locale.ROOT,
+					" The **sampled** total Δ (%+.1f%%) disagrees — likely sampling "
+							+ "redistribution / JIT elision, not a real change; trust the measured number.",
+					sampledPct));
+		}
+		return b.append('\n').toString();
+	}
+
+	private static double errOrZero(Result<?> norm) {
+		double err = norm.getScoreError();
+		return Double.isNaN(err) ? 0.0 : err;
+	}
+
+	/**
+	 * Read a kept recording's sidecar {@code <jfr>.bop} ({@code mean err forks}), or
+	 * null.
+	 */
+	private static double[] readMeasured(Path jfr) {
+		Path bop = Path.of(jfr + ".bop");
+		try {
+			String[] parts = Files.readString(bop).trim().split("\\s+");
+			double err = Double.parseDouble(parts[1]);
+			return new double[] { Double.parseDouble(parts[0]), Double.isNaN(err) ? 0.0 : err,
+					Double.parseDouble(parts[2]) };
+		}
+		catch (IOException | RuntimeException ignored) {
+			return null; // missing/unreadable sidecar — fall back to the no-baseline note
+		}
 	}
 
 	/**
@@ -238,13 +311,19 @@ public class JvmlensProfiler implements ExternalProfiler {
 
 	/**
 	 * Keep the fork's recording at {@code keep} (for the next run's baseline), else
-	 * delete it.
+	 * delete it. When kept and JMH measured exact bytes/op this run, also persist a
+	 * {@code <keep>.bop} sidecar ({@code mean err forks}) so the next {@code baseline=}
+	 * run can render the measured A/B verdict (#104).
 	 */
-	private void retainRecording() {
+	private void retainRecording(Result<?> norm, int forks) {
 		try {
 			if (this.keep != null) {
 				Files.move(this.jfr, this.keep, StandardCopyOption.REPLACE_EXISTING);
 				System.out.println("jvmlens: recording kept at " + this.keep);
+				if (norm != null) {
+					Files.writeString(Path.of(this.keep + ".bop"),
+							norm.getScore() + " " + errOrZero(norm) + " " + forks);
+				}
 			}
 			else {
 				Files.deleteIfExists(this.jfr);

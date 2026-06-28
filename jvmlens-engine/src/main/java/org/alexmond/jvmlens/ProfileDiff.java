@@ -36,6 +36,12 @@ public final class ProfileDiff {
 	 */
 	private static final long LOW_ALLOC_SAMPLES = 200;
 
+	/**
+	 * A sampled allocation-total delta smaller than this (single recording) may be noise
+	 * (#104).
+	 */
+	private static final double SAMPLED_NOISE_PCT = 15.0;
+
 	private ProfileDiff() {
 	}
 
@@ -54,6 +60,7 @@ public final class ProfileDiff {
 		scalar(md, "Allocation", before.allocBytes(), after.allocBytes(), "bytes");
 		scalar(md, "GC pause", before.gcPauseMillis(), after.gcPauseMillis(), "ms-direct");
 		scalar(md, "Old-object samples", before.oldObjects(), after.oldObjects(), "");
+		sampledAllocNoiseNote(md, before.allocBytes(), after.allocBytes());
 		md.append('\n');
 		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(), null);
 		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
@@ -105,6 +112,25 @@ public final class ProfileDiff {
 		long pct = Math.round(100.0 * Math.abs(totalDelta) / totalBefore);
 		return (delta) -> (delta != 0 && (delta > 0) != (totalDelta > 0))
 				? "  (possible sampling redistribution — total alloc " + dir + " " + pct + "%)" : "";
+	}
+
+	/**
+	 * A caveat when the allocation total moved, but by less than
+	 * {@value #SAMPLED_NOISE_PCT}% — sampled JFR allocation from a single recording is
+	 * noisy at that scale, so a modest delta can be sampling noise rather than a real
+	 * reduction. Confirm with exact bytes/op (#104).
+	 */
+	private static void sampledAllocNoiseNote(StringBuilder md, long before, long after) {
+		if (before <= 0 || after == before) {
+			return;
+		}
+		double pct = Math.abs(100.0 * (after - before) / before);
+		if (pct >= MIN_REL_CHANGE * 100 && pct < SAMPLED_NOISE_PCT) {
+			md.append("> ⚠ The allocation total is **sampled** — a sub-")
+				.append((int) SAMPLED_NOISE_PCT)
+				.append("% delta from a single recording can be within sampling noise; confirm with JMH "
+						+ "`-prof gc` (exact bytes/op) or diff multi-fork recordings.\n");
+		}
 	}
 
 	private static void scalar(StringBuilder md, String label, long before, long after, String unit) {

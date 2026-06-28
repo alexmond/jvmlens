@@ -153,6 +153,14 @@ one with `baseline=<prev.jfr>` (the profiler prints the change report instead of
 ... -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example;baseline=/tmp/before.jfr"
 ----
 
+Add JMH's GC profiler (`-prof gc`) to both runs and the `baseline=` run prints a **measured
+allocation A/B verdict** above the sampled diff — JMH's *exact* `gc.alloc.rate.norm` before→after
+with a significance call (the change is `SIGNIFICANT` only if the relative Δ exceeds the combined
+noise band **and** the confidence intervals don't overlap), and a ⚠ when the **sampled** total Δ
+disagrees with the **measured** one (JIT elision / sampling redistribution). Use `-f 2`+ so the
+cross-fork variance is real — a single fork badly understates it. This gates the optimize loop on
+*measured* significance instead of a sampled delta that may be a phantom.
+
 === Fix-direction hints (`--hints`, opt-in)
 
 `--hints` appends a hedged `## Likely fix directions [possible]` section that maps recognized
