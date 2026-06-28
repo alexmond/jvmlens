@@ -47,6 +47,11 @@ public class AnalyzeCommand implements Callable<Integer> {
 					+ "state, not JIT/classload warmup (useful for `profile`/JMH fresh-JVM captures).")
 	Integer skipWarmup;
 
+	@Option(names = { "--source" }, paramLabel = "<dir>",
+			description = "Source root(s) (comma-separated) to echo the line text at each file:line "
+					+ "anchor, e.g. `src/main/java`; off by default.")
+	String sourceRoots;
+
 	@Mixin
 	OutputOptions output;
 
@@ -87,10 +92,18 @@ public class AnalyzeCommand implements Callable<Integer> {
 			System.out.print(withinBudget(afterFiles, labeled(Recordings.label(file, null)), maxTokens));
 			return 0;
 		}
-		ProfileSummary summary = Summarizer.analyze(afterFiles, output.scope(), labeled(Recordings.label(file, null)),
-				warmupMs());
+		ProfileSummary summary = withSource(
+				Summarizer.analyze(afterFiles, output.scope(), labeled(Recordings.label(file, null)), warmupMs()));
 		System.out.print(render(summary));
 		return 0;
+	}
+
+	/**
+	 * Enrich {@code file:line} anchors with their source text when {@code --source} is
+	 * set.
+	 */
+	private ProfileSummary withSource(ProfileSummary summary) {
+		return SourceResolver.decorate(summary, SourceResolver.roots(this.sourceRoots));
 	}
 
 	/** The warmup window to drop, in ms (0 = keep everything). */
@@ -111,7 +124,7 @@ public class AnalyzeCommand implements Callable<Integer> {
 		String out = "";
 		for (int k : new int[] { RankLimits.DEFAULT, 4, 3, 2, 1 }) {
 			RankLimits.set("all", k);
-			out = render(Summarizer.analyze(files, output.scope(), label, warmupMs()));
+			out = render(withSource(Summarizer.analyze(files, output.scope(), label, warmupMs())));
 			if (out.length() / 4 <= maxTokens) {
 				break;
 			}
