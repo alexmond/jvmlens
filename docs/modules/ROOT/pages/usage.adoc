@@ -176,6 +176,20 @@ never an assertion.
 java -jar jvmlens.jar analyze recording.jfr --hints
 ----
 
+=== Echo the source line (`--source`, opt-in)
+
+Every hot-leaf and allocation-site row already carries a `file:line` anchor (e.g. `:129`).
+Point `--source` at your source root(s) and jvmlens reads each anchored line and appends its
+text inline — `floatString:129 ⟶ mantissa.substring(0, dot) + mantissa.substring(dot + 1)` —
+so a reader (or coding agent) sees the offending line without opening the file. Pass several
+roots comma-separated. It is **off by default**, reads files locally, and degrades silently:
+a file it can't find is simply left un-annotated (it never fabricates).
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze recording.jfr --source src/main/java
+----
+
 === Budget-dialing the size
 
 `--top-k <n>` keeps only the top *n* rows per section; `--max-tokens <n>` shrinks top-k until
