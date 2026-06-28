@@ -52,7 +52,8 @@ public final class FixHints {
 			rule("\\$ListItr|\\$Itr\\b|LinkedList\\$|Iterator\\.<init>|iterator\\b", Lever.STRUCTURAL,
 					"per-iteration iterator allocation — prefer an indexed loop or reuse the iterator"),
 			rule("\\$\\$Lambda", Lever.STRUCTURAL,
-					"lambda captured per call in a hot path — hoist to a static/cached instance or pass primitives"),
+					"lambda captured per call in a hot path — hoist to a static/cached instance or pass primitives "
+							+ "(if it escapes; C2 scalar-replaces non-escaping captures — confirm with -prof gc)"),
 			rule("ensureCapacity|AbstractStringBuilder|StringBuilder", Lever.STRUCTURAL,
 					"StringBuilder growth — presize the buffer to the expected length"),
 			rule("Pattern\\.(compile|matcher)|regex", Lever.STRUCTURAL,
@@ -60,7 +61,8 @@ public final class FixHints {
 			rule("HashMap.*resize|ArrayList.*grow|Arrays\\.copyOf|hashtable.*rehash", Lever.STRUCTURAL,
 					"collection/array resize or copy — presize or reuse the backing store"),
 			rule("Integer\\.valueOf|Long\\.valueOf|Double\\.valueOf|\\.intValue\\(\\)", Lever.STRUCTURAL,
-					"autoboxing in a hot path — prefer primitives / primitive collections"),
+					"autoboxing in a hot path — prefer primitives / primitive collections (only if the box escapes; "
+							+ "C2 scalar-replaces non-escaping boxes, so verify the win with -prof gc)"),
 			rule("java\\.lang\\.reflect\\.(Method|Field|Constructor)|MethodHandle\\.invoke", Lever.STRUCTURAL,
 					"reflective dispatch — cache the handle or call directly"),
 			rule("String\\.format|Formatter\\b", Lever.STRUCTURAL,

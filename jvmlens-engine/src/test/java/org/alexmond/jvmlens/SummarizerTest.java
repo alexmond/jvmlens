@@ -231,6 +231,8 @@ class SummarizerTest {
 			assertThat(s.allocSites().get(0).stack()).contains("byte[]");
 			// …prefixed with the allocation call-site's source line (#87)
 			assertThat(s.allocSites().get(0).stack()).containsPattern(":\\d+ · ");
+			// byte[] is real allocation — NOT flagged as escape-analysis-prone (#103)
+			assertThat(s.allocSites().get(0).stack()).doesNotContain("scalar-replaced");
 		}
 		finally {
 			Files.deleteIfExists(file);
@@ -328,8 +330,23 @@ class SummarizerTest {
 		byLeaf.put("a.B.x", 30L);
 		byLeaf.put("a.B.y", 28L);
 		byLeaf.put("a.B.z", 25L);
-		String teaser = Summarizer.leafBreakdown(byLeaf, 168L);
+		String teaser = Teasers.leafBreakdown(byLeaf, 168L);
 		assertThat(teaser).contains("a.B.x 30/168").contains("diffuse").contains("20%");
+	}
+
+	@Test
+	void flagsEscapeAnalysisProneAllocationTypes() {
+		// #103: boxed primitives + captured lambdas are C2 scalar-replacement candidates
+		// —
+		// a hot site dominated by them may be a false lever (sampled, but eliminated at
+		// C2).
+		assertThat(Teasers.escapeProneType("java.lang.Integer")).isTrue();
+		assertThat(Teasers.escapeProneType("java.lang.Double")).isTrue();
+		assertThat(Teasers.escapeProneType("com.foo.Bar$$Lambda$1/0x0000")).isTrue();
+		// real allocations are not flagged
+		assertThat(Teasers.escapeProneType("java.lang.String")).isFalse();
+		assertThat(Teasers.escapeProneType("[B")).isFalse();
+		assertThat(Teasers.escapeProneType(null)).isFalse();
 	}
 
 	@Test
