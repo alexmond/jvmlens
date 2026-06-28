@@ -123,7 +123,12 @@ java -cp benchmarks.jar:jvmlens-jmh.jar org.openjdk.jmh.Main \
 ----
 
 `appPackage` (`+`-separate several) scopes to your code; `report` focuses the summary. An
-unknown option key is a hard error with a did-you-mean (no silent misconfiguration). The
+unknown option key is a hard error with a did-you-mean (no silent misconfiguration). Socket
+I/O events are dropped by default (on a JMH fork the only socket traffic is the harness control
+socket — a rotating `localhost:<port>` that would otherwise show up as External I/O and skew the
+correlation); pass `socketio=true` to keep them. If the run also enables JMH's GC profiler
+(`-prof gc`), the summary is headed with JMH's *exact* `gc.alloc.rate.norm` (bytes/op) next to
+jvmlens's *sampled* per-site bytes, so the measured rate and the attribution sit together. The
 plugin runs in JMH's host process and reuses the same engine as `analyze`.
 
 For a before→after **diff entirely inside JMH** — no separate `analyze` — keep the fork's

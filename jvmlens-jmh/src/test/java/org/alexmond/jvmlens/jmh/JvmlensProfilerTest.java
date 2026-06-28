@@ -62,4 +62,20 @@ class JvmlensProfilerTest {
 			.hasMessageContaining("did you mean `baseline`");
 	}
 
+	@Test
+	void dropsHarnessSocketIoByDefault() throws Exception {
+		// #100: a JMH fork's only socket traffic is the harness control socket — drop it.
+		String opts = String.join(" ", new JvmlensProfiler().addJVMOptions(null));
+		assertThat(opts).contains("jdk.SocketRead#enabled=false").contains("jdk.SocketWrite#enabled=false");
+		// socketio=true keeps them
+		String kept = String.join(" ", new JvmlensProfiler("socketio=true").addJVMOptions(null));
+		assertThat(kept).doesNotContain("jdk.SocketRead#enabled=false");
+	}
+
+	@Test
+	void socketioTypoStillSuggests() {
+		assertThatThrownBy(() -> new JvmlensProfiler("socketIO=true")).isInstanceOf(ProfilerException.class)
+			.hasMessageContaining("did you mean `socketio`");
+	}
+
 }
