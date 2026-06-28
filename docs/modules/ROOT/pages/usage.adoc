@@ -59,6 +59,12 @@ and rows that barely moved drop. Anchoring on absolute matters: in an optimize l
 shrinks, so a site whose absolute bytes *fell* can show a *rising* share — share alone would
 mislabel a real win as a regression. `-a`/`-x` scoping applies to both recordings.
 
+When a fix **extracts a helper method**, one allocation drop splits across two rows (the caller
+falls, a `NEW` callee appears) — which can read like a regression at a glance. The diff adds an
+**Allocation by type (rollup)** block that sums sites by their declaring type, so the net is one
+line (e.g. `GoFmt.* — 7.6 GB → 5.8 GB (▼ 24%) [2 methods]`); it shows only types with ≥2
+contributing methods and a real net change.
+
 ==== CI perf-gate (`--assert`)
 
 Add `--assert "<rules>"` (with `--baseline`) and jvmlens **exits non-zero on regression** —

@@ -110,6 +110,34 @@ class ProfileDiffTest {
 	}
 
 	@Test
+	void rollsUpExtractedHelperAllocationByType() {
+		// #99: an extract-method fix splits one drop across caller ▼ + a NEW callee in
+		// the
+		// same class; the by-type rollup shows the net so it doesn't read as a
+		// regression.
+		ProfileSummary before = summary(0, 7_600_000_000L, List.of(),
+				List.of(new Ranked("com.acme.GoFmt.floatString", 1.0, 7_600_000_000L, null)));
+		ProfileSummary after = summary(0, 5_800_000_000L, List.of(),
+				List.of(new Ranked("com.acme.GoFmt.floatString", 0.62, 3_600_000_000L, null),
+						new Ranked("com.acme.GoFmt.renderDigits", 0.38, 2_200_000_000L, null)));
+		assertThat(ProfileDiff.diff(before, after)).contains("Allocation by type (rollup")
+			.contains("`com.acme.GoFmt.*`")
+			.contains("▼ 24%")
+			.contains("[2 methods]");
+	}
+
+	@Test
+	void noTypeRollupForSingleMethodClasses() {
+		// each class has one alloc method → no rollup (the per-site rows already
+		// suffice).
+		ProfileSummary before = summary(0, 2_000_000, List.of(), List
+			.of(new Ranked("com.acme.A.x", 0.5, 1_000_000, null), new Ranked("com.acme.B.y", 0.5, 1_000_000, null)));
+		ProfileSummary after = summary(0, 1_000_000, List.of(),
+				List.of(new Ranked("com.acme.A.x", 1.0, 1_000_000, null)));
+		assertThat(ProfileDiff.diff(before, after)).doesNotContain("Allocation by type (rollup");
+	}
+
+	@Test
 	void noLowAllocNoteWhenSamplesUntracked() {
 		// the 16-arg ctor leaves allocSamples at 0 → no false "low samples" alarm.
 		ProfileSummary before = summary(0, 1_000_000, List.of(),

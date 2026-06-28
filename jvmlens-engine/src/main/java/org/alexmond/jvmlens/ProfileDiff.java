@@ -60,6 +60,7 @@ public final class ProfileDiff {
 				redistributionNote(before.allocBytes(), after.allocBytes()));
 		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
 				before.allocBytes() > 0 || after.allocBytes() > 0);
+		allocTypeRollup(md, before.allocSites(), after.allocSites());
 		section(md, "Lock contention", "ms", before.locks(), after.locks(), null);
 		for (String key : sectionKeys(before, after)) {
 			section(md, key, unit(before, after, key), sectionRows(before, key), sectionRows(after, key), null);
@@ -200,6 +201,65 @@ public final class ProfileDiff {
 			i++;
 		}
 		return String.format(Locale.ROOT, "%.1f %s", value, units[i]);
+	}
+
+	/**
+	 * Roll allocation sites up to their declaring type and show the net before→after per
+	 * type, so an extract-method refactor (caller ▼ + a {@code NEW} callee in the same
+	 * class) reads as one number instead of looking like a regression. Only types with ≥2
+	 * contributing methods and a non-negligible net change appear (field-finding #99).
+	 */
+	private static void allocTypeRollup(StringBuilder md, List<Ranked> before, List<Ranked> after) {
+		Map<String, Long> bc = counts(before);
+		Map<String, Long> ac = counts(after);
+		Map<String, Set<String>> methodsByType = new LinkedHashMap<>();
+		for (String m : bc.keySet()) {
+			methodsByType.computeIfAbsent(declaringType(m), (k) -> new LinkedHashSet<>()).add(m);
+		}
+		for (String m : ac.keySet()) {
+			methodsByType.computeIfAbsent(declaringType(m), (k) -> new LinkedHashSet<>()).add(m);
+		}
+		Map<String, Long> bt = sumByType(bc);
+		Map<String, Long> at = sumByType(ac);
+		List<String[]> rows = new ArrayList<>();
+		for (Map.Entry<String, Set<String>> e : methodsByType.entrySet()) {
+			if (e.getValue().size() < 2) {
+				continue; // a single-method type: the per-site row already tells the
+							// story
+			}
+			long b = bt.getOrDefault(e.getKey(), 0L);
+			long a = at.getOrDefault(e.getKey(), 0L);
+			long delta = a - b;
+			if (b > 0 && Math.abs((double) delta) / b < MIN_REL_CHANGE) {
+				continue; // net barely moved
+			}
+			String arrow = (delta > 0) ? "▲" : "▼";
+			double pct = (b > 0) ? (100.0 * delta / b) : 0;
+			rows.add(new String[] { String.valueOf(Math.abs(delta)),
+					String.format(Locale.ROOT, "- `%s.*` — %s → %s (%s %.0f%%) [%d methods]", e.getKey(),
+							formatVal(b, "bytes"), formatVal(a, "bytes"), arrow, Math.abs(pct), e.getValue().size()) });
+		}
+		if (rows.isEmpty()) {
+			return;
+		}
+		rows.sort((x, y) -> Long.compare(Long.parseLong(y[0]), Long.parseLong(x[0])));
+		md.append("## Allocation by type (rollup — extracted helpers summed)\n");
+		rows.stream().limit(TOP_N).forEach((r) -> md.append(r[1]).append('\n'));
+		md.append('\n');
+	}
+
+	private static Map<String, Long> sumByType(Map<String, Long> byMethod) {
+		Map<String, Long> m = new LinkedHashMap<>();
+		byMethod.forEach((name, bytes) -> m.merge(declaringType(name), bytes, Long::sum));
+		return m;
+	}
+
+	/**
+	 * The declaring type of a {@code Type.method} name (everything before the last dot).
+	 */
+	private static String declaringType(String method) {
+		int dot = method.lastIndexOf('.');
+		return (dot > 0) ? method.substring(0, dot) : method;
 	}
 
 	private static Map<String, Long> counts(List<Ranked> rows) {
