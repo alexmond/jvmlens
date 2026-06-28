@@ -161,6 +161,15 @@ disagrees with the **measured** one (JIT elision / sampling redistribution). Use
 cross-fork variance is real — a single fork badly understates it. This gates the optimize loop on
 *measured* significance instead of a sampled delta that may be a phantom.
 
+The same verdict adds a **dispersion** line: a genuine structural allocation removal doesn't just
+lower the mean, it eliminates the GC-sampling variance that *was* that allocation, so the cross-fork
+band collapses (`±17,200 → ±35 /op, variance collapsed ~500×` is a strong real-win signal the mean
+alone can't give). And once bytes/op goes **near-deterministic** it prints a **stop signal** —
+further allocation tuning has diminishing returns; the residual is intrinsic floor, pivot off
+allocation. The diff also hedges a **CPU** hot-path `▲` row whose absolute samples rose while the
+total exec samples *fell* (`possible sampling redistribution — total samples fell N%`), so a share
+that climbed only because the rest of the profile shrank isn't misread as a regression.
+
 === Fix-direction hints (`--hints`, opt-in)
 
 `--hints` appends a hedged `## Likely fix directions [possible]` section that maps recognized

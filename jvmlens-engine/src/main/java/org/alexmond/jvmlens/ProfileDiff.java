@@ -62,9 +62,10 @@ public final class ProfileDiff {
 		scalar(md, "Old-object samples", before.oldObjects(), after.oldObjects(), "");
 		sampledAllocNoiseNote(md, before.allocBytes(), after.allocBytes());
 		md.append('\n');
-		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(), null);
+		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(),
+				redistributionNote(before.execSamples(), after.execSamples(), "samples"));
 		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
-				redistributionNote(before.allocBytes(), after.allocBytes()));
+				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc"));
 		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
 				before.allocBytes() > 0 || after.allocBytes() > 0);
 		allocTypeRollup(md, before.allocSites(), after.allocSites());
@@ -93,17 +94,20 @@ public final class ProfileDiff {
 	}
 
 	/**
-	 * A hedge note for an allocation-site row whose absolute change <em>opposes</em> the
-	 * total-allocation change — almost certainly JFR allocation-<em>sampling</em>
-	 * redistribution (when the dominant allocator shrinks, the sampler reattributes
-	 * weight toward whatever's next, so a flat site's <em>attributed</em> bytes balloon),
-	 * not a real per-site regression. Returns {@code null} when the total didn't
-	 * meaningfully move (no redistribution context to give). Annotates only — never
-	 * suppresses or re-ranks the row, since a genuine localized regression on an
-	 * improving run looks the same and the absolute anchor (#43/#44) must stay legible.
-	 * Field-finding #52.
+	 * A hedge note for a row whose absolute change <em>opposes</em> the section's total
+	 * change — almost certainly JFR <em>sampling</em> redistribution, not a real per-row
+	 * regression. For allocation (#52): when the dominant allocator shrinks, the sampler
+	 * reattributes weight toward whatever's next, so a flat site's <em>attributed</em>
+	 * bytes balloon. For CPU hot paths (#110 finding 2): when total execution samples
+	 * move, a row's share/absolute can rise purely because the rest of the profile shrank
+	 * — so a ▲ row need not mean the method got slower. Returns {@code null} when the
+	 * total didn't meaningfully move (no redistribution context to give). Annotates only
+	 * — never suppresses or re-ranks the row, since a genuine localized regression on a
+	 * shifting run looks the same and the absolute anchor (#43/#44) must stay legible.
+	 * @param noun the total's unit for the message (e.g. {@code "alloc"},
+	 * {@code "samples"})
 	 */
-	private static RowNote redistributionNote(long totalBefore, long totalAfter) {
+	private static RowNote redistributionNote(long totalBefore, long totalAfter, String noun) {
 		long totalDelta = totalAfter - totalBefore;
 		if (totalBefore <= 0 || Math.abs((double) totalDelta) / totalBefore < MIN_REL_CHANGE) {
 			return null;
@@ -111,7 +115,7 @@ public final class ProfileDiff {
 		String dir = (totalDelta < 0) ? "fell" : "rose";
 		long pct = Math.round(100.0 * Math.abs(totalDelta) / totalBefore);
 		return (delta) -> (delta != 0 && (delta > 0) != (totalDelta > 0))
-				? "  (possible sampling redistribution — total alloc " + dir + " " + pct + "%)" : "";
+				? "  (possible sampling redistribution — total " + noun + " " + dir + " " + pct + "%)" : "";
 	}
 
 	/**

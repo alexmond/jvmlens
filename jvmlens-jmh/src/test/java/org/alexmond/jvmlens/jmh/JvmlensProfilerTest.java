@@ -103,4 +103,29 @@ class JvmlensProfilerTest {
 		assertThat(v).contains("single fork understates");
 	}
 
+	@Test
+	void dispersionNoteFlagsAVarianceCollapseAndDeterministicFloor() {
+		// #110 finding 1, the round-3 real win: 782,881 ±17,200 → 644,082 ±35 (band
+		// collapsed ~500×, now near-deterministic) → both the collapse and the STOP
+		// signal.
+		String v = JvmlensProfiler.allocVerdict(782_881, 17_200, 644_082, 35, 4, -7.0);
+		assertThat(v).contains("variance collapsed")
+			.contains("near-deterministic")
+			.contains("pivot off allocation")
+			.contains("SIGNIFICANT");
+	}
+
+	@Test
+	void dispersionNoteSilentWhenTheBandDidNotCollapse() {
+		// #110: the round-2 phantom — band flat (±17,200 → ±19,854), nothing to say.
+		String v = JvmlensProfiler.dispersionNote(782_881, 17_200, 780_083, 19_854, -10.0);
+		assertThat(v).isEmpty();
+	}
+
+	@Test
+	void dispersionNoteSilentForASingleFork() {
+		// a single fork has no error term (err=0) → no before-band to compare.
+		assertThat(JvmlensProfiler.dispersionNote(1_000_000, 0, 700_000, 0, -30.0)).isEmpty();
+	}
+
 }
