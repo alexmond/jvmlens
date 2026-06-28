@@ -1,18 +1,51 @@
 = Contributing
 
+== Module layout (Maven reactor)
+
+jvmlens is one engine plus thin front-ends:
+
+[cols="1,3"]
+|===
+| Module | What it is
+
+| `jvmlens-engine` | the dependency-free summarizer (only `jdk.jfr.consumer`) — the published library
+| `jvmlens-cli` | the Spring Boot CLI fat jar (`jvmlens.jar`): `analyze`/`profile`/`bench`/`watch`/`trend`/`control`/`mcp`
+| `jvmlens-agent` | the shaded `-javaagent` jar (`jvmlens-agent.jar`)
+| `jvmlens-jmh` | the shaded JMH profiler jar (`jvmlens-jmh.jar`)
+| `jvmlens-it` | the Testcontainers integration harness (real Spring Boot + Postgres host under the agent)
+|===
+
+Keep analysis logic in the engine; the front-ends stay thin.
+
 == Build + quality gates
 
 [source,bash]
 ----
-./mvnw clean package
+scripts/dev-verify.sh          # format + full-reactor verify — run this before a PR
+scripts/dev-test.sh SomeTest   # one targeted test (any module; -pl to narrow)
+./mvnw clean package           # full reactor build
 ----
 
-The build enforces the house standard: `spring-javaformat` (run
-`./mvnw spring-javaformat:apply` to auto-fix), Checkstyle, PMD, and a JaCoCo
-line-coverage gate of 80%.
+The build is strict and runs at the `validate`/`verify` phases (a bare `package` does not run
+the coverage gate — use `dev-verify.sh` or `mvn verify`):
+
+* `spring-javaformat` (run `./mvnw spring-javaformat:apply` to auto-fix), Checkstyle, PMD.
+* JaCoCo: `jvmlens-engine` holds a strict **80%** line gate; the thin front-ends hold a 50%
+  rot-guard floor (bootstrap/transport classes excluded).
+
+Integration tests (`jvmlens-it`) need Docker/Podman; they self-skip without it. The one
+Java-17-bytecode build is CI-verified on JDK **17 / 21 / 25**.
 
 == Conventions
 
 * Java is formatted in the Spring style (tabs, braces on every block).
-* The summarizer core (`Summarizer`) stays dependency-free — only
-  `jdk.jfr.consumer`.
+* The summarizer core (`Summarizer`) stays dependency-free — only `jdk.jfr.consumer`.
+* PMD bans `synchronized` — use `ReentrantLock`.
+
+== Dogfooding (field-findings)
+
+jvmlens improves by being pointed at real workloads. If a summary is wrong, missing, or could
+be better — or you have a feature idea — file a `field-finding` issue
+(`scripts/field-finding.sh`, or `gh issue create -R alexmond/jvmlens --label field-finding`).
+Recommendations count as much as defects; attach (or describe how to regenerate) the `.jfr` so
+a confirmed miss can become a regression-corpus case.

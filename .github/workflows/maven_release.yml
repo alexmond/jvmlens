@@ -48,11 +48,10 @@ jobs:
           mkdir -p ~/.m2
           cp .github/settings.xml ~/.m2/settings.xml
 
-      # NOTE (multi-module): this deploys EVERY module to Central — incl. the Spring Boot
-      # fat jar (jvmlens-cli) and the shaded jars (jvmlens-agent/-jmh), which are apps/tools,
-      # not libraries. Before the first real release, decide the Central scope (likely
-      # parent + jvmlens-engine only; ship the app jars via the GitHub `latest`/tag release)
-      # and run the release-prep skill. Tracked: needs a deploy-scope decision.
+      # Central scope = parent + jvmlens-engine only (the dependency-free library). The app/tool
+      # jars (cli fat jar, agent + jmh shaded jars) set maven.deploy.skip=true in their POMs and
+      # ship as GitHub release assets instead (attached below). `clean deploy` still BUILDS them,
+      # so the jars exist in target/ for the release step.
       - name: Deploy to Maven Central
         run: mvn --batch-mode -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }} clean deploy -Prelease --no-transfer-progress
         env:
@@ -74,5 +73,11 @@ jobs:
           tag_name: ${{ github.event.inputs.releaseVersion }}
           name: Release ${{ github.event.inputs.releaseVersion }}
           generate_release_notes: true
+          # The app/tool jars are not on Central — attach them to the tagged release so
+          # `gh release download v<x> -p 'jvmlens.jar'` (see docs Installation) works.
+          files: |
+            jvmlens-cli/target/jvmlens.jar
+            jvmlens-agent/target/jvmlens-agent.jar
+            jvmlens-jmh/target/jvmlens-jmh.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
