@@ -27,6 +27,10 @@ teaser is flagged `⚠ diffuse`, so you don't chase a frame that isn't where the
 * **Allocation confidence** — a short recording yields few allocation samples; a
 `⚠ Only N allocation samples` caveat means the per-site **byte shares** are noisy (the
 **total** bytes stay reliable).
+* **Escape-analysis caveat** — an allocation site dominated by a boxed primitive or a captured
+lambda is tagged `⚠ … may be scalar-replaced (escape analysis)`: JFR samples the allocation, but
+C2 can eliminate a non-escaping one in steady state, so the sampled bytes may be a *false lever*.
+Verify any candidate fix with JMH `-prof gc` (exact bytes/op) before acting.
 
 === Differential analysis (before → after)
 
