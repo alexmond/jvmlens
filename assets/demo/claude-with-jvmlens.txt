@@ -1,0 +1,3 @@
+Workload.expensiveHashLoop — 99% (862 of 869 samples), and it's CPU-bound, not blocked.
+The time goes to byte-array VarHandle indexing (42%) and Integer→hex string formatting (40%), so the loop is rebuilding hash/hex strings every iteration.
+Hoist the per-iteration work out of the loop (reuse a buffer / precompute the hex, or use a primitive hash instead of building strings).
