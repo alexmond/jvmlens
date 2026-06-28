@@ -8,6 +8,7 @@ name: Java CI with Maven
 on: [push, manual]
 push:
   branches: [main]
+checkout: true
 
 jobs:
   build:
@@ -18,8 +19,6 @@ jobs:
       key: m2-jvmlens
       paths: [.m2/repository]
     steps:
-      - name: Checkout
-        run: git clone --depth 1 https://github.com/alexmond/jvmlens.git .
       - name: Build with Maven
         # verify (not package) so the JaCoCo gate runs; JDK 21+ auto-activates jdk21-plus.
         run: mvn -B verify --no-transfer-progress -Dmaven.repo.local=.m2/repository
@@ -34,7 +33,5 @@ jobs:
       key: m2-jvmlens
       paths: [.m2/repository]
     steps:
-      - name: Checkout
-        run: git clone --depth 1 https://github.com/alexmond/jvmlens.git .
       - name: Build with Maven (Java 25, informational)
         run: mvn -B verify --no-transfer-progress -Dmaven.repo.local=.m2/repository
