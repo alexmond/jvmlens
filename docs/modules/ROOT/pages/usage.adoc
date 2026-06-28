@@ -4,7 +4,7 @@
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar analyze recording.jfr
+java -jar jvmlens.jar analyze recording.jfr
 ----
 
 The output is markdown: ranked hot paths (application-frame attributed),
@@ -16,6 +16,18 @@ section is tagged with how the data was obtained — `[sampled]` (statistical: C
 allocation) or `[measured]` (exact: lock blocked time, GC) — so the reliability of each
 signal is explicit.
 
+Reading the rows:
+
+* **Source-line anchoring** — a hot-path row's teaser lists the top leaves *where time
+actually goes* with counts, each carrying its source line (`com.example.Svc.compute:88
+30/168`); allocation sites carry the allocation call-site's line (`:120 · byte[] 4.2 GB`).
+The locator turns "diagnose → find the spot → edit" into one step for a coding agent.
+* **Leaf confidence** — when no single leaf holds more than ~20% of a path's samples the
+teaser is flagged `⚠ diffuse`, so you don't chase a frame that isn't where the cost is.
+* **Allocation confidence** — a short recording yields few allocation samples; a
+`⚠ Only N allocation samples` caveat means the per-site **byte shares** are noisy (the
+**total** bytes stay reliable).
+
 === Differential analysis (before → after)
 
 The agent optimize→measure loop — "did the fix work, what changed" — is a single flag.
@@ -24,8 +36,8 @@ names what moved, instead of making you eyeball two summaries:
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar analyze --baseline before.jfr after.jfr
-java -jar target/jvmlens.jar analyze -b before.jfr after.jfr -f prompt   # wrapped for an LLM
+java -jar jvmlens.jar analyze --baseline before.jfr after.jfr
+java -jar jvmlens.jar analyze -b before.jfr after.jfr -f prompt   # wrapped for an LLM
 ----
 
 [source]
@@ -96,20 +108,35 @@ java -jar jvmlens.jar analyze --baseline /tmp/run-before /tmp/run-after \
 ----
 
 (JMH records the whole fork including warm-up; for measurement-only signal, configure JMH to
-delay the recording past warm-up, or compare steady-state runs.)
+delay the recording past warm-up, compare steady-state runs, or pass `--skip-warmup <ms>` to
+`analyze` — it drops the first `<ms>` of each recording, measured **per file** from that file's
+earliest event, so each fork's own warm-up is trimmed and hot paths reflect steady state.)
 
 Or skip the separate step entirely with the **JMH profiler plugin** — it records the fork and
-prints the summary inline when the trial ends. Put `jvmlens-<version>-jmh.jar` (a tiny
+prints the summary inline when the trial ends. Put `jvmlens-jmh.jar` (a tiny
 engine+profiler jar, no Spring/picocli/jmh) on the benchmark's classpath and:
 
 [source,bash]
 ----
-java -cp benchmarks.jar:jvmlens-<version>-jmh.jar org.openjdk.jmh.Main \
+java -cp benchmarks.jar:jvmlens-jmh.jar org.openjdk.jmh.Main \
   -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example;report=cpu"
 ----
 
-`appPackage` (`+`-separate several) scopes to your code; `report` focuses the summary. The
+`appPackage` (`+`-separate several) scopes to your code; `report` focuses the summary. An
+unknown option key is a hard error with a did-you-mean (no silent misconfiguration). The
 plugin runs in JMH's host process and reuses the same engine as `analyze`.
+
+For a before→after **diff entirely inside JMH** — no separate `analyze` — keep the fork's
+recording with `keep=<path>` (so it can seed the next run's baseline) and diff against a prior
+one with `baseline=<prev.jfr>` (the profiler prints the change report instead of the summary):
+
+[source,bash]
+----
+# run 1 (baseline): keep the recording
+... -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example;keep=/tmp/before.jfr"
+# run 2 (after the fix): print the diff vs run 1
+... -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example;baseline=/tmp/before.jfr"
+----
 
 === Fix-direction hints (`--hints`, opt-in)
 
@@ -182,8 +209,8 @@ those events. `io` aggregates `jdk.SocketRead`/`jdk.SocketWrite` (by remote `hos
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar analyze --report cpu recording.jfr
-java -jar target/jvmlens.jar analyze -r memory -f json recording.jfr
+java -jar jvmlens.jar analyze --report cpu recording.jfr
+java -jar jvmlens.jar analyze -r memory -f json recording.jfr
 ----
 
 == Live capture from a running JVM
@@ -193,9 +220,9 @@ summarizes it — no pre-recorded `.jfr` needed:
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar profile 12345                 # 20s, markdown
-java -jar target/jvmlens.jar profile -d 30 -w 5 12345      # warm up 5s, record 30s
-java -jar target/jvmlens.jar profile -d 30 -k run.jfr 12345  # keep the recording
+java -jar jvmlens.jar profile 12345                 # 20s, markdown
+java -jar jvmlens.jar profile -d 30 -w 5 12345      # warm up 5s, record 30s
+java -jar jvmlens.jar profile -d 30 -k run.jfr 12345  # keep the recording
 ----
 
 `-w` / `--warmup` waits before recording so startup/JIT noise is skipped.
@@ -206,8 +233,30 @@ remote JMX) or `async` (async-profiler — higher fidelity, adds native frames; 
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar profile --engine async -d 30 12345
+java -jar jvmlens.jar profile --engine async -d 30 12345
 ----
+
+== Benchmark a workload without JMH (`bench`)
+
+`bench` is the no-JMH harness: point it at any class's `main(String[])` and it runs a
+warmup→timed loop, captures a JFR over **only** the timed phase, and summarizes — so an
+ordinary app or library with no benchmark module doesn't need a hand-rolled driver:
+
+[source,bash]
+----
+java -jar jvmlens.jar bench --main com.example.RenderDriver -w 20 -i 200 -a com.example
+# load the workload from its own classpath (it needn't be on jvmlens's), keep the JFR,
+# pass args to its main after `--`:
+java -jar jvmlens.jar bench --main com.example.RenderDriver --cp target/classes:$(cat cp.txt) \
+  -w 20 -i 200 -a com.example --jfr /tmp/before.jfr -- arg1 arg2
+----
+
+Each `main` invocation is one iteration. `-w` / `--warmup` iterations run **before** the
+recording starts (so JIT/classload churn stays out of the steady-state signal); `-i` /
+`--iters` are timed. `--cp` / `--classpath` loads the workload through a separate class
+loader; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
+the next run; `--no-analyze` captures without printing. A one-line timing summary (iters,
+ms/iter) goes to stderr; the report to stdout, so it stays pipeable.
 
 == Remote servers (run on the host)
 
@@ -235,9 +284,9 @@ mode (condition-based triggers build on this):
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar watch 12345                          # every 30s, last 120s, forever
-java -jar target/jvmlens.jar watch -i 60 --max-age 300 12345      # every 60s, last 5min
-java -jar target/jvmlens.jar watch -n 5 -i 10 12345               # 5 snapshots, then stop
+java -jar jvmlens.jar watch 12345                          # every 30s, last 120s, forever
+java -jar jvmlens.jar watch -i 60 --max-age 300 12345      # every 60s, last 5min
+java -jar jvmlens.jar watch -n 5 -i 10 12345               # 5 snapshots, then stop
 ----
 
 `-i` / `--interval` sets the dump cadence, `--max-age` the ring-buffer window, and
@@ -261,7 +310,7 @@ and emits *only* when a window breaches it — the production "dump-on-trigger" 
 [source,bash]
 ----
 # emit a summary only when GC pauses exceed 200ms or a leak shows up
-java -jar target/jvmlens.jar watch --on-gc-ms 200 --on-old-objects 5 12345
+java -jar jvmlens.jar watch --on-gc-ms 200 --on-old-objects 5 12345
 ----
 
 == Scoping application code
@@ -274,8 +323,8 @@ and `profile` alike:
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar analyze -a org.alexmond recording.jfr
-java -jar target/jvmlens.jar analyze -x com.thirdparty recording.jfr
+java -jar jvmlens.jar analyze -a org.alexmond recording.jfr
+java -jar jvmlens.jar analyze -x com.thirdparty recording.jfr
 ----
 
 A summary built from very few execution samples is flagged with a `⚠` adequacy
@@ -474,8 +523,8 @@ same ranked signal from one analysis pass:
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar analyze --format json recording.jfr
-java -jar target/jvmlens.jar analyze -f prompt recording.jfr
+java -jar jvmlens.jar analyze --format json recording.jfr
+java -jar jvmlens.jar analyze -f prompt recording.jfr
 ----
 
 == Producing a recording

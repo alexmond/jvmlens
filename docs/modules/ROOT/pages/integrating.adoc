@@ -45,6 +45,7 @@ anywhere; every path below runs locally.
 | You have… | You want… | Path
 
 | A `.jfr` file already | A one-shot summary | *A* — `analyze`
+| A class with a `main` (no JMH module) | A repeatable warm-loop benchmark | *A2* — `bench`
 | A running JVM (local or one `ssh`/`kubectl exec` away) | An on-demand snapshot | *B* — `profile <pid>`
 | A long-running service / CI job / container | Continuous summaries, zero attach | *C* — `-javaagent`
 | A coding agent that should fetch profiles itself | Profiling exposed as tools | *D* — `mcp`
@@ -79,10 +80,26 @@ java -jar tools/jvmlens.jar analyze /tmp/run-after -a com.example.builder       
 java -jar tools/jvmlens.jar analyze --baseline /tmp/run-before /tmp/run-after     # diff (absolute-anchored)
 java -jar tools/jvmlens.jar analyze -b before.jfr after.jfr --assert "alloc-pct < 0, gc-pct < 10"  # CI gate
 java -jar tools/jvmlens.jar analyze builder-run.jfr --hints --top-k 3             # fix directions + budget size
-# inline from a JMH benchmark (put jvmlens-<version>-jmh.jar on the classpath):
-java -cp benchmarks.jar:tools/jvmlens-<version>-jmh.jar org.openjdk.jmh.Main \
+# inline from a JMH benchmark (put jvmlens-jmh.jar on the classpath):
+java -cp benchmarks.jar:tools/jvmlens-jmh.jar org.openjdk.jmh.Main \
   -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example.builder"
 ----
+
+== Path A2 — bench a `main` (no JMH module)
+
+Most apps don't have a JMH module. `bench` is the no-JMH harness: point it at any
+`main(String[])` and it runs a warmup→timed loop, captures a JFR over only the timed phase,
+and summarizes — no hand-rolled driver, no pre-recorded file:
+
+[source,bash]
+----
+java -jar tools/jvmlens.jar bench --main com.example.builder.BuildDriver \
+     --cp build/libs/builder.jar -w 20 -i 200 -a com.example.builder --jfr /tmp/before.jfr
+----
+
+`--cp` loads the workload (it needn't be on jvmlens's classpath); `--jfr` keeps the recording
+so it can be a `--baseline` for the after-run. Write a tiny driver `main` that exercises the
+hot path once; `bench` is the loop.
 
 == Path B — profile a running process
 
@@ -116,7 +133,7 @@ interval — no attach.
 
 [source,bash]
 ----
-java -javaagent:tools/jvmlens-<version>-agent.jar=out=/var/log/builder-profile.md,interval=60 \
+java -javaagent:tools/jvmlens-agent.jar=out=/var/log/builder-profile.md,interval=60 \
      -jar build/libs/builder.jar
 ----
 

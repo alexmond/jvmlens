@@ -1,9 +1,9 @@
 = Changelog
 
-== 0.1.0 (unreleased)
+== 0.1.0
 
-Proof-of-concept graduated from the incubator, then built out into a full
-JVM-evidence → LLM-ready summarizer with a live control plane.
+First public release. Proof-of-concept graduated from the incubator, then built out into a
+full JVM-evidence → LLM-ready summarizer with a live control plane.
 
 === Commands
 
@@ -12,9 +12,13 @@ JVM-evidence → LLM-ready summarizer with a live control plane.
   `--baseline <before.jfr>` **diffs** two recordings — anchored on **absolute** weight
   (bytes / ms / samples) with share as context, so an optimize-loop reduction isn't mislabelled
   a regression; `--assert "<rules>"` is a **CI perf-gate** (non-zero exit on regression);
-  `--hints` adds hedged `[possible]` fix directions; `--top-k <n>` / `--max-tokens <n>` budget the size.
+  `--hints` adds hedged `[possible]` fix directions; `--top-k <n>` / `--max-tokens <n>` budget the
+  size; `--skip-warmup <ms>` drops JIT/classload churn (per-file cutoff) for steady-state hot paths.
 * `profile <pid>` — live attach + timed JFR capture (no pre-recorded file); `--engine async`
   adds native frames via async-profiler; `-w/--warmup`, `-k/--keep`.
+* `bench --main <class>` — the no-JMH harness: runs any `main(String[])` in a warmup→timed loop,
+  captures a JFR over only the timed phase, and summarizes; `--cp`, `-w/--warmup`, `-i/--iters`,
+  `--jfr` (keep for a baseline diff).
 * `watch <pid>` — continuous ring buffer; periodic, or **dump-on-trigger**
   (`--on-gc-ms` / `--on-cpu-pct` / `--on-old-objects`).
 * `trend <history.jsonl>` — reduce a long-running monitor's accumulated history to a
@@ -23,8 +27,9 @@ JVM-evidence → LLM-ready summarizer with a live control plane.
 * `mcp` — stdio MCP server exposing scoped, navigable tools (one per dimension) plus a live
   `profile` tool; reachable remotely over stdio-over-ssh. Serves data only — never calls an LLM.
 * **JMH profiler plugin** — `-prof org.alexmond.jvmlens.jmh.JvmlensProfiler` prints the summary
-  inline after a benchmark trial. Ships as a dependency-light `jvmlens-*-jmh.jar` (engine +
-  profiler, no Spring/picocli/jmh).
+  inline after a benchmark trial; `keep=<path>` retains the fork's recording and `baseline=<prev.jfr>`
+  prints the diff inline (the whole optimize loop inside one JMH run). Ships as a dependency-light
+  `jvmlens-jmh.jar` (engine + profiler, no Spring/picocli/jmh).
 
 === Dimensions summarized
 
@@ -45,7 +50,12 @@ JVM-evidence → LLM-ready summarizer with a live control plane.
 === Trust & honesty
 
 * Per-row absolute hit `count` beside every share; sections tagged `[sampled]` vs `[measured]`;
-  a `⚠` adequacy caveat under 200 execution samples.
+  a `⚠` adequacy caveat under 200 execution samples, and a matching per-site **allocation**
+  caveat when there are too few allocation samples (the total stays reliable).
+* **Source-line anchoring** — hot-path leaves and allocation sites carry their source line
+  (`Svc.compute:88`), so a coding agent goes from diagnosis to the edit in one step.
+* **Leaf confidence** — a hot path's teaser lists the top leaves with counts and flags
+  `⚠ diffuse` when no single leaf dominates, instead of trusting one (possibly stray) frame.
 * The heuristic under-interprets — retention is flagged as _possible_ growth, never a
   confident "leak"; correlation suggests, never asserts.
 

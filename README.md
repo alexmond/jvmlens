@@ -61,21 +61,33 @@ raw `jfr print` — too big to paste. jvmlens turns the same recording into a
 allocation site, or the contended lock. For an LLM, the summary isn't just
 cheaper — for non-trivial recordings it's the only input that fits.
 
-## Download (early access)
+## Install
 
-jvmlens isn't released to Maven Central yet, but every green build on `main`
-publishes a rolling **[`latest`](https://github.com/alexmond/jvmlens/releases/tag/latest)**
-pre-release — so you can use it now, no build required (Java 17+):
+**Library — Maven Central.** Embed the summarizer (the dependency-free engine, only
+`jdk.jfr.consumer`):
+
+```xml
+<dependency>
+  <groupId>org.alexmond</groupId>
+  <artifactId>jvmlens-engine</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+**CLI / agent / JMH jars — GitHub releases.** These are runnable artifacts (not library
+deps), so they ship as release assets, not on Central. Java 17+ to run:
 
 ```bash
+# the latest tagged release
+gh release download v0.1.0 -R alexmond/jvmlens -p 'jvmlens.jar'
+# …or the rolling pre-release (every green build on main), no build required:
 curl -L -o jvmlens.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
 java -jar jvmlens.jar analyze recording.jfr
 ```
 
-The download URL is stable (it always points at the latest green build). The
-release also carries `jvmlens-agent.jar` (the in-process `-javaagent`) and
-`jvmlens-jmh.jar` (the JMH profiler). It's a **pre-release** — APIs may change
-until the first tagged release.
+Each release also carries `jvmlens-agent.jar` (the in-process `-javaagent`) and
+`jvmlens-jmh.jar` (the JMH profiler). The `latest` URL is stable — it always points at the
+newest green build on `main`.
 
 ## Build
 

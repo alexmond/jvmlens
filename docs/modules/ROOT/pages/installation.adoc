@@ -2,9 +2,54 @@
 
 == Requirements
 
-* JDK 17 or newer (jvmlens reads JFR via `jdk.jfr.consumer`)
+* JDK 17 or newer to run (the one Java-17-bytecode build is verified on 17 / 21 / 25).
+jvmlens reads JFR via `jdk.jfr.consumer`.
 
-== Build from source
+== Get the tools
+
+jvmlens ships as a small set of jars — pick what you need:
+
+[cols="1,3"]
+|===
+| Jar | What it's for
+
+| `jvmlens.jar` | the **CLI** (`analyze` / `profile` / `bench` / `watch` / `trend` / `control` / `mcp`)
+| `jvmlens-agent.jar` | the in-process **`-javaagent`** (periodic summaries, dimensions, history)
+| `jvmlens-jmh.jar` | the **JMH profiler** plugin (engine + profiler, no Spring/picocli)
+| `org.alexmond:jvmlens-engine` | the dependency-free **library** (embed the summarizer)
+|===
+
+=== Option 1 — download a release jar (CLI / agent / JMH)
+
+The CLI, agent, and JMH jars are GitHub release assets (they're runnable artifacts, not
+library dependencies). Grab them from the link:https://github.com/alexmond/jvmlens/releases[releases page],
+or with the `gh` CLI:
+
+[source,bash,subs="attributes+"]
+----
+gh release download v{page-component-version} -R alexmond/jvmlens -p 'jvmlens.jar'
+# pre-release rolling build (latest main): use `latest` instead of the tag
+gh release download latest -R alexmond/jvmlens -p 'jvmlens.jar' -p 'jvmlens-agent.jar' -p 'jvmlens-jmh.jar'
+----
+
+=== Option 2 — depend on the engine (Maven Central)
+
+To embed the summarizer in your own tool, depend on `jvmlens-engine` (dependency-free, only
+`jdk.jfr.consumer`). The JMH profiler is published too, so a benchmark module can depend on it:
+
+[source,xml,subs="attributes+"]
+----
+<dependency>
+  <groupId>org.alexmond</groupId>
+  <artifactId>jvmlens-engine</artifactId>
+  <version>{page-component-version}</version>
+</dependency>
+----
+
+API docs: {api-engine}/{page-component-version}[jvmlens-engine Javadoc^] (hosted on javadoc.io
+once the version is published).
+
+=== Option 3 — build from source
 
 [source,bash]
 ----
@@ -13,11 +58,17 @@ cd jvmlens
 ./mvnw clean package
 ----
 
-This produces a runnable jar at `target/jvmlens.jar`.
+This is a Maven reactor; the jars land in per-module `target/` dirs:
+
+* `jvmlens-cli/target/jvmlens.jar`
+* `jvmlens-agent/target/jvmlens-agent.jar`
+* `jvmlens-jmh/target/jvmlens-jmh.jar`
 
 == Run
 
 [source,bash]
 ----
-java -jar target/jvmlens.jar analyze recording.jfr
+java -jar jvmlens.jar analyze recording.jfr
 ----
+
+See xref:usage.adoc[Usage] for the full command reference.

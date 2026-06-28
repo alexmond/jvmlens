@@ -13,6 +13,12 @@
     <name>jvmlens-jmh</name>
     <description>A JMH ExternalProfiler that prints the jvmlens summary inline after a trial.</description>
 
+    <properties>
+        <!-- A shaded profiler jar (engine relocated in): ships via the GitHub release + as a
+             `-cp` artifact, not Maven Central. Central scope for 0.1.0 is parent + jvmlens-engine. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.alexmond</groupId>
