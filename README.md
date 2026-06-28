@@ -14,8 +14,8 @@ the loop rebuilds hash/hex strings every iteration. Hoist that work out of the l
 ```
 
 Real, checkable numbers and the full before/after Claude transcript:
-**[jvmlens + your AI agent](https://www.alexmond.org/jvmlens/current/ai-agent.html)** — every
-artifact is committed under [`assets/demo/`](assets/demo/) so you can reproduce it yourself.
+**[jvmlens + your AI agent](docs/modules/ROOT/pages/ai-agent.adoc)** — every artifact is
+committed under [`assets/demo/`](assets/demo/) so you can reproduce it yourself.
 
 Profiling a JVM is well-served for *humans* — async-profiler, JFR, and the
 commercial GUIs all produce flamegraphs and recordings. None of those formats
