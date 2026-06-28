@@ -1,0 +1,2 @@
+Prompt is too long · the request is ~683,988 tokens (limit 1,000,000) —
+a raw JFR dump overflows the context window. The model can't even read it.

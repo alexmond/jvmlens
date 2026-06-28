@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Thin launcher so the demo GIF reads `jvmlens …` instead of `java -jar …`. render.sh stages
+# the CLI fat jar at ../jvmlens.jar (next to this bin/) before the render; not for general use.
+here="$(cd "$(dirname "$0")" && pwd)"
+exec java -jar "$here/../jvmlens.jar" "$@"
