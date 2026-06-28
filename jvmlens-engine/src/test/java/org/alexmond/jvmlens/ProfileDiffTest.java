@@ -138,6 +138,28 @@ class ProfileDiffTest {
 	}
 
 	@Test
+	void cautionsOnASmallSampledAllocationDelta() {
+		// #104: a sub-15% allocation-total delta from a single recording can be sampling
+		// noise.
+		ProfileSummary before = summary(0, 10_000_000_000L, List.of(),
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 10_000_000_000L, null)));
+		ProfileSummary after = summary(0, 9_100_000_000L, List.of(), // -9% → in the noise
+																		// band
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 9_100_000_000L, null)));
+		assertThat(ProfileDiff.diff(before, after)).contains("sampled").contains("within sampling noise");
+	}
+
+	@Test
+	void noSampledNoiseNoteForALargeAllocationDrop() {
+		ProfileSummary before = summary(0, 10_000_000_000L, List.of(),
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 10_000_000_000L, null)));
+		ProfileSummary after = summary(0, 5_000_000_000L, List.of(), // -50% → clearly
+																		// real
+				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 5_000_000_000L, null)));
+		assertThat(ProfileDiff.diff(before, after)).doesNotContain("within sampling noise");
+	}
+
+	@Test
 	void noLowAllocNoteWhenSamplesUntracked() {
 		// the 16-arg ctor leaves allocSamples at 0 → no false "low samples" alarm.
 		ProfileSummary before = summary(0, 1_000_000, List.of(),

@@ -78,4 +78,29 @@ class JvmlensProfilerTest {
 			.hasMessageContaining("did you mean `socketio`");
 	}
 
+	@Test
+	void measuredAbVerdictCallsAPhantomReductionNotSignificant() {
+		// #104, the burned case: sampled total fell ~10% but measured bytes/op is
+		// unchanged
+		// (782,881 ± 17,200 → 780,083 ± 19,854 across 4 forks) → NOT significant + a
+		// disagree note.
+		String v = JvmlensProfiler.allocVerdict(782_881, 17_200, 780_083, 19_854, 4, -10.0);
+		assertThat(v).contains("NOT significant")
+			.contains("sampled")
+			.contains("disagrees")
+			.doesNotContain("single fork");
+	}
+
+	@Test
+	void measuredAbVerdictCallsARealDropSignificant() {
+		String v = JvmlensProfiler.allocVerdict(1_000_000, 20_000, 700_000, 20_000, 4, -30.0);
+		assertThat(v).contains("SIGNIFICANT").doesNotContain("NOT significant").doesNotContain("disagrees");
+	}
+
+	@Test
+	void measuredAbVerdictWarnsOnASingleFork() {
+		String v = JvmlensProfiler.allocVerdict(1_000_000, 0, 980_000, 0, 1, -2.0);
+		assertThat(v).contains("single fork understates");
+	}
+
 }
