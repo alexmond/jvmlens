@@ -46,14 +46,29 @@ import org.alexmond.jvmlens.Summarizer;
  * <p>
  * When the run also enables JMH's GC profiler ({@code -prof gc}), the summary is headed
  * with JMH's <em>exact</em> {@code gc.alloc.rate.norm} (bytes/op) so the measured rate
- * sits next to jvmlens's <em>sampled</em> per-site bytes (field-finding #100). Ships in
- * the dependency-light {@code jvmlens-jmh.jar} (engine + this profiler, no
- * Spring/picocli/jmh) — put it and {@code jmh-core} on the benchmark's classpath.
+ * sits next to jvmlens's <em>sampled</em> per-site bytes (field-finding #100). With a
+ * {@code baseline=}, that becomes a measured A/B verdict (#104) plus a
+ * <em>dispersion</em> verdict (#110): a real structural allocation removal collapses the
+ * cross-fork variance band, and a now near-deterministic bytes/op is the loop's STOP
+ * signal. Ships in the dependency-light {@code jvmlens-jmh.jar} (engine + this profiler,
+ * no Spring/picocli/jmh) — put it and {@code jmh-core} on the benchmark's classpath.
  */
 public class JvmlensProfiler implements ExternalProfiler {
 
 	/** Recognized option keys, used for the did-you-mean suggestion on a typo. */
 	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report", "keep", "baseline", "socketio");
+
+	/**
+	 * The cross-fork error band must shrink by at least this factor to call it a variance
+	 * collapse (#110 finding 1).
+	 */
+	private static final double VARIANCE_COLLAPSE_FACTOR = 3.0;
+
+	/**
+	 * Below this relative error band (err/mean), the measured bytes/op is treated as
+	 * near-deterministic — the STOP signal for the optimize loop (#110 finding 1).
+	 */
+	private static final double DETERMINISTIC_REL_BAND = 0.005;
 
 	private final Path jfr;
 
@@ -251,6 +266,49 @@ public class JvmlensProfiler implements ExternalProfiler {
 					" The **sampled** total Δ (%+.1f%%) disagrees — likely sampling "
 							+ "redistribution / JIT elision, not a real change; trust the measured number.",
 					sampledPct));
+		}
+		b.append('\n').append(dispersionNote(bMean, bErr, aMean, aErr, measuredPct));
+		return b.toString();
+	}
+
+	/**
+	 * A dispersion verdict over the cross-fork error bands (#110 finding 1): a genuine
+	 * structural allocation removal doesn't just lower the mean — it eliminates the
+	 * GC-sampling variance that <em>was</em> that allocation, so the band collapses (the
+	 * round-3 win went ±17,200 → ±35, ~500×, while the round-2 phantom left ±18K → ±18K).
+	 * Surfaces two things the mean alone can't: a <strong>variance collapse</strong>
+	 * alongside a mean drop is a strong real-removal signal, and a now
+	 * <strong>near-deterministic</strong> bytes/op is the loop's STOP signal (further
+	 * allocation tuning has diminishing returns; the residual is intrinsic floor). Empty
+	 * when there is no meaningful before-band to compare (e.g. a single fork → no error
+	 * term). Pure.
+	 */
+	static String dispersionNote(double bMean, double bErr, double aMean, double aErr, double measuredPct) {
+		if (bMean <= 0 || aMean <= 0 || bErr <= 0) {
+			return "";
+		}
+		double collapse = (aErr > 0) ? bErr / aErr : Double.POSITIVE_INFINITY;
+		double afterRel = aErr / aMean;
+		boolean collapsed = collapse >= VARIANCE_COLLAPSE_FACTOR && measuredPct <= -5.0;
+		boolean deterministic = afterRel <= DETERMINISTIC_REL_BAND;
+		if (!collapsed && !deterministic) {
+			return "";
+		}
+		StringBuilder b = new StringBuilder(String.format(Locale.ROOT, "> Dispersion: ±%s/op → ±%s/op",
+				humanBytesPerOp(bErr), humanBytesPerOp(aErr)));
+		if (collapsed) {
+			String factor = Double.isInfinite(collapse) ? "to ~0" : String.format(Locale.ROOT, "~%.0f×", collapse);
+			b.append(" — **variance collapsed ")
+				.append(factor)
+				.append("** alongside the mean drop → strong "
+						+ "real structural-removal signal (the removed allocation was the dominant noise source).");
+		}
+		if (deterministic) {
+			b.append(collapsed ? " " : " — ")
+				.append(String.format(Locale.ROOT,
+						"allocation is now **near-deterministic** (±%.2f%%/op) → diminishing returns; the residual "
+								+ "is intrinsic floor — pivot off allocation.",
+						afterRel * 100));
 		}
 		return b.append('\n').toString();
 	}
