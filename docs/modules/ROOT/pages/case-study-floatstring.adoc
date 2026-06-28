@@ -1,0 +1,133 @@
+= Case study: a 7.6 GB allocation hiding in one line
+:description: jvmlens on a real hot path — profile, find the lever, fix, prove byte-identical, guard.
+
+This is jvmlens doing the one thing it is for: turning a recording into the *single line* worth
+fixing, with the receipt to prove the fix worked — and the proof that it changed nothing else.
+It's the human-perf-engineer companion to xref:ai-agent.adoc[jvmlens + your AI agent].
+
+The target is a real engine, not a benchmark toy: https://github.com/alexmond/gotmpl4j[gotmpl4j],
+a pure-Java implementation of Go's `text/template`. The hot path is table rendering — the kind of
+template every Helm chart and Hugo site leans on.
+
+== 1. Profile — what jvmlens surfaced
+
+A JMH run of the table-render benchmark, recorded with JFR and summarized inline by jvmlens's JMH
+profiler (no separate `analyze` step), with JMH's GC profiler on for the exact bytes/op:
+
+[source,console]
+----
+$ java -cp benchmarks.jar:jvmlens-jmh.jar org.openjdk.jmh.Main \
+    TableBenchmark.gotmpl4jRender -p n=1000 -f 4 -wi 3 -i 6 \
+    -prof gc \
+    -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=org.alexmond.gotmpl4j"
+----
+
+jvmlens put one method at the top of *both* the CPU and the allocation tables:
+
+[cols="3,1,1",options="header"]
+|===
+| Method | CPU | Allocation
+| `GoFmt.floatString` | *43%* | *71%* (7.6 GB)
+|===
+
+And — this is the part that matters — it attributed the allocation down to the byte, then to the line:
+
+* `byte[]` 4.6 GB · `String` 2.4 GB
+* one source line: `mantissa.substring(0, dot) + mantissa.substring(dot + 1)`
+
+Three throwaway `String` objects allocated *per call*, just to reposition a decimal point. No
+guessing, no reading the whole method — the recording named the line.
+
+== 2. Fix — delete the intermediate allocations
+
+The substrings and the concat were the whole cost. The rewrite repositions the decimal point
+without ever materialising the pieces:
+
+* parse the mantissa digits into one small `char[]`,
+* trim trailing zeros by index (no copies),
+* emit into a single pre-sized `StringBuilder`,
+* read the exponent in place with `Integer.parseInt(s, from, to, radix)` — no substring.
+
+One small buffer instead of three short-lived `String` s per call.
+
+== 3. Prove — JMH, before and after
+
+[cols="2,1,1",options="header"]
+|===
+| Metric | Before | After
+| JMH `gc.alloc.rate.norm` (whole op) | 1.04 MB/op | *0.77 MB/op (−26%)*
+| `floatString` allocation | 7.6 GB | 3.6 GB (−52%)
+| `floatString` CPU share | 43% | 25%
+|===
+
+The honest top-line is the **−26% allocation per operation** across the whole benchmark — that is
+the end-to-end win, measured, not a single method's share.
+
+[NOTE]
+====
+*A footnote on reading the numbers honestly.* The fix extracts a `renderDigits` helper, so the
+profiler splits one logical improvement across two rows: `floatString` drops −52%, and a *new*
+`renderDigits` row appears holding ~2.2 GB that moved out of it. The *net* float-path reduction is
+about −24% — exactly what the −26% whole-op number reflects. The per-method −52% looks bigger than
+the real win; the per-op number is the truth.
+
+jvmlens now makes this legible directly: the diff prints an **"Allocation by type (rollup)"** block
+that sums extracted helpers (`GoFmt.* — 7.6 GB → 5.8 GB`), and — with `-prof gc` — a **measured A/B
+verdict** that gates on JMH's exact bytes/op with a significance call, so a sampled per-method swing
+can't be mistaken for the real win. (Those landed from this very round:
+https://github.com/alexmond/jvmlens/issues/99[#99], https://github.com/alexmond/jvmlens/issues/104[#104].)
+====
+
+== 4. Guard — byte-identical, or it doesn't ship
+
+A faster float formatter that prints different output is a bug, not an optimization. So the win is
+gated on correctness:
+
+* gotmpl4j's conformance suites — rendered through the *real* Go engine for ground truth — stay green.
+* an 18-case edge spot-check matches Go's `fmt %v` exactly: scientific-notation thresholds,
+  trailing-zero stripping, negatives, very large and very small exponents.
+
+The conformance suite *is* the regression guard — the next refactor that drifts a byte fails the build.
+
+== 5. …and it holds over time
+
+The same commit is independently visible on a long-running deployment — two instruments, one change,
+the same conclusion:
+
+* load-test latency p50/p90/p99, flat at ~0.20 ms, **halved to ~0.10 ms** at the optimization commit;
+* the test suite ~−20% off its stable ~18 s baseline.
+
+// [PROMO: clean screenshot of the unitrack dashboard trend — capture from the PUBLIC demo
+// https://unitrack.alexmond.org only, clean browser. Placeholder until the promotion side supplies it.]
+
+This is the agent's `history=` + `jvmlens trend` view of the same win that JMH measured in §3.
+
+== 6. The loop
+
+That is the whole cycle, and it is the point:
+
+[verse]
+profile → top lever → fix → prove → guard → document
+
+jvmlens did the first step and the fourth: it named the line, and it produced the receipt. The
+recording is the difference between "string formatting is probably slow somewhere" and "this one
+line allocates 7.6 GB — here it is."
+
+== Reproduce it
+
+Everything here is checked in:
+
+* The benchmark: `TableBenchmark.gotmpl4jRender` in https://github.com/alexmond/gotmpl4j[gotmpl4j]'s JMH module.
+* The change: https://github.com/alexmond/gotmpl4j/pull/77[gotmpl4j PR #77].
+* Run it yourself (the §1 command). For the before/after inside one JMH session, keep the baseline
+  recording and diff the next run against it:
++
+[source,console]
+----
+# baseline (before the fix): keep the recording + its measured bytes/op
+$ ... -prof gc -prof "...JvmlensProfiler:appPackage=org.alexmond.gotmpl4j;keep=/tmp/before.jfr"
+# after the fix: print the diff + the measured A/B verdict vs the baseline
+$ ... -prof gc -prof "...JvmlensProfiler:appPackage=org.alexmond.gotmpl4j;baseline=/tmp/before.jfr"
+----
+
+You don't have to trust the table. Run the recording and read the same top line.

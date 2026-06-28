@@ -2,6 +2,7 @@
 ** xref:installation.adoc[Installation]
 ** xref:usage.adoc[Usage]
 ** xref:ai-agent.adoc[jvmlens + your AI agent]
+** xref:case-study-floatstring.adoc[Case study: floatString]
 ** xref:integrating.adoc[Integrating (other projects)]
 ** xref:contributing.adoc[Contributing]
 ** xref:CHANGELOG.adoc[Changelog]

@@ -76,6 +76,22 @@ raw `jfr print` — too big to paste. jvmlens turns the same recording into a
 allocation site, or the contended lock. For an LLM, the summary isn't just
 cheaper — for non-trivial recordings it's the only input that fits.
 
+## Case study — a 7.6 GB allocation hiding in one line
+
+On [gotmpl4j](https://github.com/alexmond/gotmpl4j) (a pure-Java Go `text/template` engine),
+jvmlens put `GoFmt.floatString` at the top of *both* the CPU and allocation tables and attributed
+the 7.6 GB down to a single line — three throwaway `String`s per call to move a decimal point.
+Deleting them, byte-identical against the real Go engine:
+
+| Metric | Before | After |
+|---|---|---|
+| JMH `gc.alloc.rate.norm` (whole op) | 1.04 MB/op | **0.77 MB/op (−26%)** |
+| `floatString` allocation | 7.6 GB | 3.6 GB (−52%) |
+
+The honest top-line is the **−26% per operation** (the measured whole-op number), not the flashier
+per-method −52%. Full receipts — profile → fix → prove → guard — in
+**[Case study: floatString](docs/modules/ROOT/pages/case-study-floatstring.adoc)**.
+
 ## Install
 
 **Library — Maven Central.** Embed the summarizer (the dependency-free engine, only
