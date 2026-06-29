@@ -50,10 +50,10 @@ jobs:
           mkdir -p ~/.m2
           cp .github/settings.xml ~/.m2/settings.xml
 
-      # Central scope = parent + jvmlens-engine only (the dependency-free library). The app/tool
-      # jars (cli fat jar, agent + jmh shaded jars) set maven.deploy.skip=true in their POMs and
-      # ship as GitHub release assets instead (attached below). `clean deploy` still BUILDS them,
-      # so the jars exist in target/ for the release step.
+      # The central-publishing-maven-plugin publishes every module to Maven Central
+      # (jvmlens-engine is the primary library; the cli fat jar + agent/jmh shaded jars go up too
+      # — that plugin ignores maven.deploy.skip, so all modules ship). The runnable jars are ALSO
+      # attached to the GitHub release below for convenient `java -jar` / download (see #117).
       - name: Deploy to Maven Central
         run: mvn --batch-mode -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }} clean deploy -Prelease --no-transfer-progress
         env:

@@ -13,12 +13,6 @@
     <name>jvmlens-cli</name>
     <description>The jvmlens command-line front-end (analyze/profile/watch/trend/control/mcp).</description>
 
-    <properties>
-        <!-- An executable Spring Boot fat jar (an app, not a library): ships via the GitHub
-             release, not Maven Central. Central scope for 0.1.0 is parent + jvmlens-engine. -->
-        <maven.deploy.skip>true</maven.deploy.skip>
-    </properties>
-
     <!-- The only Spring Boot module: a repackaged fat jar. Because shade no longer runs in
          this module, repackage produces a clean nested-jar layout (no dependency double-pack). -->
     <dependencies>
