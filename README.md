@@ -38,8 +38,9 @@ a confident "leak").
 
 | Command | What |
 |---|---|
-| `analyze <file.jfr\|dir>` | Summarize a recording, or a **JMH `-prof jfr` directory** (forks merged). |
+| `analyze <file.jfr\|dir>` | Summarize a recording, or a **JMH `-prof jfr` directory** (forks merged); `--baseline` diffs, `--source` echoes the source line. |
 | `profile <pid>` | Live attach + timed JFR capture; `--engine async` for native frames; `-w/--warmup`, `-k/--keep`. |
+| `bench --main <class>` | No-JMH harness — runs any `main(String[])` in a warmup→timed loop, captures steady-state JFR, summarizes; `--cp`, `-w`, `-i`. |
 | `watch <pid>` | Continuous ring buffer — periodic, or **dump-on-trigger** (`--on-gc-ms`/`--on-cpu-pct`/`--on-old-objects`). |
 | `trend <history.jsonl>` | Reduce a multi-day agent run to a **change-over-time** digest. |
 | `control <file> <cmd…>` | **In-flight** control of a running agent (no ports/JMX). |
@@ -59,6 +60,14 @@ mislabelled a regression), **gate** a regression in CI (`--assert "alloc-pct < 0
 10"` — non-zero exit), get hedged **fix directions** (`--hints`), and **budget** the size
 (`--top-k` / `--max-tokens`). Pairs with JMH — JMH gives the number, jvmlens gives the
 where/why.
+
+Run it **inside one JMH command** with the profiler plugin (`-prof …JvmlensProfiler:keep=…`
+then `baseline=…`), and it gates on *measured* significance, not a sampled swing: an exact
+**allocation** and **throughput** A/B verdict (`SIGNIFICANT` only when the Δ clears the noise
+band and the CIs don't overlap), a **dispersion** signal (a real structural win collapses the
+cross-fork variance band; near-deterministic bytes/op is a STOP signal), and honest hedges —
+an **escape-analysis** false-lever caveat, an extract-method **allocation-by-type rollup**, and
+a *“a CPU-share shift is not a speedup”* note when throughput stays flat.
 
 ## Runtime control (in-flight)
 
@@ -101,7 +110,7 @@ per-method −52%. Full receipts — profile → fix → prove → guard — in
 <dependency>
   <groupId>org.alexmond</groupId>
   <artifactId>jvmlens-engine</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
@@ -110,7 +119,7 @@ deps), so they ship as release assets, not on Central. Java 17+ to run:
 
 ```bash
 # the latest tagged release
-gh release download v0.1.0 -R alexmond/jvmlens -p 'jvmlens.jar'
+gh release download 0.2.0 -R alexmond/jvmlens -p 'jvmlens.jar'
 # …or the rolling pre-release (every green build on main), no build required:
 curl -L -o jvmlens.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
 java -jar jvmlens.jar analyze recording.jfr
