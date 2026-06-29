@@ -9,9 +9,11 @@ import java.util.List;
  * Without explicit includes, a frame is application code unless it belongs to the JDK or
  * a common framework (Spring, BouncyCastle, Jackson, logging, …) — plus any
  * caller-supplied excludes. With includes, <em>only</em> frames under the given package
- * prefixes count. The narrow JDK-only default used to let framework packages masquerade
- * as the user's code (see field-finding issue #1); the broadened default and the include
- * mode fix that.
+ * prefixes count. Either way, <strong>excludes always win</strong>: an {@code -x} prefix
+ * is dropped even when it sits inside an {@code -a} include, so a test/generated class
+ * can be carved out of an app roll-up that shares the package root (#121). The narrow
+ * JDK-only default used to let framework packages masquerade as the user's code (see
+ * field-finding issue #1); the broadened default and the include mode fix that.
  */
 public record Scope(List<String> includePackages, List<String> excludePackages) {
 
@@ -48,11 +50,15 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 		if (isNative(owner)) {
 			return false;
 		}
+		// Excludes always win — even inside an --app-package include (so -x can carve a
+		// test/generated class out of an app roll-up that shares the package root). #121.
+		if (startsWithAny(owner, this.excludePackages)) {
+			return false;
+		}
 		if (!this.includePackages.isEmpty()) {
 			return startsWithAny(owner, this.includePackages);
 		}
-		return !startsWithAny(owner, RUNTIME) && !startsWithAny(owner, FRAMEWORKS)
-				&& !startsWithAny(owner, this.excludePackages);
+		return !startsWithAny(owner, RUNTIME) && !startsWithAny(owner, FRAMEWORKS);
 	}
 
 	/**

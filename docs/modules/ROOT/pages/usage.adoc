@@ -604,6 +604,15 @@ java -XX:StartFlightRecording=duration=30s,filename=recording.jfr,settings=profi
 The `examples/` directory contains a planted-pathology workload (CPU hot path,
 memory leak, lock contention) for producing sample recordings.
 
+[TIP]
+====
+For **forked-test workloads (Maven Surefire/Failsafe)**, prefer live attach
+(`jvmlens profile <pid>`) over `-XX:StartFlightRecording=…,dumponexit=true` on the fork's
+`argLine`. Surefire reuses and then *kills* its fork rather than exiting it cleanly, so the
+`dumponexit` shutdown hook never fires and you get **no `.jfr` at all**. Attaching to the
+running fork captures cleanly where the JVM-flag path silently produces nothing.
+====
+
 == Exit codes
 
 [cols="1,3"]

@@ -160,6 +160,20 @@ class SummarizerTest {
 	}
 
 	@Test
+	void flagsAZeroByteSingleOpLongBlockAsAPipeWait() {
+		// #121: shelling out and waiting on a subprocess pipe reads identically to a
+		// stalled
+		// network peer — 0 bytes over 1 op, blocked the whole window. Hint it's a pipe.
+		assertThat(Summarizer.ioTeaser(0, 1, 27_000_000_000L)).contains("0 B over 1 ops")
+			.contains("child-process/pipe wait");
+		// a real network/DB peer transfers bytes (or many ops) — no pipe hint
+		assertThat(Summarizer.ioTeaser(4096, 1, 27_000_000_000L)).doesNotContain("pipe");
+		assertThat(Summarizer.ioTeaser(0, 12, 27_000_000_000L)).doesNotContain("pipe");
+		// a brief 0-byte blip is not a pipe wait
+		assertThat(Summarizer.ioTeaser(0, 1, 5_000_000L)).doesNotContain("pipe");
+	}
+
+	@Test
 	void filtersRecorderSelfSinkFromIo() {
 		// #39 gap 4: a microbenchmark with no real I/O reported "file null" (the JFR
 		// sink)
