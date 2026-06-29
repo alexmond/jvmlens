@@ -8,8 +8,12 @@ import java.nio.file.StandardCopyOption;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.profile.ExternalProfiler;
@@ -19,6 +23,7 @@ import org.openjdk.jmh.results.Result;
 
 import org.alexmond.jvmlens.ProfileDiff;
 import org.alexmond.jvmlens.ProfileSummary;
+import org.alexmond.jvmlens.ProfileSummary.Ranked;
 import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
 
@@ -50,8 +55,13 @@ import org.alexmond.jvmlens.Summarizer;
  * {@code baseline=}, that becomes a measured A/B verdict (#104) plus a
  * <em>dispersion</em> verdict (#110): a real structural allocation removal collapses the
  * cross-fork variance band, and a now near-deterministic bytes/op is the loop's STOP
- * signal. Ships in the dependency-light {@code jvmlens-jmh.jar} (engine + this profiler,
- * no Spring/picocli/jmh) — put it and {@code jmh-core} on the benchmark's classpath.
+ * signal. A measured <em>throughput</em> A/B verdict (#112) sits alongside — the CPU
+ * analog — flagging a sampled hot-path share that moved while wall-clock throughput
+ * stayed flat (a CPU-share shift is not a speedup); and the {@code baseline=} comparison
+ * is benchmark-matched, so a baseline recorded for a different method warns and skips
+ * rather than emitting nonsense. Ships in the dependency-light {@code jvmlens-jmh.jar}
+ * (engine + this profiler, no Spring/picocli/jmh) — put it and {@code jmh-core} on the
+ * benchmark's classpath.
  */
 public class JvmlensProfiler implements ExternalProfiler {
 
@@ -69,6 +79,12 @@ public class JvmlensProfiler implements ExternalProfiler {
 	 * near-deterministic — the STOP signal for the optimize loop (#110 finding 1).
 	 */
 	private static final double DETERMINISTIC_REL_BAND = 0.005;
+
+	/**
+	 * A hot-path share that shifted by at least this (percentage points) is worth naming
+	 * in the flat-throughput caveat (#112 finding 1).
+	 */
+	private static final double HOT_SHIFT_PP = 0.10;
 
 	private final Path jfr;
 
@@ -205,7 +221,8 @@ public class JvmlensProfiler implements ExternalProfiler {
 				ProfileSummary after = Summarizer.analyze(this.jfr, scope);
 				double sampledPct = (before.allocBytes() > 0)
 						? 100.0 * (after.allocBytes() - before.allocBytes()) / before.allocBytes() : 0;
-				System.out.println("\n" + measuredAbHead(norm, result, sampledPct) + ProfileDiff.diff(before, after));
+				System.out.println(
+						"\n" + measuredHead(norm, result, before, after, sampledPct) + ProfileDiff.diff(before, after));
 			}
 			else {
 				System.out.println("\n" + jmhAllocNote(result)
@@ -216,28 +233,152 @@ public class JvmlensProfiler implements ExternalProfiler {
 			System.out.println("jvmlens: could not summarize the benchmark recording: " + ex.getMessage());
 		}
 		finally {
-			retainRecording(norm, result.getParams().getForks());
+			retainRecording(result, norm);
 		}
 		return Collections.<Result>emptyList();
 	}
 
 	/**
-	 * The header for a {@code baseline=} run: a measured allocation A/B verdict (#104)
-	 * when both this run and the kept baseline have JMH's exact
-	 * {@code gc.alloc.rate.norm}, reconciled against the sampled diff total. Falls back
-	 * to the {@link #jmhAllocNote} hint otherwise.
+	 * The header for a {@code baseline=} run: a measured <em>throughput</em> A/B verdict
+	 * (#112) and a measured <em>allocation</em> A/B verdict (#104), each gated on JMH's
+	 * exact numbers and reconciled against the sampled diff below. Guards the
+	 * multi-method footgun (#112 finding 2): if the kept baseline was recorded for a
+	 * <em>different</em> benchmark method than this trial, the per-method comparison
+	 * would be nonsense, so it warns and skips the measured verdicts rather than emitting
+	 * confident wrong numbers.
 	 */
-	private String measuredAbHead(Result<?> norm, BenchmarkResult result, double sampledPct) {
+	private String measuredHead(Result<?> norm, BenchmarkResult result, ProfileSummary before, ProfileSummary after,
+			double sampledPct) {
+		Measured base = readMeasured(this.baseline);
+		if (base == null) {
+			return "> Measured A/B unavailable — re-run the baseline with `keep=` (and `-prof gc`) so the "
+					+ "next diff can gate on exact numbers (#104/#112). Sampled diff below.\n\n";
+		}
+		String current = result.getParams().getBenchmark();
+		if (base.benchmark != null && current != null && !base.benchmark.equals(current)) {
+			return String.format(Locale.ROOT,
+					"> ⚠ Baseline mismatch — the kept baseline is for `%s`, this trial is `%s`. The inline "
+							+ "`baseline=` matches a single benchmark method; record a per-benchmark baseline. "
+							+ "Skipping the measured A/B to avoid confident wrong numbers (#112). Sampled diff "
+							+ "below.\n\n",
+					simpleName(base.benchmark), simpleName(current));
+		}
+		return throughputHead(result, base, before, after) + allocHead(norm, result, base, sampledPct);
+	}
+
+	/**
+	 * The measured throughput A/B verdict (#112 finding 1) — the CPU analog of the
+	 * allocation verdict. Empty when the baseline has no recorded throughput.
+	 */
+	private String throughputHead(BenchmarkResult result, Measured base, ProfileSummary before, ProfileSummary after) {
+		Result<?> primary = result.getPrimaryResult();
+		if (primary == null || base.tput == null) {
+			return "";
+		}
+		int forks = Math.min(result.getParams().getForks(), base.forks);
+		return throughputVerdict(base.tput, base.tputErr, primary.getScore(), errOrZero(primary), forks, base.tputUnit,
+				topHotPathShift(before, after)) + "\n";
+	}
+
+	/**
+	 * The measured allocation A/B verdict (#104), or the {@link #jmhAllocNote} hint when
+	 * this run lacks {@code -prof gc}, or a re-run hint when the baseline lacks it.
+	 */
+	private String allocHead(Result<?> norm, BenchmarkResult result, Measured base, double sampledPct) {
 		if (norm == null) {
 			return jmhAllocNote(result);
 		}
-		double[] base = readMeasured(this.baseline);
-		if (base == null) {
-			return "> Measured A/B unavailable — re-run the baseline with `-prof gc` (and `keep=`) so the "
-					+ "next diff can gate on exact bytes/op (#104). Sampled diff below.\n\n";
+		if (base.bop == null) {
+			return "> Measured allocation A/B unavailable — re-run the baseline with `-prof gc` so the next "
+					+ "diff can gate on exact bytes/op (#104).\n\n";
 		}
-		int forks = Math.min(result.getParams().getForks(), (int) base[2]);
-		return allocVerdict(base[0], base[1], norm.getScore(), errOrZero(norm), forks, sampledPct) + "\n";
+		int forks = Math.min(result.getParams().getForks(), base.forks);
+		return allocVerdict(base.bop, base.bopErr, norm.getScore(), errOrZero(norm), forks, sampledPct) + "\n";
+	}
+
+	/**
+	 * A measured throughput A/B verdict with the same significance discipline as
+	 * {@link #allocVerdict}: SIGNIFICANT only if the relative Δ exceeds the combined
+	 * noise band <em>and</em> the confidence intervals don't overlap. When throughput is
+	 * flat but a sampled hot-path share moved, it says so — a CPU-share shift is not a
+	 * speedup (#112). Phrasing is direction-neutral (Δ%), since higher-is-better vs
+	 * lower-is-better depends on the JMH mode. Pure.
+	 */
+	static String throughputVerdict(double bMean, double bErr, double aMean, double aErr, int forks, String unit,
+			String hotShift) {
+		double pct = (bMean != 0) ? 100.0 * (aMean - bMean) / bMean : 0;
+		double band = (bMean != 0 && aMean != 0) ? 100.0 * (bErr / bMean + aErr / aMean) : 0;
+		boolean ciOverlap = !(aMean + aErr < bMean - bErr || aMean - aErr > bMean + bErr);
+		boolean significant = Math.abs(pct) > band && !ciOverlap;
+		String u = (unit == null || unit.isBlank()) ? "" : " " + unit;
+		StringBuilder b = new StringBuilder("> **Measured throughput A/B [exact]**: ");
+		b.append(humanScore(bMean)).append(u).append(" → ").append(humanScore(aMean)).append(u);
+		b.append(String.format(Locale.ROOT, " (Δ %+.1f%%, n=%d fork(s) each, noise band ±%.1f%%) → **%s**.", pct, forks,
+				band, significant ? "SIGNIFICANT" : "NOT significant"));
+		if (forks < 2) {
+			b.append(" ⚠ a single fork understates cross-fork variance — re-run with `-f 2`+ for a real band.");
+		}
+		if (!significant && hotShift != null && !hotShift.isEmpty()) {
+			b.append(" ⚠ the sampled hot-path share moved (")
+				.append(hotShift)
+				.append(") but throughput is flat — a CPU-share shift is not a speedup; the win (if any) is in "
+						+ "allocation/GC.");
+		}
+		return b.append('\n').toString();
+	}
+
+	/**
+	 * The hot path whose <em>share</em> moved most between the two runs, as
+	 * {@code method b%→a%} (or {@code ""} when none shifted by {@value #HOT_SHIFT_PP}
+	 * ·100 pp) — names the row a flat-throughput caveat is about.
+	 */
+	private static String topHotPathShift(ProfileSummary before, ProfileSummary after) {
+		Map<String, Double> bs = sharesByName(before.hotPaths());
+		Map<String, Double> as = sharesByName(after.hotPaths());
+		Set<String> names = new LinkedHashSet<>(bs.keySet());
+		names.addAll(as.keySet());
+		String best = null;
+		double bestDelta = 0;
+		double bShare = 0;
+		double aShare = 0;
+		for (String name : names) {
+			double sb = bs.getOrDefault(name, 0.0);
+			double sa = as.getOrDefault(name, 0.0);
+			if (Math.abs(sa - sb) > bestDelta) {
+				bestDelta = Math.abs(sa - sb);
+				best = name;
+				bShare = sb;
+				aShare = sa;
+			}
+		}
+		if (best == null || bestDelta < HOT_SHIFT_PP) {
+			return "";
+		}
+		return simpleName(best) + String.format(Locale.ROOT, " %.0f%%→%.0f%%", bShare * 100, aShare * 100);
+	}
+
+	private static Map<String, Double> sharesByName(List<Ranked> rows) {
+		Map<String, Double> m = new LinkedHashMap<>();
+		rows.forEach((r) -> m.merge(r.name(), r.share(), Double::sum));
+		return m;
+	}
+
+	/** The simple {@code Type.method} tail of a fully-qualified name, for legibility. */
+	private static String simpleName(String fqn) {
+		String[] parts = fqn.split("\\.");
+		return (parts.length >= 2) ? parts[parts.length - 2] + "." + parts[parts.length - 1] : fqn;
+	}
+
+	/** Humanize a JMH primary score (throughput) with a few significant figures. */
+	private static String humanScore(double score) {
+		if (score == 0.0) {
+			return "0";
+		}
+		double abs = Math.abs(score);
+		if (abs >= 1000 || abs < 0.001) {
+			return String.format(Locale.ROOT, "%.4g", score);
+		}
+		return String.format(Locale.ROOT, "%.4f", score);
 	}
 
 	/**
@@ -319,19 +460,44 @@ public class JvmlensProfiler implements ExternalProfiler {
 	}
 
 	/**
-	 * Read a kept recording's sidecar {@code <jfr>.bop} ({@code mean err forks}), or
-	 * null.
+	 * Read a kept recording's {@code <jfr>.bop} sidecar (space-separated
+	 * {@code key=value} pairs, written by {@link #sidecar}), or {@code null} if
+	 * missing/unreadable.
 	 */
-	private static double[] readMeasured(Path jfr) {
-		Path bop = Path.of(jfr + ".bop");
+	static Measured readMeasured(Path jfr) {
 		try {
-			String[] parts = Files.readString(bop).trim().split("\\s+");
-			double err = Double.parseDouble(parts[1]);
-			return new double[] { Double.parseDouble(parts[0]), Double.isNaN(err) ? 0.0 : err,
-					Double.parseDouble(parts[2]) };
+			Map<String, String> kv = new LinkedHashMap<>();
+			for (String tok : Files.readString(Path.of(jfr + ".bop")).trim().split("\\s+")) {
+				int eq = tok.indexOf('=');
+				if (eq > 0) {
+					kv.put(tok.substring(0, eq), tok.substring(eq + 1));
+				}
+			}
+			return new Measured(kv.get("benchmark"), (int) num(kv.get("forks"), 1), boxed(kv.get("bop")),
+					num(kv.get("boperr"), 0), boxed(kv.get("tput")), num(kv.get("tputerr"), 0), kv.get("tputunit"));
 		}
 		catch (IOException | RuntimeException ignored) {
 			return null; // missing/unreadable sidecar — fall back to the no-baseline note
+		}
+	}
+
+	private static double num(String s, double fallback) {
+		try {
+			double v = Double.parseDouble(s);
+			return Double.isNaN(v) ? fallback : v;
+		}
+		catch (NumberFormatException | NullPointerException ignored) {
+			return fallback;
+		}
+	}
+
+	private static Double boxed(String s) {
+		try {
+			double v = Double.parseDouble(s);
+			return Double.isNaN(v) ? null : v;
+		}
+		catch (NumberFormatException | NullPointerException ignored) {
+			return null;
 		}
 	}
 
@@ -369,19 +535,17 @@ public class JvmlensProfiler implements ExternalProfiler {
 
 	/**
 	 * Keep the fork's recording at {@code keep} (for the next run's baseline), else
-	 * delete it. When kept and JMH measured exact bytes/op this run, also persist a
-	 * {@code <keep>.bop} sidecar ({@code mean err forks}) so the next {@code baseline=}
-	 * run can render the measured A/B verdict (#104).
+	 * delete it. When kept, also persist a {@code <keep>.bop} sidecar (the benchmark,
+	 * fork count, measured throughput, and exact bytes/op when {@code -prof gc} was on)
+	 * so the next {@code baseline=} run can render the measured throughput (#112) +
+	 * allocation (#104) A/B verdicts and detect a benchmark mismatch.
 	 */
-	private void retainRecording(Result<?> norm, int forks) {
+	private void retainRecording(BenchmarkResult result, Result<?> norm) {
 		try {
 			if (this.keep != null) {
 				Files.move(this.jfr, this.keep, StandardCopyOption.REPLACE_EXISTING);
 				System.out.println("jvmlens: recording kept at " + this.keep);
-				if (norm != null) {
-					Files.writeString(Path.of(this.keep + ".bop"),
-							norm.getScore() + " " + errOrZero(norm) + " " + forks);
-				}
+				Files.writeString(Path.of(this.keep + ".bop"), sidecar(result, norm));
 			}
 			else {
 				Files.deleteIfExists(this.jfr);
@@ -390,6 +554,31 @@ public class JvmlensProfiler implements ExternalProfiler {
 		catch (IOException ignored) {
 			// best-effort retention/cleanup of the temp recording
 		}
+	}
+
+	/**
+	 * The {@code key=value} sidecar line for {@link #retainRecording} /
+	 * {@link #readMeasured}.
+	 */
+	private static String sidecar(BenchmarkResult result, Result<?> norm) {
+		StringBuilder b = new StringBuilder();
+		String bench = result.getParams().getBenchmark();
+		if (bench != null) {
+			b.append("benchmark=").append(bench).append(' ');
+		}
+		b.append("forks=").append(result.getParams().getForks());
+		Result<?> primary = result.getPrimaryResult();
+		if (primary != null) {
+			b.append(" tput=").append(primary.getScore()).append(" tputerr=").append(errOrZero(primary));
+			String unit = primary.getScoreUnit();
+			if (unit != null && !unit.isBlank()) {
+				b.append(" tputunit=").append(unit);
+			}
+		}
+		if (norm != null) {
+			b.append(" bop=").append(norm.getScore()).append(" boperr=").append(errOrZero(norm));
+		}
+		return b.toString();
 	}
 
 	@Override
@@ -405,6 +594,40 @@ public class JvmlensProfiler implements ExternalProfiler {
 	@Override
 	public String getDescription() {
 		return "jvmlens — LLM-ready JFR summary of the benchmark, printed when the trial ends";
+	}
+
+	/**
+	 * A kept recording's measured-numbers sidecar ({@code <jfr>.bop}): the benchmark it
+	 * was recorded for, fork count, exact bytes/op ({@code bop}, when {@code -prof gc}
+	 * was on), and the primary throughput score, each with its error term. Any field may
+	 * be absent.
+	 */
+	static final class Measured {
+
+		final String benchmark;
+
+		final int forks;
+
+		final Double bop;
+
+		final double bopErr;
+
+		final Double tput;
+
+		final double tputErr;
+
+		final String tputUnit;
+
+		Measured(String benchmark, int forks, Double bop, double bopErr, Double tput, double tputErr, String tputUnit) {
+			this.benchmark = benchmark;
+			this.forks = forks;
+			this.bop = bop;
+			this.bopErr = bopErr;
+			this.tput = tput;
+			this.tputErr = tputErr;
+			this.tputUnit = tputUnit;
+		}
+
 	}
 
 }

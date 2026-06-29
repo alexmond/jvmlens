@@ -1,8 +1,11 @@
 package org.alexmond.jvmlens.jmh;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collection;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.openjdk.jmh.profile.ProfilerException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -126,6 +129,57 @@ class JvmlensProfilerTest {
 	void dispersionNoteSilentForASingleFork() {
 		// a single fork has no error term (err=0) → no before-band to compare.
 		assertThat(JvmlensProfiler.dispersionNote(1_000_000, 0, 700_000, 0, -30.0)).isEmpty();
+	}
+
+	@Test
+	void throughputVerdictFlagsAFlatThroughputWithAMovedHotShare() {
+		// #112 finding 1, the near-miss: throughput flat (0.191 → 0.198, within noise)
+		// but a
+		// sampled hot-path share collapsed 37%→18% — a CPU-share shift is NOT a speedup.
+		String v = JvmlensProfiler.throughputVerdict(0.191, 0.010, 0.198, 0.010, 3, "ops/us",
+				"Executor.executeArguments 37%→18%");
+		assertThat(v).contains("Measured throughput A/B")
+			.contains("NOT significant")
+			.contains("ops/us")
+			.contains("hot-path share moved")
+			.contains("executeArguments 37%→18%")
+			.contains("not a speedup");
+	}
+
+	@Test
+	void throughputVerdictCallsARealSpeedupSignificantWithNoHotShareCaveat() {
+		String v = JvmlensProfiler.throughputVerdict(0.10, 0.002, 0.20, 0.002, 4, "ops/us", "Foo.bar 50%→90%");
+		assertThat(v).contains("SIGNIFICANT").doesNotContain("NOT significant").doesNotContain("not a speedup");
+	}
+
+	@Test
+	void readsTheKeyValueSidecarAndMatchesByBenchmark(@TempDir Path tmp) throws Exception {
+		// #112 finding 2: the sidecar records WHICH benchmark it measured, so the next
+		// run can
+		// match by name instead of comparing every method against one stale baseline.
+		Path jfr = tmp.resolve("before.jfr");
+		Files.writeString(Path.of(jfr + ".bop"),
+				"benchmark=com.acme.FeatureBenchmark.sprigPipeline forks=3 tput=0.191 tputerr=0.01 "
+						+ "tputunit=ops/us bop=3488.0 boperr=2.1");
+		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(jfr);
+		assertThat(m).isNotNull();
+		assertThat(m.benchmark).isEqualTo("com.acme.FeatureBenchmark.sprigPipeline");
+		assertThat(m.forks).isEqualTo(3);
+		assertThat(m.tput).isEqualTo(0.191);
+		assertThat(m.bop).isEqualTo(3488.0);
+		assertThat(m.tputUnit).isEqualTo("ops/us");
+	}
+
+	@Test
+	void readMeasuredToleratesAMissingSidecarAndAbsentKeys(@TempDir Path tmp) throws Exception {
+		assertThat(JvmlensProfiler.readMeasured(tmp.resolve("nope.jfr"))).isNull();
+		Path jfr = tmp.resolve("partial.jfr");
+		Files.writeString(Path.of(jfr + ".bop"), "benchmark=com.acme.B.m forks=2"); // no
+																					// tput/bop
+		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(jfr);
+		assertThat(m.tput).isNull();
+		assertThat(m.bop).isNull();
+		assertThat(m.benchmark).isEqualTo("com.acme.B.m");
 	}
 
 }
