@@ -12,19 +12,24 @@ reference see xref:usage.adoc[Usage].
 
 == What you need first
 
-jvmlens is **not yet on Maven Central**, but every green build on `main` publishes a
-rolling **`latest`** pre-release, so you can grab the jars without building. Java 17+.
+The **library** (the dependency-free engine) is on Maven Central
+(`org.alexmond:jvmlens-engine`). The **runnable jars** (CLI, agent, JMH profiler) ship as
+GitHub release assets — grab a tagged release, or the rolling **`latest`** pre-release (every
+green build on `main`), no build required. Java 17+.
 
 [source,bash]
 ----
 mkdir -p tools
+# a tagged release (set VER to the latest 0.x):
+VER=0.2.0
+curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens.jar
+curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-agent.jar
+curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-jmh.jar
+# …or the rolling `latest` pre-release (stable URL, newest green build on main):
 curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
-curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-agent.jar
-curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-jmh.jar
 ----
 
-The URLs are stable (always the most recent green build); it's a **pre-release**, so
-APIs may change until the first tagged release. Or build from source:
+Or build from source:
 
 [source,bash]
 ----
