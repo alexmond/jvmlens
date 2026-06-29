@@ -72,6 +72,12 @@ public final class Summarizer {
 
 	}
 
+	/**
+	 * A 0-byte, single-op I/O endpoint blocked at least this long is almost certainly a
+	 * child-process/pipe wait, not a network/DB peer (#121).
+	 */
+	private static final long PIPE_WAIT_NANOS = 1_000_000_000L;
+
 	private Summarizer() {
 	}
 
@@ -367,6 +373,20 @@ public final class Summarizer {
 			i++;
 		}
 		return String.format(java.util.Locale.ROOT, "%.1f %s", value, units[i]);
+	}
+
+	/**
+	 * The I/O endpoint teaser ({@code "<bytes> over <ops> ops"}), with a
+	 * child-process/pipe hint when the endpoint moved no bytes over a single op yet
+	 * blocked for a long time — the shape of shelling out and waiting on a subprocess,
+	 * which otherwise reads identically to a stalled network/DB peer (#121).
+	 */
+	static String ioTeaser(long bytes, long ops, long blockedNanos) {
+		String teaser = humanBytes(bytes) + " over " + ops + " ops";
+		if (bytes == 0 && ops == 1 && blockedNanos >= PIPE_WAIT_NANOS) {
+			teaser += " — likely a child-process/pipe wait, not a network peer";
+		}
+		return teaser;
 	}
 
 	/** The most-sampled two-segment package among application frames, or {@code null}. */
@@ -742,9 +762,8 @@ public final class Summarizer {
 		/** Per-endpoint teaser: humanized bytes + op count. */
 		private Map<String, String> ioTeasers() {
 			Map<String, String> teasers = new HashMap<>();
-			this.ioByEndpoint.keySet()
-				.forEach((ep) -> teasers.put(ep, humanBytes(this.ioBytes.getOrDefault(ep, 0L)) + " over "
-						+ this.ioOps.getOrDefault(ep, 0L) + " ops"));
+			this.ioByEndpoint.forEach((ep, nanos) -> teasers.put(ep,
+					ioTeaser(this.ioBytes.getOrDefault(ep, 0L), this.ioOps.getOrDefault(ep, 0L), nanos)));
 			return teasers;
 		}
 

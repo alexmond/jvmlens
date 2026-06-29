@@ -38,6 +38,15 @@ class ScopeTest {
 	}
 
 	@Test
+	void excludeWinsEvenInsideAnIncludePackage() {
+		// #121: -x carves a test/generated class out of an -a roll-up that shares the
+		// root
+		Scope s = Scope.of(List.of("org.alexmond.jhelm"), List.of("org.alexmond.jhelm.core.KpsComparisonTest"));
+		assertThat(s.isApplication("org.alexmond.jhelm.Render")).isTrue();
+		assertThat(s.isApplication("org.alexmond.jhelm.core.KpsComparisonTest")).isFalse();
+	}
+
+	@Test
 	void treatsNativeFramesAsNonApplication() {
 		Scope s = Scope.defaults();
 		assertThat(s.isApplication("libjvm.so")).isFalse();
