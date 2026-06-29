@@ -185,9 +185,11 @@ emitting confident wrong numbers — record a per-benchmark baseline.
 hot-frame / allocation shapes to a one-line direction, each grounded in the row that
 triggered it — e.g. `DoubleToDecimal`/`formatUnsignedInt` → "number→string formatting", a
 `LinkedList$ListItr.<init>` self-time → "per-iteration iterator allocation",
-`AbstractStringBuilder.ensureCapacity` → "presize the buffer". It is **off by default** (the
-report stays clean data) and every line is tagged `[possible]` — a direction to investigate,
-never an assertion.
+`AbstractStringBuilder.ensureCapacity` → "presize the buffer", and per-call regex compilation
+(`java.util.regex.Pattern.*` leaves, or a `String.replaceAll(String,…)`/`matches`/`split`
+source line) → "hoist the `Pattern` to a `static final` field and reuse `Matcher`". It is **off
+by default** (the report stays clean data) and every line is tagged `[possible]` — a direction
+to investigate, never an assertion.
 
 [source,bash]
 ----
