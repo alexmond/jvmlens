@@ -63,9 +63,10 @@ public final class ProfileDiff {
 		sampledAllocNoiseNote(md, before.allocBytes(), after.allocBytes());
 		md.append('\n');
 		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(),
-				redistributionNote(before.execSamples(), after.execSamples(), "samples"));
+				redistributionNote(before.execSamples(), after.execSamples(), "samples", true));
+		flatExecSampleCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
 		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
-				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc"));
+				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc", false));
 		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
 				before.allocBytes() > 0 || after.allocBytes() > 0);
 		allocTypeRollup(md, before.allocSites(), after.allocSites());
@@ -94,28 +95,42 @@ public final class ProfileDiff {
 	}
 
 	/**
-	 * A hedge note for a row whose absolute change <em>opposes</em> the section's total
-	 * change — almost certainly JFR <em>sampling</em> redistribution, not a real per-row
-	 * regression. For allocation (#52): when the dominant allocator shrinks, the sampler
-	 * reattributes weight toward whatever's next, so a flat site's <em>attributed</em>
-	 * bytes balloon. For CPU hot paths (#110 finding 2): when total execution samples
-	 * move, a row's share/absolute can rise purely because the rest of the profile shrank
-	 * — so a ▲ row need not mean the method got slower. Returns {@code null} when the
-	 * total didn't meaningfully move (no redistribution context to give). Annotates only
-	 * — never suppresses or re-ranks the row, since a genuine localized regression on a
-	 * shifting run looks the same and the absolute anchor (#43/#44) must stay legible.
+	 * A hedge note for a row whose change is more likely JFR <em>sampling</em>
+	 * redistribution than a real per-row regression. Two cases:
+	 * <ul>
+	 * <li><strong>Total moved</strong> (≥{@value #MIN_REL_CHANGE} rel): hedge a row whose
+	 * absolute change <em>opposes</em> the total. For allocation (#52), when the dominant
+	 * allocator shrinks the sampler reattributes weight to the next site; for CPU hot
+	 * paths (#110), a row can rise just because the rest of the profile shrank.</li>
+	 * <li><strong>Total ~flat</strong> and {@code hedgeFlatTotalRise} (CPU only, #122): a
+	 * frame that rose materially under a conserved total is a <em>larger share</em>, not
+	 * necessarily more work — the freed samples of a shrinking sibling land here, and a
+	 * fixed-duration capture of a now-faster workload runs more iterations. A bare ▲
+	 * reads as a regression; flag it.</li>
+	 * </ul>
+	 * Annotates only — never suppresses or re-ranks the row, since a genuine localized
+	 * regression looks the same and the absolute anchor (#43/#44) must stay legible.
 	 * @param noun the total's unit for the message (e.g. {@code "alloc"},
 	 * {@code "samples"})
+	 * @param hedgeFlatTotalRise also hedge ▲ rows when the total is ~flat (CPU diffs)
 	 */
-	private static RowNote redistributionNote(long totalBefore, long totalAfter, String noun) {
-		long totalDelta = totalAfter - totalBefore;
-		if (totalBefore <= 0 || Math.abs((double) totalDelta) / totalBefore < MIN_REL_CHANGE) {
+	private static RowNote redistributionNote(long totalBefore, long totalAfter, String noun,
+			boolean hedgeFlatTotalRise) {
+		if (totalBefore <= 0) {
 			return null;
 		}
-		String dir = (totalDelta < 0) ? "fell" : "rose";
-		long pct = Math.round(100.0 * Math.abs(totalDelta) / totalBefore);
-		return (delta) -> (delta != 0 && (delta > 0) != (totalDelta > 0))
-				? "  (possible sampling redistribution — total " + noun + " " + dir + " " + pct + "%)" : "";
+		long totalDelta = totalAfter - totalBefore;
+		if (Math.abs((double) totalDelta) / totalBefore >= MIN_REL_CHANGE) {
+			String dir = (totalDelta < 0) ? "fell" : "rose";
+			long pct = Math.round(100.0 * Math.abs(totalDelta) / totalBefore);
+			return (delta) -> (delta != 0 && (delta > 0) != (totalDelta > 0))
+					? "  (possible sampling redistribution — total " + noun + " " + dir + " " + pct + "%)" : "";
+		}
+		if (!hedgeFlatTotalRise) {
+			return null;
+		}
+		return (delta) -> (delta > 0) ? "  (possible sampling redistribution — total " + noun
+				+ " ~flat; a rise is a larger share, not necessarily more work)" : "";
 	}
 
 	/**
@@ -135,6 +150,49 @@ public final class ProfileDiff {
 				.append("% delta from a single recording can be within sampling noise; confirm with JMH "
 						+ "`-prof gc` (exact bytes/op) or diff multi-fork recordings.\n");
 		}
+	}
+
+	/**
+	 * A caveat under Hot paths when total exec samples are ~flat (#122): an absolute
+	 * exec-sample delta then conflates per-op cost with throughput — a frame can rise
+	 * just because a sibling shrank (redistribution), or, for a fixed-<em>duration</em>
+	 * capture of a now-faster workload, because more iterations ran in the window. So a
+	 * bare ▲ is not a regression; for a clean per-op CPU comparison use a fixed-iteration
+	 * {@code bench} A/B.
+	 */
+	private static void flatExecSampleCaveat(StringBuilder md, long before, long after, List<Ranked> beforePaths,
+			List<Ranked> afterPaths) {
+		if (before <= 0 || after <= 0 || !anyMoved(beforePaths, afterPaths)) {
+			return;
+		}
+		if (Math.abs((double) (after - before)) / before < MIN_REL_CHANGE) {
+			md.append("> ⚠ Total exec samples are ~flat — absolute hot-path deltas conflate per-op cost with "
+					+ "throughput (a frame can rise because a sibling shrank, or because a faster run did more "
+					+ "iterations in a fixed-duration capture). For a clean per-op comparison use a fixed-iteration "
+					+ "`bench` A/B.\n\n");
+		}
+	}
+
+	/**
+	 * Whether any row moved enough to show ({@code NEW}/{@code GONE} or ≥ the noise
+	 * floor).
+	 */
+	private static boolean anyMoved(List<Ranked> before, List<Ranked> after) {
+		Map<String, Long> bc = counts(before);
+		Map<String, Long> ac = counts(after);
+		Set<String> names = new LinkedHashSet<>(bc.keySet());
+		names.addAll(ac.keySet());
+		for (String name : names) {
+			Long b = bc.get(name);
+			Long a = ac.get(name);
+			if (b == null || a == null) {
+				return true;
+			}
+			if (b > 0 && Math.abs((double) (a - b)) / b >= MIN_REL_CHANGE) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void scalar(StringBuilder md, String label, long before, long after, String unit) {
