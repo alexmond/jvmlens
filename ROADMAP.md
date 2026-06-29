@@ -53,8 +53,8 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
       sample (CPU + memory + wait) per interval instead of overwriting; `jvmlens trend
       <file.jsonl>` reduces a multi-day run to a change-over-time digest with a hedged
       retention indicator. The "let it run for days, then check" loop.
-- [ ] Deadlock detection — wait-for-graph cycles / `ThreadMXBean.findDeadlockedThreads`
-      surfaced as a first-class `[measured]` signal (issue #23).
+- [x] Deadlock detection — wait-for-graph cycles / `ThreadMXBean.findDeadlockedThreads`
+      surfaced as a first-class `[measured]` signal (issue #23). Shipped in 0.1.0.
 - [ ] Optional: MCP-over-HTTP for multi-client/long-lived sidecars; agent embedding the
       MCP endpoint; agent dump-on-trigger (latency/error/OOM).
 - [x] async-profiler fidelity via ap-loader — `profile --engine async` captures with
@@ -91,8 +91,8 @@ multi-language, single-JVM, digest-not-spans, local-only.
 ## Explicitly deferred
 
 - GraalVM native single-binary (native build was dropped for now).
-- Maven Central publish (wired in the `release` profile; needs a verified
-  `org.alexmond` namespace + secrets; repo is private for now).
+- ~~Maven Central publish~~ — **done**: `jvmlens-engine` publishes to Central via the
+  `release` profile; the CLI/agent/JMH jars ship as GitHub release assets.
 - Memory/leak analysis depth (`oldobject`) — sparse signal in short runs; the
   GC-pause + alloc-site combo is the more reliable leak signal. Don't let it
   eat weeks.

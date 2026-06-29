@@ -27,7 +27,7 @@ or with the `gh` CLI:
 
 [source,bash,subs="attributes+"]
 ----
-gh release download v{page-component-version} -R alexmond/jvmlens -p 'jvmlens.jar'
+gh release download {page-component-version} -R alexmond/jvmlens -p 'jvmlens.jar'
 # pre-release rolling build (latest main): use `latest` instead of the tag
 gh release download latest -R alexmond/jvmlens -p 'jvmlens.jar' -p 'jvmlens-agent.jar' -p 'jvmlens-jmh.jar'
 ----

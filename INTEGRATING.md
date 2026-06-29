@@ -22,22 +22,21 @@ the jvmlens jar from inside the builder checkout against the builder process.
 
 ## What you need first
 
-jvmlens is **not yet released to Maven Central**, but every green build on `main`
-publishes a rolling **`latest`** pre-release, so you can grab the jars without
-building. Java 17+.
+The **library** (`org.alexmond:jvmlens-engine`, the dependency-free engine) is on Maven
+Central. The **runnable jars** (CLI, agent, JMH profiler) ship as GitHub release assets —
+grab a tagged release, or the rolling **`latest`** pre-release (every green build on `main`),
+no build required. Java 17+.
 
 ```bash
 mkdir -p tools
-# CLI + MCP server (analyze/profile/watch/mcp):
+# a tagged release (set VER to the latest 0.x — tags have no `v` prefix):
+VER=0.2.0
+curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens.jar
+curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-agent.jar
+curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-jmh.jar
+# …or the rolling `latest` pre-release (stable URL, newest green build on main):
 curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
-# the in-process -javaagent jar (Path C):
-curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-agent.jar
-# the JMH profiler jar (optimize loop, optional):
-curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens-jmh.jar
 ```
-
-These URLs are stable — `latest` always points at the most recent green build.
-It's a **pre-release**; APIs may change until the first tagged release.
 
 <details><summary>Or build from source</summary>
 

@@ -1,5 +1,51 @@
 = Changelog
 
+== 0.2.0
+
+The optimize→measure loop gets honest about *measured* significance — so a sampled swing
+can't be mistaken for a real win — plus richer source attribution. All from dogfooding real
+JVM projects (the gotmpl4j field-findings).
+
+=== Measured A/B verdicts (gate the loop on the wall-clock, not the sampler)
+
+* **Measured allocation A/B** — with JMH's `-prof gc` and a `baseline=`, the JMH profiler prints
+  an exact bytes/op before→after verdict that is `SIGNIFICANT` only if the relative Δ exceeds the
+  combined noise band *and* the confidence intervals don't overlap; it reconciles the sampled
+  diff total against the measured one and flags a disagreement as likely sampling
+  redistribution / JIT elision (#104).
+* **Measured throughput A/B** — the CPU analog: an exact primary-score (ops/s, us/op, …) verdict
+  with the same significance test. When a sampled hot-path share moved but wall-clock throughput
+  is flat, it says so explicitly — *a CPU-share shift is not a speedup* (#112).
+* **Dispersion verdict** — a genuine structural allocation removal collapses the cross-fork
+  variance band (the removed allocation *was* the noise); a `~500×` collapse is flagged as a
+  strong real-win signal the mean alone can't give, and a now near-deterministic bytes/op emits a
+  **STOP signal** (diminishing returns — pivot off allocation) (#110).
+* **Per-benchmark baseline match** — the inline `baseline=` now records the benchmark method in
+  its sidecar; a baseline recorded for a *different* method is detected and the verdict skipped
+  with a warning, instead of emitting confident wrong per-method numbers (#112).
+* **JMH `-prof gc` header** — the summary leads with JMH's exact `gc.alloc.rate.norm` next to
+  jvmlens's sampled per-site bytes, and drops the JMH harness control socket from External I/O
+  noise (#100).
+
+=== Sharper attribution & honest hedges
+
+* **`analyze --source <roots>`** — echoes the source-line *text* inline at each `file:line`
+  anchor (`floatString:129 ⟶ mantissa.substring(…)`), so a coding agent sees the offending line
+  without opening the file; opt-in, degrades silently (#109).
+* **Allocation-by-type rollup** — the diff sums allocation sites by declaring type, so an
+  extract-method refactor (caller ▼ + a `NEW` callee) reads as one net change instead of a
+  regression (#99).
+* **Escape-analysis caveat** — an allocation site dominated by a boxed primitive or captured
+  lambda is tagged as possibly scalar-replaced (a *false lever*); the `--hints` directions hedge
+  the same, so you verify with `-prof gc` before chasing it (#103).
+* **CPU-share redistribution hedge** — the diff hedges a hot-path `▲` row whose absolute samples
+  rose while total exec samples fell, so a share that climbed only because the rest of the
+  profile shrank isn't misread as a regression (#110).
+
+== 0.1.1
+
+* License corrected to Apache-2.0 across the build and metadata.
+
 == 0.1.0
 
 First public release. Proof-of-concept graduated from the incubator, then built out into a
