@@ -56,8 +56,10 @@ public final class FixHints {
 							+ "(if it escapes; C2 scalar-replaces non-escaping captures — confirm with -prof gc)"),
 			rule("ensureCapacity|AbstractStringBuilder|StringBuilder", Lever.STRUCTURAL,
 					"StringBuilder growth — presize the buffer to the expected length"),
-			rule("Pattern\\.(compile|matcher)|regex", Lever.STRUCTURAL,
-					"regex in a hot path — precompile and reuse the Pattern"),
+			rule("java\\.util\\.regex|Pattern\\.(compile|matcher|clazz|expr)|\\.(replaceAll|replaceFirst|matches|split)\\(",
+					Lever.STRUCTURAL,
+					"regex compiled per call — hoist the Pattern to a `static final` field and reuse Matcher "
+							+ "(String.replaceAll(String,…)/matches/split/replaceFirst recompile the regex every call)"),
 			rule("HashMap.*resize|ArrayList.*grow|Arrays\\.copyOf|hashtable.*rehash", Lever.STRUCTURAL,
 					"collection/array resize or copy — presize or reuse the backing store"),
 			rule("Integer\\.valueOf|Long\\.valueOf|Double\\.valueOf|\\.intValue\\(\\)", Lever.STRUCTURAL,

@@ -45,6 +45,32 @@ class FixHintsTest {
 	}
 
 	@Test
+	void namesPerCallRegexCompilationFromAReplaceAllSourceLine() {
+		// #119: String.replaceAll(String,…) silently recompiles the regex each call —
+		// detect it
+		// from the (--source) line and name the hoist-to-static-final fix, with the call
+		// site.
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(), List.of(),
+				List.of(new Ranked("com.acme.PrintfFunction.lambda$printf$0", 1.0, 1000,
+						":44 · Pattern 1.0 GB ⟶ format = format.replaceAll(\"(?<!%)%([gG])\", \"%s\")")),
+				List.of(), List.of(), List.of(), "cause", "com.acme");
+		String md = FixHints.render(s);
+		assertThat(md).contains("[structural] regex compiled per call")
+			.contains("static final")
+			.contains("`com.acme.PrintfFunction.lambda$printf$0`");
+	}
+
+	@Test
+	void namesPerCallRegexCompilationFromPatternLeaves() {
+		// #119: the regex-compile internals as hot leaves are the other tell of a
+		// per-call compile.
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(),
+				List.of(new Ranked("java.util.regex.Pattern.compile", 0.5, 500, null)), List.of(), List.of(), List.of(),
+				List.of(), "cause", "com.acme");
+		assertThat(FixHints.render(s)).contains("[structural] regex compiled per call");
+	}
+
+	@Test
 	void deduplicatesAndStaysEmptyForCleanCode() {
 		ProfileSummary clean = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0,
 				List.of(new Ranked("com.acme.Svc.compute", 1.0, 1000, null)), List.of(), List.of(), List.of(),
