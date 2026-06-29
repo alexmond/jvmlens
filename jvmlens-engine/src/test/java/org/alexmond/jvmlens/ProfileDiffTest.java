@@ -99,6 +99,26 @@ class ProfileDiffTest {
 		assertThat(line(d, "printText")).contains("▼").doesNotContain("redistribution");
 	}
 
+	@Test
+	void hedgesAHotPathRiseUnderAFlatExecSampleTotalAsRedistribution() {
+		// #122: total exec samples ~flat (1572→1551); parseWithCache fell,
+		// renderChartTemplates
+		// rose — the rise is a larger share of a conserved total, not more work.
+		ProfileSummary before = withSamples(1572, List.of(new Ranked("o.j.Engine.parseWithCache", 0.42, 658, null),
+				new Ranked("o.j.Engine.renderChartTemplates", 0.17, 264, null)));
+		ProfileSummary after = withSamples(1551, List.of(new Ranked("o.j.Engine.parseWithCache", 0.31, 474, null),
+				new Ranked("o.j.Engine.renderChartTemplates", 0.22, 338, null)));
+		String d = ProfileDiff.diff(before, after);
+
+		// the ▲ frame under a flat total is hedged as redistribution, not read as a
+		// regression
+		assertThat(line(d, "renderChartTemplates")).contains("▲").contains("total samples ~flat");
+		// the section caveat about per-op vs throughput fires (points at `bench`)
+		assertThat(d).contains("Total exec samples are ~flat").contains("bench");
+		// the ▼ frame (a real reduction) is not hedged
+		assertThat(line(d, "parseWithCache")).contains("▼").doesNotContain("redistribution");
+	}
+
 	private static String line(String diff, String needle) {
 		return List.of(diff.split("\n")).stream().filter((l) -> l.contains(needle)).findFirst().orElse("");
 	}

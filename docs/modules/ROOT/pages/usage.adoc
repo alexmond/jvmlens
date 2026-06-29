@@ -179,6 +179,14 @@ Because the inline `baseline=` matches a single benchmark method, a baseline JFR
 *different* method is detected and the measured verdict is **skipped with a warning** rather than
 emitting confident wrong numbers — record a per-benchmark baseline.
 
+The CPU hot-path diff applies the same redistribution hedge as allocation: a `▲` row whose absolute
+samples rose while the total *fell* — or rose while the total stayed *~flat* — is annotated
+`(possible sampling redistribution …)`, because under a conserved sample total a frame's rise is a
+larger *share*, not necessarily more work. When the total is ~flat the diff also notes that
+absolute exec-sample deltas conflate per-op cost with throughput (a fixed-duration capture of a
+faster run does more iterations) and points to a fixed-iteration `bench` A/B for a clean per-op
+comparison.
+
 === Fix-direction hints (`--hints`, opt-in)
 
 `--hints` appends a hedged `## Likely fix directions [possible]` section that maps recognized
