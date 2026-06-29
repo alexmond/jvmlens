@@ -322,6 +322,14 @@
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
                             <waitUntil>published</waitUntil>
+                            <!-- jvmlens-it is a test harness — keep it out of the published bundle.
+                                 excludeArtifacts is read once on the aggregator, so it drops just this
+                                 artifact while still publishing engine/cli/agent/jmh. maven.deploy.skip
+                                 does NOT work with this plugin; per-module skipPublishing would risk the
+                                 whole upload (jvmlens-it is the last reactor module). #117. -->
+                            <excludeArtifacts>
+                                <excludeArtifact>jvmlens-it</excludeArtifact>
+                            </excludeArtifacts>
                         </configuration>
                     </plugin>
                 </plugins>

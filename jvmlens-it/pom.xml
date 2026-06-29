@@ -14,10 +14,6 @@
     <description>Integration tests: a real Spring Boot + JPA host app run under the built agent jar
         (Testcontainers Postgres), to reproduce and gate agent-vs-framework issues end-to-end.</description>
 
-    <properties>
-        <!-- Nothing to publish; this module is a test harness. -->
-        <maven.deploy.skip>true</maven.deploy.skip>
-    </properties>
 
     <dependencies>
         <!-- A realistic host: web (servlets → `web` capture) + JPA/Hibernate (entity
@@ -83,5 +79,10 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- This module is a test harness with nothing to publish. It is kept off Maven Central via
+         the parent's central-publishing `excludeArtifacts` (NOT `maven.deploy.skip`, which that
+         aggregating plugin ignores, and NOT per-module `skipPublishing`, which would risk
+         skipping the whole bundle as this is the last reactor module). See #117. -->
 
 </project>
