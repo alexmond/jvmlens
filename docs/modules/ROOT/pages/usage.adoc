@@ -170,6 +170,15 @@ allocation. The diff also hedges a **CPU** hot-path `▲` row whose absolute sam
 total exec samples *fell* (`possible sampling redistribution — total samples fell N%`), so a share
 that climbed only because the rest of the profile shrank isn't misread as a regression.
 
+A **measured throughput A/B** verdict sits next to the allocation one — the CPU analog — gating on
+JMH's exact primary score (ops/s, us/op, …) with the same significance test. Its job is to stop a
+sampled hot-path swing being read as a speedup: if a hot-path share moved a lot but wall-clock
+throughput is *flat*, it says so explicitly (`the sampled hot-path share moved (executeArguments
+37%→18%) but throughput is flat — a CPU-share shift is not a speedup; the win is in allocation/GC`).
+Because the inline `baseline=` matches a single benchmark method, a baseline JFR recorded for a
+*different* method is detected and the measured verdict is **skipped with a warning** rather than
+emitting confident wrong numbers — record a per-benchmark baseline.
+
 === Fix-direction hints (`--hints`, opt-in)
 
 `--hints` appends a hedged `## Likely fix directions [possible]` section that maps recognized
