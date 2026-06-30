@@ -7,7 +7,9 @@ It's the human-perf-engineer companion to xref:ai-agent.adoc[jvmlens + your AI a
 
 The target is a real engine, not a benchmark toy: https://github.com/alexmond/gotmpl4j[gotmpl4j],
 a pure-Java implementation of Go's `text/template`. The hot path is table rendering — the kind of
-template every Helm chart and Hugo site leans on.
+template every Helm chart and Hugo site leans on. This case study is one chapter of a longer
+profile-driven tuning effort — the full sequence of jvmlens-found wins is on the
+https://www.alexmond.org/gotmpl4j/current/performance.html[gotmpl4j performance page].
 
 == 1. Profile — what jvmlens surfaced
 
@@ -131,3 +133,18 @@ $ ... -prof gc -prof "...JvmlensProfiler:appPackage=org.alexmond.gotmpl4j;baseli
 ----
 
 You don't have to trust the table. Run the recording and read the same top line.
+
+== Field-validated on real projects
+
+This loop isn't a demo — it's how two shipped projects are actually tuned, each with a
+profiling section that documents the jvmlens-found wins and the methodology:
+
+* **https://www.alexmond.org/gotmpl4j/current/performance.html[gotmpl4j — Performance]**: the
+  full _Optimization history_ this case study is drawn from — accessor caching, the `floatString`
+  rewrite above, per-thread scratch buffers, the `printf` regex pre-compile (−67% alloc), and the
+  O(n²) lexer fix — each found with jvmlens and proved with a multi-fork JMH `gc.alloc.rate.norm`
+  A/B.
+* **https://www.alexmond.org/jhelm/current/performance.html[jhelm — Performance]**: a
+  profile-driven Helm renderer measured against 540+ real-world charts, tuned with jvmlens's
+  live-attach capture and before→after **diff** (the redistribution-hedge and per-op-vs-throughput
+  cautions in xref:usage.adoc[Usage] came straight from that workload).
