@@ -5,6 +5,8 @@ nav:
   - modules/ROOT/nav.adoc
 asciidoc:
   attributes:
-    # javadoc.io auto-hosts versioned Javadoc for the Central artifact; compose the version
-    # in pages as {api-engine}/{page-component-version}/<class/path>.html
-    api-engine: https://javadoc.io/page/org.alexmond/jvmlens-engine
+    # javadoc.io auto-hosts versioned Javadoc for the Central artifact. Use the `/doc/` base:
+    # `{api-engine}/{page-component-version}` resolves to the version landing, and
+    # `{api-engine}/{page-component-version}/<class/path>.html` deep-links a class. (The `/page/`
+    # base redirects a bare-version link — no class path — to javadoc.io's homepage.)
+    api-engine: https://javadoc.io/doc/org.alexmond/jvmlens-engine
