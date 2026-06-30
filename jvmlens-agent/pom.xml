@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.alexmond</groupId>
         <artifactId>jvmlens-parent</artifactId>
-        <version>0.2.1-SNAPSHOT</version>
+        <version>0.2.1</version>
     </parent>
 
     <artifactId>jvmlens-agent</artifactId>
