@@ -119,6 +119,43 @@ class ProfileDiffTest {
 		assertThat(line(d, "parseWithCache")).contains("▼").doesNotContain("redistribution");
 	}
 
+	@Test
+	void hedgesAHotPathThatOutpacedAModestlyRisingTotalAsRedistribution() {
+		// #127: a fixed-duration web-render capture — total exec samples rose only 13%
+		// (901→1020) after an N+1 removal, but freed frames rose far more (renderLoop
+		// 227→364, share 25%→36%) because the faster loop did more renders in the fixed
+		// window. Neither the opposing-row hedge (#110, needs a falling row) nor the
+		// flat-total caveat (#122, needs a ~flat total) fires — so this rise read as a
+		// regression. Hedge the disproportionate mover and print the throughput caveat.
+		ProfileSummary before = withSamples(901,
+				List.of(new Ranked("o.j.ProfilingRenderTest.renderLoop", 0.25, 227, null),
+						new Ranked("o.j.BranchService.summarize", 0.30, 270, null)));
+		ProfileSummary after = withSamples(1020,
+				List.of(new Ranked("o.j.ProfilingRenderTest.renderLoop", 0.36, 364, null),
+						new Ranked("o.j.FlakyTestService.listFlaky", 0.14, 143, null)));
+		String d = ProfileDiff.diff(before, after);
+
+		// the frame that outpaced the +13% total (share 25%→36%) is hedged, not read as a
+		// regression
+		assertThat(line(d, "renderLoop")).contains("▲").contains("outpaced the +13% total");
+		// the section caveat points at a fixed-iteration `bench` for the per-op number
+		assertThat(d).contains("Hot-path shares shifted more than the +13% exec-sample total").contains("bench");
+	}
+
+	@Test
+	void doesNotHedgeAFrameThatTrackedTheRisingTotal() {
+		// A uniform slowdown: total and the frame both rose ~13% (share ~flat) — a real
+		// regression, not redistribution. No per-row hedge, no throughput caveat.
+		ProfileSummary before = withSamples(1000,
+				List.of(new Ranked("o.j.Svc.run", 0.50, 500, null), new Ranked("o.j.Svc.other", 0.50, 500, null)));
+		ProfileSummary after = withSamples(1130,
+				List.of(new Ranked("o.j.Svc.run", 0.50, 565, null), new Ranked("o.j.Svc.other", 0.50, 565, null)));
+		String d = ProfileDiff.diff(before, after);
+
+		assertThat(line(d, "Svc.run")).contains("▲").doesNotContain("redistribution");
+		assertThat(d).doesNotContain("shares shifted more than");
+	}
+
 	private static String line(String diff, String needle) {
 		return List.of(diff.split("\n")).stream().filter((l) -> l.contains(needle)).findFirst().orElse("");
 	}

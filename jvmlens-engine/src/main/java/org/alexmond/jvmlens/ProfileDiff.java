@@ -32,6 +32,13 @@ public final class ProfileDiff {
 	private static final double MIN_REL_CHANGE = 0.05;
 
 	/**
+	 * A hot-path frame whose absolute <em>share</em> shifted by at least this (fraction,
+	 * i.e. 0.05 = 5 percentage points) moved differently from the total — the
+	 * fixed-duration throughput / redistribution signature (#127).
+	 */
+	private static final double SHARE_SHIFT = 0.05;
+
+	/**
 	 * Below this many allocation samples (either side), per-site byte deltas are noise.
 	 */
 	private static final long LOW_ALLOC_SAMPLES = 200;
@@ -65,6 +72,7 @@ public final class ProfileDiff {
 		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(),
 				redistributionNote(before.execSamples(), after.execSamples(), "samples", true));
 		flatExecSampleCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
+		disproportionateShiftCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
 		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
 				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc", false));
 		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
@@ -123,13 +131,31 @@ public final class ProfileDiff {
 		if (Math.abs((double) totalDelta) / totalBefore >= MIN_REL_CHANGE) {
 			String dir = (totalDelta < 0) ? "fell" : "rose";
 			long pct = Math.round(100.0 * Math.abs(totalDelta) / totalBefore);
-			return (delta) -> (delta != 0 && (delta > 0) != (totalDelta > 0))
-					? "  (possible sampling redistribution — total " + noun + " " + dir + " " + pct + "%)" : "";
+			return (delta, shareShift) -> {
+				if (delta == 0) {
+					return "";
+				}
+				if ((delta > 0) != (totalDelta > 0)) {
+					return "  (possible sampling redistribution — total " + noun + " " + dir + " " + pct + "%)";
+				}
+				// Same direction as the total, but it outpaced the total (share rose).
+				// Under a
+				// fixed-duration CPU capture a now-faster workload runs more iterations,
+				// so an
+				// unchanged frame accrues more samples and gains share — hedge it (#127).
+				// A frame
+				// that merely tracked the total (flat share) is left alone.
+				if (hedgeFlatTotalRise && delta > 0 && shareShift >= SHARE_SHIFT) {
+					return "  (possible sampling redistribution — outpaced the +" + pct
+							+ "% total; a rising share, not necessarily more per-op work)";
+				}
+				return "";
+			};
 		}
 		if (!hedgeFlatTotalRise) {
 			return null;
 		}
-		return (delta) -> (delta > 0) ? "  (possible sampling redistribution — total " + noun
+		return (delta, shareShift) -> (delta > 0) ? "  (possible sampling redistribution — total " + noun
 				+ " ~flat; a rise is a larger share, not necessarily more work)" : "";
 	}
 
@@ -171,6 +197,46 @@ public final class ProfileDiff {
 					+ "iterations in a fixed-duration capture). For a clean per-op comparison use a fixed-iteration "
 					+ "`bench` A/B.\n\n");
 		}
+	}
+
+	/**
+	 * A caveat when total exec samples <em>rose</em> but a hot-path frame's share shifted
+	 * more than the total did (#127): the opposing-row hedge only catches frames moving
+	 * <em>against</em> the total, and the flat-total caveat (#122) needs a ~flat total —
+	 * so a frame that rose faster than a modestly-rising total (its share up) slips
+	 * through un-hedged. Under a fixed-duration capture that is the throughput confound:
+	 * a now-faster workload runs more iterations, so unchanged frames accrue more samples
+	 * and gain share. A falling total already reads as an improvement, so this fires only
+	 * on a rise.
+	 */
+	private static void disproportionateShiftCaveat(StringBuilder md, long before, long after, List<Ranked> beforePaths,
+			List<Ranked> afterPaths) {
+		if (before <= 0 || after <= before) {
+			return;
+		}
+		double totalRel = (double) (after - before) / before;
+		if (totalRel < MIN_REL_CHANGE || maxShareShift(beforePaths, afterPaths) < SHARE_SHIFT) {
+			return;
+		}
+		md.append("> ⚠ Hot-path shares shifted more than the +")
+			.append(Math.round(100.0 * totalRel))
+			.append("% exec-sample total moved — absolute hot-path deltas then conflate per-op cost with "
+					+ "throughput (a faster run does more iterations in a fixed-duration capture, so unchanged "
+					+ "frames accrue more samples). For a clean per-op comparison use a fixed-iteration `bench` "
+					+ "A/B.\n\n");
+	}
+
+	/** The largest absolute share shift (after − before) across all named frames. */
+	private static double maxShareShift(List<Ranked> before, List<Ranked> after) {
+		Map<String, Double> bs = shares(before);
+		Map<String, Double> as = shares(after);
+		Set<String> names = new LinkedHashSet<>(bs.keySet());
+		names.addAll(as.keySet());
+		double max = 0;
+		for (String name : names) {
+			max = Math.max(max, Math.abs(share(as, name) - share(bs, name)));
+		}
+		return max;
 	}
 
 	/**
@@ -253,7 +319,7 @@ public final class ProfileDiff {
 		}
 		String arrow = (delta > 0) ? "▲" : "▼";
 		double pct = (before > 0) ? (100.0 * delta / before) : 0;
-		String extra = (note != null) ? note.note(delta) : "";
+		String extra = (note != null) ? note.note(delta, aShare - bShare) : "";
 		return new String[] { String.valueOf(Math.abs(delta)),
 				String.format(Locale.ROOT, "- `%s` — %s → %s (%s %.0f%%) [share %.0f%%→%.0f%%]%s", name,
 						formatVal(before, unit), formatVal(after, unit), arrow, Math.abs(pct), bShare * 100,
@@ -393,13 +459,13 @@ public final class ProfileDiff {
 	}
 
 	/**
-	 * An optional per-row hedge note keyed on the row's absolute change ({@code ""} =
-	 * none).
+	 * An optional per-row hedge note keyed on the row's absolute change and its share
+	 * shift (after − before, as a fraction). Returns {@code ""} for no note.
 	 */
 	@FunctionalInterface
 	private interface RowNote {
 
-		String note(long delta);
+		String note(long delta, double shareShift);
 
 	}
 

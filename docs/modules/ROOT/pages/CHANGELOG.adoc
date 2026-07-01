@@ -1,5 +1,38 @@
 = Changelog
 
+== 0.2.2 (unreleased)
+
+More honest profile diffs, still from dogfooding real projects (the unitrack field-findings).
+
+* **Disproportionate-rise CPU hedge** — a fixed-duration capture of a now-faster workload runs
+  more iterations, so an unchanged hot-path frame accrues more samples and *gains share* even as
+  its per-op cost is flat. The diff now hedges a `▲` row that **outpaced a modestly-rising**
+  exec-sample total (its share climbed), and prints a throughput caveat pointing at a
+  fixed-iteration `bench` A/B for the clean per-op number. This closes the gap the opposing-row
+  hedge (#110, needs a falling row) and the flat-total caveat (#122, needs a ~flat total) both
+  missed (#127).
+
+== 0.2.1
+
+Publishing scope, a sharper regex hint, honest CPU-diff hedging, and scope-filter fixes — from
+the gotmpl4j/jhelm dogfooding loop.
+
+* **CPU flat-total redistribution hedge** — when total exec samples are ~flat, a hot-path `▲` row
+  is hedged as a larger *share* of a conserved total (not more work), and the diff adds a caveat
+  that fixed-duration exec-sample deltas conflate per-op cost with throughput — use a
+  fixed-iteration `bench` A/B (#122).
+* **`--hints` regex rule** — a `Pattern` compiled per call (or a `String.replaceAll`/`matches`/
+  `split`/`replaceFirst` on a hot line) now names the concrete fix: hoist the `Pattern` to a
+  `static final` field and reuse the `Matcher` (a *structural*, parity-safe change) (#119).
+* **Scope `-x` wins inside `-a`** — an exclude prefix now applies even within an include, instead
+  of the include short-circuiting and leaving an excluded (e.g. test) frame in the roll-up; plus a
+  child-process/pipe-wait I/O teaser and a surefire `profile <pid>` capture tip (#121).
+* **Maven Central publishing scope** — the test-only `jvmlens-it` module is kept off Central via
+  the aggregator's `excludeArtifacts` (the `central-publishing` plugin ignores `maven.deploy.skip`);
+  `jvmlens-engine`/`-cli`/`-agent`/`-jmh` still publish (#117).
+* **Docs** — the floatString case study now cross-references the gotmpl4j and jhelm performance
+  pages, where the same loop is worked end-to-end on real workloads (#125).
+
 == 0.2.0
 
 The optimize→measure loop gets honest about *measured* significance — so a sampled swing
