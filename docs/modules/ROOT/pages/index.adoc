@@ -1,4 +1,5 @@
 = jvmlens
+:description: LLM-ready JVM profiler — turns a JFR recording into a compact, source-attributed hot-path and allocation summary that AI coding agents can act on. Agent, MCP server, and CLI.
 
 Turn JVM runtime evidence into a compact, *LLM-ready* diagnosis.
 
