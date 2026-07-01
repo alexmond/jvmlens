@@ -11,6 +11,11 @@ More honest profile diffs, still from dogfooding real projects (the unitrack fie
   fixed-iteration `bench` A/B for the clean per-op number. This closes the gap the opposing-row
   hedge (#110, needs a falling row) and the flat-total caveat (#122, needs a ~flat total) both
   missed (#127).
+* **`trend` restart segmentation** — a multi-day monitor spanning rolling redeploys is no longer
+  skewed by each new pod's cold-start burst. `trend` detects a restart from the large gap it
+  leaves between sample timestamps, adds a `## Lifecycle` note, excludes each lifetime's first
+  (warmup) window from the steady-state aggregates, and assesses retention within the latest
+  lifetime only (old-object counts reset on restart). A gapless single run is unchanged (#129).
 
 == 0.2.1
 
