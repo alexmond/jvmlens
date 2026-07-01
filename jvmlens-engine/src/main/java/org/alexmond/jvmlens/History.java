@@ -1,5 +1,7 @@
 package org.alexmond.jvmlens;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -27,6 +29,20 @@ public final class History {
 
 	/** Old-object growth past this factor (first→last) hints at retention/leak. */
 	private static final double LEAK_FACTOR = 2.0;
+
+	/**
+	 * An inter-sample gap this many times the median gap marks a probable JVM restart:
+	 * the agent appends on a fixed interval, so a rolling redeploy (the pod is replaced;
+	 * on an RWO PVC the new pod can't append until the old one releases it) leaves a hole
+	 * far larger than one interval. History carries no explicit uptime/bootId, so the gap
+	 * is the signal (#129).
+	 */
+	private static final double RESTART_GAP_FACTOR = 2.5;
+
+	/**
+	 * Below this many samples there is no stable interval to judge a restart gap against.
+	 */
+	private static final int MIN_FOR_SEGMENTING = 4;
 
 	private History() {
 	}
@@ -117,12 +133,96 @@ public final class History {
 			.append(" snapshots over ")
 			.append(humanDuration(spanMs))
 			.append(".\n\n");
-		appendCpu(md, run);
-		appendMemory(md, run);
-		appendWait(md, run);
-		appendApplication(md, run);
-		appendRetention(md, run);
+
+		// A window spanning several JVM lifetimes (rolling redeploys) is skewed by each
+		// lifetime's cold-start burst (classload, warmup, JIT — a 5–10× outlier). Split
+		// at
+		// the restart gaps, drop each lifetime's first window from the steady-state
+		// aggregates, and assess retention within the latest lifetime only (old-object
+		// counts reset on restart). #129.
+		List<List<Sample>> segments = segments(run);
+		List<Sample> steady = run;
+		List<Sample> retentionRun = run;
+		if (segments.size() > 1) {
+			List<Sample> dropped = steadyState(segments);
+			List<Sample> lastSeg = lastSteadySegment(segments);
+			appendLifecycle(md, segments, run.size() - dropped.size());
+			steady = (dropped.size() >= 2) ? dropped : run;
+			retentionRun = (lastSeg.size() >= 2) ? lastSeg : run;
+		}
+		appendCpu(md, steady);
+		appendMemory(md, steady);
+		appendWait(md, steady);
+		appendApplication(md, steady);
+		appendRetention(md, retentionRun);
 		return md.toString();
+	}
+
+	/**
+	 * Split a time-sorted run into per-JVM-lifetime segments at inter-sample gaps ≥
+	 * {@link #RESTART_GAP_FACTOR}× the median gap (a probable restart). Returns a single
+	 * segment when the run is too short to establish an interval or no gap qualifies.
+	 */
+	private static List<List<Sample>> segments(List<Sample> run) {
+		List<List<Sample>> segs = new ArrayList<>();
+		long threshold = restartGapThreshold(run);
+		List<Sample> cur = new ArrayList<>();
+		cur.add(run.get(0));
+		for (int i = 1; i < run.size(); i++) {
+			if (threshold > 0 && run.get(i).t() - run.get(i - 1).t() >= threshold) {
+				segs.add(cur);
+				cur = new ArrayList<>();
+			}
+			cur.add(run.get(i));
+		}
+		segs.add(cur);
+		return segs;
+	}
+
+	/**
+	 * The gap (ms) above which a jump between samples reads as a restart, or 0 if N/A.
+	 */
+	private static long restartGapThreshold(List<Sample> run) {
+		if (run.size() < MIN_FOR_SEGMENTING) {
+			return 0;
+		}
+		long[] deltas = new long[run.size() - 1];
+		for (int i = 1; i < run.size(); i++) {
+			deltas[i - 1] = run.get(i).t() - run.get(i - 1).t();
+		}
+		Arrays.sort(deltas);
+		long median = deltas[deltas.length / 2];
+		return (median <= 0) ? 0 : Math.round(median * RESTART_GAP_FACTOR);
+	}
+
+	/** Every lifetime's samples minus its first (the cold-start burst), concatenated. */
+	private static List<Sample> steadyState(List<List<Sample>> segments) {
+		List<Sample> out = new ArrayList<>();
+		for (List<Sample> seg : segments) {
+			out.addAll(seg.subList((seg.size() >= 2) ? 1 : 0, seg.size()));
+		}
+		return out;
+	}
+
+	/** The latest lifetime's samples minus its cold-start burst. */
+	private static List<Sample> lastSteadySegment(List<List<Sample>> segments) {
+		List<Sample> seg = segments.get(segments.size() - 1);
+		return (seg.size() >= 2) ? seg.subList(1, seg.size()) : seg;
+	}
+
+	private static void appendLifecycle(StringBuilder md, List<List<Sample>> segments, int excluded) {
+		int restarts = segments.size() - 1;
+		md.append("## Lifecycle\n- ")
+			.append(restarts)
+			.append((restarts == 1) ? " restart" : " restarts")
+			.append(" detected in window (large gaps between sample timestamps — the JVM was replaced, e.g. a "
+					+ "rolling redeploy). The first window of each of the ")
+			.append(segments.size())
+			.append(" lifetimes is a cold-start burst (classload, warmup, JIT) and is excluded from the "
+					+ "steady-state aggregates below — ")
+			.append(excluded)
+			.append(" sample(s) dropped. Retention is assessed within the latest lifetime only "
+					+ "(old-object counts reset on restart).\n\n");
 	}
 
 	private static void appendCpu(StringBuilder md, List<Sample> run) {

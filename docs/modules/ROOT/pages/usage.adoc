@@ -480,6 +480,15 @@ falling), whether the hot path stayed stable or shifted, when lock contention ap
 and a **hedged** retention indicator — old-object growth alongside rising GC pressure is
 flagged as *possible* retention growth, never a confident "leak".
 
+When the window spans **several JVM lifetimes** — a multi-day monitor across rolling
+redeploys — `trend` detects each restart from the large gap it leaves between sample
+timestamps (the agent appends on a fixed interval, so a replaced pod leaves a hole far
+larger than one interval) and adds a `## Lifecycle` note. Each lifetime's first window is a
+cold-start burst (classload, warmup, JIT — a 5–10× outlier that would otherwise skew the
+whole-window trend to "rising"), so it is **excluded from the steady-state aggregates**, and
+retention is assessed within the **latest** lifetime only (old-object counts reset on
+restart). A gapless single-lifetime run is unaffected.
+
 === Database (SQL)
 
 Add `db` to the agent options and it instruments `java.sql.Statement.execute*` (ByteBuddy)
