@@ -110,16 +110,17 @@ per-method −52%. Full receipts — profile → fix → prove → guard — in
 <dependency>
   <groupId>org.alexmond</groupId>
   <artifactId>jvmlens-engine</artifactId>
-  <version>0.2.0</version>
+  <version>0.2.2</version>
 </dependency>
 ```
 
-**CLI / agent / JMH jars — GitHub releases.** These are runnable artifacts (not library
-deps), so they ship as release assets, not on Central. Java 17+ to run:
+**CLI / agent / JMH jars.** These are runnable artifacts (a Spring Boot fat jar and two
+shaded tool jars). They're published to Maven Central *and* attached as GitHub release
+assets — grab whichever is handier. Java 17+ to run:
 
 ```bash
 # the latest tagged release
-gh release download 0.2.0 -R alexmond/jvmlens -p 'jvmlens.jar'
+gh release download 0.2.2 -R alexmond/jvmlens -p 'jvmlens.jar'
 # …or the rolling pre-release (every green build on main), no build required:
 curl -L -o jvmlens.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
 java -jar jvmlens.jar analyze recording.jfr
