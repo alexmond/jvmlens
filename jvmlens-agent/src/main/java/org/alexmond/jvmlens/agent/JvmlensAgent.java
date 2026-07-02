@@ -109,6 +109,7 @@ public final class JvmlensAgent {
 		boolean running = !opts.containsKey("paused");
 		control = new AgentControl(running, settings, interval, enabled, List.of("org.alexmond.jvmlens"),
 				JvmlensAgent::lazyInstall);
+		applyLaunchScope(opts.get("scope"));
 
 		String controlFile = opts.get("control");
 		if (controlFile != null && !controlFile.isBlank()) {
@@ -123,6 +124,50 @@ public final class JvmlensAgent {
 		worker.start();
 		System.err.println("jvmlens-agent: " + (running ? "recording" : "PAUSED") + "; summaries every " + interval
 				+ "s -> " + out + ((history != null) ? (" (history -> " + history + ")") : ""));
+	}
+
+	/**
+	 * Parse a launch-time {@code scope=} arg into the equivalent in-flight {@code scope}
+	 * command lines (#133). Segments are {@code +}-separated (the agent arg list is
+	 * comma-separated, so {@code +} avoids the clash); each is {@code app:<prefix>} or
+	 * {@code exclude:<prefix>}, and a bare prefix defaults to {@code app}. So
+	 * {@code scope=app:org.alexmond.unitrack+exclude:org.h2} yields
+	 * {@code ["scope app org.alexmond.unitrack", "scope exclude org.h2"]}.
+	 */
+	static List<String> scopeCommands(String scopeArg) {
+		if (scopeArg == null || scopeArg.isBlank()) {
+			return List.of();
+		}
+		List<String> cmds = new ArrayList<>();
+		for (String seg : scopeArg.split("\\+")) {
+			String s = seg.trim();
+			if (s.isEmpty()) {
+				continue;
+			}
+			int colon = s.indexOf(':');
+			String side = (colon > 0) ? s.substring(0, colon).trim() : "app";
+			String prefix = (colon > 0) ? s.substring(colon + 1).trim() : s;
+			if (!prefix.isEmpty()) {
+				cmds.add("scope " + side + " " + prefix);
+			}
+		}
+		return cmds;
+	}
+
+	/**
+	 * Apply a launch-time {@code scope=} arg by replaying the equivalent in-flight
+	 * {@code scope} commands, so a headless monitor with no control channel still
+	 * attributes to the target module from sample 1 — matching what {@code scope app}
+	 * already does mid-run (#133).
+	 */
+	private static void applyLaunchScope(String scopeArg) {
+		List<String> cmds = scopeCommands(scopeArg);
+		if (cmds.isEmpty()) {
+			return;
+		}
+		cmds.forEach(control::apply);
+		System.err.println("jvmlens-agent: launch scope -> app=" + control.scope().includePackages() + " exclude="
+				+ control.scope().excludePackages());
 	}
 
 	/** Install a dimension's ByteBuddy advice once (no-op if already installed). */
