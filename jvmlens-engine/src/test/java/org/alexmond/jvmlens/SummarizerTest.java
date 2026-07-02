@@ -174,6 +174,39 @@ class SummarizerTest {
 	}
 
 	@Test
+	void foldsExcludedTypesIntoOneRolledUpRow() {
+		// #128: on an in-process H2 capture the "Top allocated types" block is dominated
+		// by
+		// MVStore internals that crowd out the app types. `-x org.h2` now folds every H2
+		// type — including array descriptors like `[Lorg.h2.mvstore.Page$PageReference;`
+		// —
+		// into one accounted line, leaving the app types (byte[], String) legible.
+		Map<String, Long> byType = new LinkedHashMap<>();
+		byType.put("[B", 4_000_000L);
+		byType.put("java.lang.String", 2_000_000L);
+		byType.put("org.h2.mvstore.RootReference", 3_000_000L);
+		byType.put("[Lorg.h2.mvstore.Page$PageReference;", 5_000_000L);
+
+		Map<String, Long> folded = Teasers.foldExcludedTypes(byType, List.of("org.h2"));
+
+		// the app types survive verbatim
+		assertThat(folded).containsEntry("[B", 4_000_000L).containsEntry("java.lang.String", 2_000_000L);
+		// both H2 types (scalar + array descriptor) collapse into one accounted row
+		assertThat(folded).doesNotContainKey("org.h2.mvstore.RootReference")
+			.doesNotContainKey("[Lorg.h2.mvstore.Page$PageReference;");
+		assertThat(folded).containsEntry("«excluded types (-x), rolled up»", 8_000_000L);
+	}
+
+	@Test
+	void foldExcludedTypesLeavesTheMapUntouchedWithoutExcludes() {
+		Map<String, Long> byType = new LinkedHashMap<>();
+		byType.put("[B", 4_000_000L);
+		byType.put("org.h2.mvstore.RootReference", 3_000_000L);
+		// no `-x` → no folding, and no synthetic row
+		assertThat(Teasers.foldExcludedTypes(byType, List.of())).isSameAs(byType);
+	}
+
+	@Test
 	void filtersRecorderSelfSinkFromIo() {
 		// #39 gap 4: a microbenchmark with no real I/O reported "file null" (the JFR
 		// sink)

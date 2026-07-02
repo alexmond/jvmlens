@@ -328,38 +328,6 @@ public final class Summarizer {
 				|| endpoint.endsWith(".jfr");
 	}
 
-	/**
-	 * A compact, readable type name: package stripped and JVM array descriptors decoded —
-	 * {@code java.lang.String} → {@code String}, {@code [B} → {@code byte[]},
-	 * {@code [Ljava.lang.String;} → {@code String[]}.
-	 */
-	private static String simpleType(String type) {
-		int dims = 0;
-		while (dims < type.length() && type.charAt(dims) == '[') {
-			dims++;
-		}
-		String base = (dims == 0) ? type : arrayBase(type.substring(dims));
-		int dot = base.lastIndexOf('.');
-		String simple = (dot >= 0) ? base.substring(dot + 1) : base;
-		return simple + "[]".repeat(dims);
-	}
-
-	/** The element type of a JVM array descriptor (e.g. {@code B} → {@code byte}). */
-	private static String arrayBase(String descriptor) {
-		return switch (descriptor.isEmpty() ? ' ' : descriptor.charAt(0)) {
-			case 'B' -> "byte";
-			case 'S' -> "short";
-			case 'I' -> "int";
-			case 'J' -> "long";
-			case 'F' -> "float";
-			case 'D' -> "double";
-			case 'C' -> "char";
-			case 'Z' -> "boolean";
-			case 'L' -> descriptor.substring(1, descriptor.length() - 1);
-			default -> descriptor;
-		};
-	}
-
 	/** Human-readable bytes (e.g. {@code 2.1 MB}) for I/O teasers. */
 	private static String humanBytes(long bytes) {
 		if (bytes < 1024) {
@@ -644,7 +612,8 @@ public final class Summarizer {
 					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu"),
 					ranked(this.cpuByLeaf, this.execSamples, leafLineTeasers(), "cpu"),
 					ranked(this.allocBySite, this.allocBytes, allocTypeTeasers(), "memory"),
-					ranked(this.allocByType, this.allocBytes, null, "memory"),
+					ranked(Teasers.foldExcludedTypes(this.allocByType, this.scope.excludePackages()), this.allocBytes,
+							null, "memory"),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
 					ranked(this.lockByMonitor, sum(this.lockByMonitor), null, "locks"), heuristic(),
 					detectAppPackage(detectionWeights()), extendedSections(), this.allocBytes, this.allocSamples);
@@ -735,8 +704,8 @@ public final class Summarizer {
 			this.allocBySiteType.forEach((site, byType) -> {
 				String dom = dominantType(byType);
 				if (Teasers.escapeProneType(dom)) {
-					String caveat = "⚠ " + simpleType(dom) + " may be scalar-replaced (escape analysis) — verify "
-							+ "steady-state with -prof gc";
+					String caveat = "⚠ " + Teasers.simpleType(dom)
+							+ " may be scalar-replaced (escape analysis) — verify " + "steady-state with -prof gc";
 					teasers.merge(site, caveat, (have, add) -> have + " " + add);
 				}
 			});
@@ -755,7 +724,7 @@ public final class Summarizer {
 				.stream()
 				.sorted(Map.Entry.<String, Long>comparingByValue().reversed())
 				.limit(ALLOC_TEASER_TYPES)
-				.map((t) -> simpleType(t.getKey()) + " " + humanBytes(t.getValue()))
+				.map((t) -> Teasers.simpleType(t.getKey()) + " " + humanBytes(t.getValue()))
 				.collect(java.util.stream.Collectors.joining(" · "));
 		}
 
