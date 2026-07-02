@@ -75,8 +75,8 @@ jobs:
           tag_name: ${{ github.event.inputs.releaseVersion }}
           name: Release ${{ github.event.inputs.releaseVersion }}
           generate_release_notes: true
-          # The app/tool jars are not on Central — attach them to the tagged release so
-          # `gh release download v<x> -p 'jvmlens.jar'` (see docs Installation) works.
+          # The app/tool jars go to Central too (#117), but are also attached to the tagged
+          # release so `gh release download <x> -p 'jvmlens.jar'` (see docs Installation) works.
           files: |
             jvmlens-cli/target/jvmlens.jar
             jvmlens-agent/target/jvmlens-agent.jar
