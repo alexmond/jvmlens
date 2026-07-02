@@ -21,6 +21,11 @@ More honest profile diffs, still from dogfooding real projects (the unitrack fie
   accounted `«excluded types (-x)»` line, so a test capture's embedded-DB internals (an in-process
   H2's MVStore types) stop crowding out the app's own types. No new flag — the same `-x` that
   already scopes hot paths and allocation sites (#128).
+* **Agent launch-time `scope=` arg** — a headless long-running monitor can now pin the application
+  scope at startup (`scope=app:org.alexmond.unitrack`, `+`-separated, `exclude:` side supported)
+  instead of relying on heuristic attribution or a mid-run control command. `history`/`trend`
+  attribute to the real module from the first sample — the launch equivalent of the in-flight
+  `scope app` (#133).
 
 == 0.2.1
 

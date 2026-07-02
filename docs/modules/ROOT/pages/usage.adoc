@@ -429,11 +429,27 @@ between summaries), `settings` (JFR config, default `profile`), `snapshot` (see 
 Spring `Cache` get/put/evict), `micrometer` (summarize an existing Micrometer registry —
 no extra instrumentation; degrades to nothing if Micrometer is absent), `history` (see
 *Long-running monitor* below), `paused` (launch without emitting — `start` it after warm-up;
-see *Runtime control* below), and `control` (a file the agent watches for in-flight
-commands). The `messaging` and `cache` dimensions aggregate by `Class.method` operation and
+see *Runtime control* below), `control` (a file the agent watches for in-flight
+commands), and `scope` (pin the application scope at launch — see below). The `messaging` and `cache` dimensions aggregate by `Class.method` operation and
 render top operations by total time. The agent jar is the separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
 attached dynamically via the `Agent-Class` entry.
+
+By default the agent attributes application frames heuristically (everything non-JDK and
+non-jvmlens). For a headless long-running monitor — a container with no control channel
+wired — pin the scope to the target module at launch with `scope`, so `history` / `trend`
+attribute to the actual module from the *first* sample instead of guessing:
+
+[source,bash]
+----
+# app = org.alexmond.unitrack, from sample 1 (no control file needed)
+java -javaagent:jvmlens-agent.jar=out=/agent/x.md,history=/agent/x.jsonl,scope=app:org.alexmond.unitrack -jar app.jar
+----
+
+Segments are `+`-separated (the arg list is comma-separated, so `+` avoids the clash);
+each is `app:<prefix>` or `exclude:<prefix>` (a bare prefix defaults to `app`), e.g.
+`scope=app:org.alexmond.unitrack+exclude:org.h2`. This is the launch-time equivalent of the
+in-flight `scope app <prefix>` control command below.
 
 === Runtime control (in-flight adjustment)
 
