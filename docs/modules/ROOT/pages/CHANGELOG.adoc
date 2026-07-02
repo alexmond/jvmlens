@@ -16,6 +16,11 @@ More honest profile diffs, still from dogfooding real projects (the unitrack fie
   leaves between sample timestamps, adds a `## Lifecycle` note, excludes each lifetime's first
   (warmup) window from the steady-state aggregates, and assesses retention within the latest
   lifetime only (old-object counts reset on restart). A gapless single run is unchanged (#129).
+* **`-x` folds excluded allocated types** — `--exclude` now also reaches the *Top allocated types*
+  block: any type whose package matches an exclude (array descriptors included) rolls up into one
+  accounted `«excluded types (-x)»` line, so a test capture's embedded-DB internals (an in-process
+  H2's MVStore types) stop crowding out the app's own types. No new flag — the same `-x` that
+  already scopes hot paths and allocation sites (#128).
 
 == 0.2.1
 

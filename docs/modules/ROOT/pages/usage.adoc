@@ -393,6 +393,20 @@ java -jar jvmlens.jar analyze -a org.alexmond recording.jfr
 java -jar jvmlens.jar analyze -x com.thirdparty recording.jfr
 ----
 
+`-x` scopes the hot-path and allocation-**site** blocks (by the calling frame's
+package) and also folds the **Top allocated types** block: any allocated type
+whose package matches an exclude (including array types like
+`[Lorg.h2.mvstore.Page$PageReference;`) collapses into one accounted
+`«excluded types (-x), rolled up»` row, so a test capture's embedded
+infrastructure — e.g. an in-process H2's MVStore types — doesn't crowd out your
+app's `byte[]` / `String` / domain types. The bytes stay counted, just rolled up
+(#128):
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze -a org.alexmond -x org.h2 recording.jfr
+----
+
 A summary built from very few execution samples is flagged with a `⚠` adequacy
 caveat — its hot-path shares are statistically noisy; record longer or under
 steady-state load.
