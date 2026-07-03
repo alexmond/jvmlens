@@ -23,3 +23,12 @@ dependency-reduced-pom.xml
 
 # Transient: agent jar copied in for the image build (scripts/deploy-agent.sh)
 deploy/agent-image/jvmlens-agent.jar
+
+# Marketplace skills — private machine-local overlays stay OUT of the public plugin.
+# The public SKILL.md ships; the field-experience log and any local extensions do not
+# (each skill reads them next to itself if present). See plugins/README.md.
+plugins/*/skills/*/LEARNINGS.md
+plugins/*/skills/*/extensions/
+
+# Stray local copy of an external marketplace plugin (not part of this repo's marketplace)
+plugins/screenshot-tour/
