@@ -130,6 +130,17 @@ Each release also carries `jvmlens-agent.jar` (the in-process `-javaagent`) and
 `jvmlens-jmh.jar` (the JMH profiler). The `latest` URL is stable — it always points at the
 newest green build on `main`.
 
+**Claude Code skills.** This repo is also a [Claude Code](https://claude.com/claude-code)
+plugin marketplace — two skills that teach an agent to drive jvmlens: **jvmlens-perf** (the
+optimize→measure loop) and **jvmlens-monitor** (the long-running monitor + `trend`). See
+[`plugins/README.md`](plugins/README.md).
+
+```
+/plugin marketplace add alexmond/jvmlens
+/plugin install jvmlens-perf@jvmlens
+/plugin install jvmlens-monitor@jvmlens
+```
+
 ## Build
 
 ```bash
