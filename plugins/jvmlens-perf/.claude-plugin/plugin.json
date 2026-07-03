@@ -1,0 +1,10 @@
+{
+  "name": "jvmlens-perf",
+  "description": "Drive the dev-time optimize→measure loop with jvmlens: capture a JFR, analyze ranked hot paths + allocation sites (source-attributed, LLM-ready), fix the top lever, diff before/after on absolute weight, and optionally gate regressions in CI. Pairs with JMH.",
+  "version": "1.0.0",
+  "author": { "name": "Alex Mondshain", "email": "alexmond@gmail.com" },
+  "homepage": "https://www.alexmond.org/jvmlens/current/",
+  "repository": "https://github.com/alexmond/jvmlens",
+  "license": "Apache-2.0",
+  "keywords": ["jvm", "profiling", "jfr", "performance", "jmh", "allocation"]
+}
