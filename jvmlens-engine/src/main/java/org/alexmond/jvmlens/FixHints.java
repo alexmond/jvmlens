@@ -81,7 +81,10 @@ public final class FixHints {
 							+ "lets covering indexes apply)"),
 			sectionRule("web", "high error rate", Lever.STRUCTURAL,
 					"endpoint has a high error rate — validate inputs and handle downstream failures "
-							+ "before the expensive work (the anchor points at the handler)"));
+							+ "before the expensive work (the anchor points at the handler)"),
+			sectionRule("cache", "low hit rate", Lever.STRUCTURAL,
+					"cache is mostly missing — check key cardinality / TTL / warm-up; a low hit rate means "
+							+ "the cache isn't paying for itself (the anchor points at the caller)"));
 
 	private static final String HEADER = "## Likely fix directions [possible]\n"
 			+ "> `[structural]` = mechanical, safe to pull first · `[inherent]` = "

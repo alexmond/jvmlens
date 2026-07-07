@@ -26,7 +26,7 @@ class StoreFacadesTest {
 
 	@Test
 	void cacheFacadeRecordsUnderTheCacheKey() {
-		CacheStore.record("com.acme.RedisCache.get", 2_000_000L);
+		CacheStore.record("com.acme.RedisCache.get", 2_000_000L, Boolean.TRUE);
 		assertThat(CacheStore.sections()).singleElement().satisfies((s) -> assertThat(s.key()).isEqualTo("cache"));
 		assertThat(CacheStore.sections().get(0).rows().get(0).name()).isEqualTo("RedisCache.get");
 	}
