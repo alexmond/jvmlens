@@ -21,7 +21,15 @@ public final class OpStore {
 
 	/** Record one operation {@code label} taking {@code nanos}. */
 	public void record(String label, long nanos) {
-		this.ops.computeIfAbsent(shorten(label), (k) -> new Stat()).add(nanos);
+		record(label, nanos, null);
+	}
+
+	/**
+	 * Record one operation {@code label} taking {@code nanos}, attributed to app
+	 * call-site {@code site} ({@code null} = none captured).
+	 */
+	public void record(String label, long nanos, String site) {
+		this.ops.computeIfAbsent(shorten(label), (k) -> new Stat()).add(nanos, site);
 	}
 
 	/** Clear all captured operations (used by tests). */
@@ -51,7 +59,7 @@ public final class OpStore {
 	}
 
 	/** Reduce a {@code fully.qualified.Type.method} label to {@code Type.method}. */
-	static String shorten(String label) {
+	public static String shorten(String label) {
 		if (label == null || label.isBlank()) {
 			return "?";
 		}
@@ -69,15 +77,33 @@ public final class OpStore {
 
 		private final AtomicLong nanos = new AtomicLong();
 
-		void add(long ns) {
+		private final Map<String, AtomicLong> sites = new ConcurrentHashMap<>();
+
+		void add(long ns, String site) {
 			this.calls.incrementAndGet();
 			this.nanos.addAndGet(Math.max(ns, 0));
+			if (site != null) {
+				this.sites.computeIfAbsent(site, (k) -> new AtomicLong()).incrementAndGet();
+			}
+		}
+
+		private String dominantSite() {
+			return this.sites.entrySet()
+				.stream()
+				.max(Map.Entry.comparingByValue((a, b) -> Long.compare(a.get(), b.get())))
+				.map(Map.Entry::getKey)
+				.orElse(null);
 		}
 
 		String teaser() {
 			long c = this.calls.get();
 			double avgMs = (c > 0) ? (this.nanos.get() / 1_000_000.0 / c) : 0;
-			return String.format(Locale.ROOT, "%d ops, avg %.1f ms", c, avgMs);
+			StringBuilder base = new StringBuilder(String.format(Locale.ROOT, "%d ops, avg %.1f ms", c, avgMs));
+			String site = dominantSite();
+			if (site != null) {
+				base.append(" · at ").append(site);
+			}
+			return base.toString();
 		}
 
 	}

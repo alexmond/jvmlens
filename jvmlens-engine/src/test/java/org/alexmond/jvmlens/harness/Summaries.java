@@ -118,6 +118,14 @@ public final class Summaries {
 			return row("web", "Top HTTP endpoints (by total time)", "ms", endpoint, 0.5, ms, teaser);
 		}
 
+		/**
+		 * Add a {@code cache} operation row: {@code op}, total {@code ms}, and its
+		 * teaser.
+		 */
+		public Builder cache(String op, long ms, String teaser) {
+			return row("cache", "Cache operations (by total time)", "ms", op, 0.5, ms, teaser);
+		}
+
 		public ProfileSummary build() {
 			return new ProfileSummary(this.source, this.execSamples, 0, 0, 0, this.gcPauseMillis, this.hotPaths,
 					this.hotLeaves, this.allocSites, List.of(), this.locks, List.of(), "", this.appPackage,
