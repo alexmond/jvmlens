@@ -28,6 +28,7 @@ import org.alexmond.jvmlens.messaging.MessagingCapture;
 import org.alexmond.jvmlens.messaging.MessagingStore;
 import org.alexmond.jvmlens.snapshot.SnapshotCapture;
 import org.alexmond.jvmlens.snapshot.SnapshotStore;
+import org.alexmond.jvmlens.probe.CallSites;
 import org.alexmond.jvmlens.sql.SqlCapture;
 import org.alexmond.jvmlens.sql.SqlStore;
 import org.alexmond.jvmlens.web.WebCapture;
@@ -110,7 +111,7 @@ public final class JvmlensAgent {
 		control = new AgentControl(running, settings, interval, enabled, List.of("org.alexmond.jvmlens"),
 				JvmlensAgent::lazyInstall);
 		applyLaunchScope(opts.get("scope"));
-		SqlStore.setAppScope(control.scope().includePackages());
+		CallSites.setAppScope(control.scope().includePackages());
 
 		String controlFile = opts.get("control");
 		if (controlFile != null && !controlFile.isBlank()) {
@@ -284,7 +285,7 @@ public final class JvmlensAgent {
 		Path dump = Files.createTempFile("jvmlens-agent", ".jfr");
 		try {
 			recording.dump(dump);
-			SqlStore.setAppScope(scope.includePackages());
+			CallSites.setAppScope(scope.includePackages());
 			ProfileSummary ps = Summarizer.analyze(dump, scope).withSections(instrumentationSections());
 			String summary = Summarizer.render(ps, Summarizer.Format.MARKDOWN);
 			String snapshots = SnapshotStore.render();

@@ -1,5 +1,6 @@
 package org.alexmond.jvmlens.web;
 
+import org.alexmond.jvmlens.probe.CallSites;
 import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +22,14 @@ public final class WebStore {
 
 	private static final int SERVER_ERROR = 400;
 
+	/**
+	 * Below this request count a high error <em>rate</em> isn't statistically meaningful.
+	 */
+	private static final long HIGH_ERROR_MIN_REQS = 10;
+
+	/** Error fraction at or above which an endpoint is flagged as erroring. */
+	private static final double HIGH_ERROR_RATE = 0.2;
+
 	private static final Map<String, Stat> ENDPOINTS = new ConcurrentHashMap<>();
 
 	private WebStore() {
@@ -30,13 +39,14 @@ public final class WebStore {
 	public static void record(String method, String path, int status, long nanos) {
 		FailGuard.run("web", () -> {
 			String key = ((method != null) ? method : "?") + " " + WebSanitizer.route(path);
-			ENDPOINTS.computeIfAbsent(key, (k) -> new Stat()).add(nanos, status);
+			ENDPOINTS.computeIfAbsent(key, (k) -> new Stat()).add(nanos, status, CallSites.capture());
 		});
 	}
 
-	/** Clear all captured endpoints (used by tests). */
+	/** Clear all captured endpoints and scope (used by tests). */
 	public static void reset() {
 		ENDPOINTS.clear();
+		CallSites.reset();
 	}
 
 	/**
@@ -65,20 +75,44 @@ public final class WebStore {
 
 		private final AtomicLong errors = new AtomicLong();
 
-		void add(long ns, int status) {
+		private final Map<String, AtomicLong> sites = new ConcurrentHashMap<>();
+
+		void add(long ns, int status, String site) {
 			this.calls.incrementAndGet();
 			this.nanos.addAndGet(Math.max(ns, 0));
 			if (status >= SERVER_ERROR) {
 				this.errors.incrementAndGet();
 			}
+			if (site != null) {
+				this.sites.computeIfAbsent(site, (k) -> new AtomicLong()).incrementAndGet();
+			}
+		}
+
+		/** The most frequent captured handler call-site, or {@code null} if none. */
+		private String dominantSite() {
+			return this.sites.entrySet()
+				.stream()
+				.max(Map.Entry.comparingByValue((a, b) -> Long.compare(a.get(), b.get())))
+				.map(Map.Entry::getKey)
+				.orElse(null);
 		}
 
 		String teaser() {
 			long c = this.calls.get();
 			double avgMs = (c > 0) ? (this.nanos.get() / 1_000_000.0 / c) : 0;
-			String base = String.format(Locale.ROOT, "%d reqs, avg %.1f ms", c, avgMs);
+			StringBuilder base = new StringBuilder(String.format(Locale.ROOT, "%d reqs, avg %.1f ms", c, avgMs));
+			String site = dominantSite();
+			if (site != null) {
+				base.append(" · at ").append(site);
+			}
 			long e = this.errors.get();
-			return (e > 0) ? (base + ", " + e + " errors") : base;
+			if (e > 0) {
+				base.append(", ").append(e).append(" errors");
+			}
+			if (c >= HIGH_ERROR_MIN_REQS && (double) e / c >= HIGH_ERROR_RATE) {
+				base.append(" — high error rate");
+			}
+			return base.toString();
 		}
 
 	}

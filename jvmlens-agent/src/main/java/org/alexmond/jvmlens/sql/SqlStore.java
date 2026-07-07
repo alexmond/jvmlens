@@ -1,12 +1,12 @@
 package org.alexmond.jvmlens.sql;
 
+import org.alexmond.jvmlens.probe.CallSites;
 import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
 import org.alexmond.jvmlens.ProfileSummary.Section;
@@ -29,68 +29,21 @@ public final class SqlStore {
 	 */
 	private static final double N_PLUS_ONE_AVG_MS = 5.0;
 
-	/** Cap the per-execution stack walk so call-site capture stays cheap. */
-	private static final int MAX_WALK = 40;
-
 	private static final Map<String, Stat> SHAPES = new ConcurrentHashMap<>();
-
-	/**
-	 * Application-frame prefixes; when set (from the agent's scope) each execution's
-	 * first matching stack frame is captured as the statement's call-site anchor. Empty =
-	 * no walk, so there is zero added cost until a scope is configured.
-	 */
-	private static final AtomicReference<String[]> APP_PREFIXES = new AtomicReference<>(new String[0]);
 
 	private SqlStore() {
 	}
 
-	/**
-	 * Set the application-frame prefixes used to anchor each statement to its call-site
-	 * (the agent refreshes this from the live {@code scope}); {@code null}/empty disables
-	 * the walk.
-	 */
-	public static void setAppScope(List<String> prefixes) {
-		APP_PREFIXES.set((prefixes != null) ? prefixes.toArray(new String[0]) : new String[0]);
-	}
-
 	/** Record one execution of {@code sql} taking {@code nanos}; called from advice. */
 	public static void record(String sql, long nanos) {
-		FailGuard.run("db",
-				() -> SHAPES.computeIfAbsent(SqlSanitizer.sanitize(sql), (k) -> new Stat()).add(nanos, callSite()));
-	}
-
-	/**
-	 * The first application stack frame ({@code com.acme.OrderRepo:88}) issuing the
-	 * current statement, or {@code null} when no scope is set or no app frame carries a
-	 * line — the anchor that lets {@code analyze --source} echo the offending line and a
-	 * coding agent jump straight to the query.
-	 */
-	private static String callSite() {
-		String[] prefixes = APP_PREFIXES.get();
-		if (prefixes.length == 0) {
-			return null;
-		}
-		return StackWalker.getInstance()
-			.walk((frames) -> frames.limit(MAX_WALK)
-				.filter((f) -> f.getLineNumber() > 0 && startsWithAny(f.getClassName(), prefixes))
-				.map((f) -> f.getClassName() + ":" + f.getLineNumber())
-				.findFirst()
-				.orElse(null));
-	}
-
-	private static boolean startsWithAny(String owner, String[] prefixes) {
-		for (String prefix : prefixes) {
-			if (owner.startsWith(prefix)) {
-				return true;
-			}
-		}
-		return false;
+		FailGuard.run("db", () -> SHAPES.computeIfAbsent(SqlSanitizer.sanitize(sql), (k) -> new Stat())
+			.add(nanos, CallSites.capture()));
 	}
 
 	/** Clear all captured statements and scope (used by tests). */
 	public static void reset() {
 		SHAPES.clear();
-		APP_PREFIXES.set(new String[0]);
+		CallSites.reset();
 	}
 
 	/** The captured statements as the {@code db} section, or empty if nothing ran. */

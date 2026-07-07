@@ -51,7 +51,7 @@ class SqlStoreTest {
 
 	@Test
 	void capturesTheAppCallSiteWhenScopeIsSet() {
-		SqlStore.setAppScope(List.of("com.example"));
+		org.alexmond.jvmlens.probe.CallSites.setAppScope(List.of("com.example"));
 		for (int i = 0; i < 60; i++) {
 			com.example.demo.OrderDao.runQuery("SELECT * FROM orders WHERE id = " + i);
 		}

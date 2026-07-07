@@ -70,15 +70,18 @@ public final class FixHints {
 					"reflective dispatch — cache the handle or call directly"),
 			rule("String\\.format|Formatter\\b", Lever.STRUCTURAL,
 					"String.format in a hot path — prefer concatenation / StringBuilder"),
-			// db-section rules — matched only against the `db` section's rows (the SQL
-			// shape
-			// + its teaser), so SQL text can never trip a code rule and vice-versa.
-			dbRule("possible N\\+1|high call count", Lever.STRUCTURAL,
+			// Section-scoped rules — matched only against their own extended section's
+			// rows,
+			// so SQL / endpoint text can never trip a code rule and vice-versa.
+			sectionRule("db", "possible N\\+1|high call count", Lever.STRUCTURAL,
 					"N+1 query — the same shape runs many times per request; batch into one round-trip "
 							+ "(JPA `@BatchSize`/join-fetch, or a single `WHERE id IN (…)`)"),
-			dbRule("(?i)^select\\s+\\*", Lever.STRUCTURAL,
+			sectionRule("db", "(?i)^select\\s+\\*", Lever.STRUCTURAL,
 					"`SELECT *` — project only the columns you use (cuts row width, wire bytes, and "
-							+ "lets covering indexes apply)"));
+							+ "lets covering indexes apply)"),
+			sectionRule("web", "high error rate", Lever.STRUCTURAL,
+					"endpoint has a high error rate — validate inputs and handle downstream failures "
+							+ "before the expensive work (the anchor points at the handler)"));
 
 	private static final String HEADER = "## Likely fix directions [possible]\n"
 			+ "> `[structural]` = mechanical, safe to pull first · `[inherent]` = "
@@ -91,9 +94,9 @@ public final class FixHints {
 		return new Rule(Pattern.compile(regex), lever, hint, null);
 	}
 
-	/** A rule scoped to the {@code db} extended section only (never code rows). */
-	private static Rule dbRule(String regex, Lever lever, String hint) {
-		return new Rule(Pattern.compile(regex), lever, hint, "db");
+	/** A rule scoped to one extended section's rows only (never code rows). */
+	private static Rule sectionRule(String key, String regex, Lever lever, String hint) {
+		return new Rule(Pattern.compile(regex), lever, hint, key);
 	}
 
 	/**

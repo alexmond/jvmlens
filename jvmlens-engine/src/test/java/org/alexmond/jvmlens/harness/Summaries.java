@@ -110,6 +110,14 @@ public final class Summaries {
 			return row("db", "Top SQL (by total time, sanitized)", "ms", shape, 0.5, ms, teaser);
 		}
 
+		/**
+		 * Add a {@code web} (HTTP endpoint) row: {@code endpoint}, total {@code ms},
+		 * teaser.
+		 */
+		public Builder web(String endpoint, long ms, String teaser) {
+			return row("web", "Top HTTP endpoints (by total time)", "ms", endpoint, 0.5, ms, teaser);
+		}
+
 		public ProfileSummary build() {
 			return new ProfileSummary(this.source, this.execSamples, 0, 0, 0, this.gcPauseMillis, this.hotPaths,
 					this.hotLeaves, this.allocSites, List.of(), this.locks, List.of(), "", this.appPackage,
