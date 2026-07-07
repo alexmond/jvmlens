@@ -45,7 +45,8 @@ public final class CacheStore {
 	 */
 	public static void record(String op, long nanos, Boolean hit) {
 		FailGuard.run("cache", () -> {
-			STORE.record(op, nanos, CallSites.capture());
+			List<String> path = CallSites.capturePath();
+			STORE.record(op, nanos, CallSites.site(path), CallSites.entryClass(path));
 			if (hit != null) {
 				HITS.computeIfAbsent(OpStore.shorten(op), (k) -> new HitMiss()).add(hit);
 			}

@@ -41,6 +41,17 @@ class MessagingStoreTest {
 	}
 
 	@Test
+	void capturesTheOutermostAppCallerAsTheRequestEntry() {
+		CallSites.setAppScope(List.of("com.example"));
+		for (int i = 0; i < 10; i++) {
+			com.example.demo.OrderService.publish(1_000_000L); // OrderService →
+																// OrderPublisher.send
+		}
+		String teaser = MessagingStore.sections().get(0).rows().get(0).stack();
+		assertThat(teaser).contains("· at com.example.demo.OrderPublisher:").contains("↳ under OrderService");
+	}
+
+	@Test
 	void consumerPollIsNotFlagged() {
 		CallSites.setAppScope(List.of("com.example"));
 		for (int i = 0; i < 60; i++) {
