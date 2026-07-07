@@ -25,6 +25,8 @@ import org.alexmond.jvmlens.cache.CacheStore;
 import org.alexmond.jvmlens.consume.MicrometerSource;
 import org.alexmond.jvmlens.deadlock.DeadlockDetector;
 import org.alexmond.jvmlens.messaging.MessagingCapture;
+import org.alexmond.jvmlens.mongo.MongoCapture;
+import org.alexmond.jvmlens.mongo.MongoStore;
 import org.alexmond.jvmlens.messaging.MessagingStore;
 import org.alexmond.jvmlens.snapshot.SnapshotCapture;
 import org.alexmond.jvmlens.snapshot.SnapshotStore;
@@ -94,7 +96,7 @@ public final class JvmlensAgent {
 
 		Set<String> enabled = new HashSet<>();
 		enabled.add("deadlock"); // always-on — a deadlock is the top signal
-		for (String dim : new String[] { "db", "web", "messaging", "cache" }) {
+		for (String dim : new String[] { "db", "web", "messaging", "cache", "mongo" }) {
 			if (opts.containsKey(dim)) {
 				enabled.add(dim);
 				lazyInstall(dim);
@@ -182,6 +184,7 @@ public final class JvmlensAgent {
 			case "web" -> WebCapture.install(instr);
 			case "messaging" -> MessagingCapture.install(instr);
 			case "cache" -> CacheCapture.install(instr);
+			case "mongo" -> MongoCapture.install(instr);
 			default -> {
 				return; // micrometer / snapshot / deadlock have nothing to install here
 			}
@@ -320,6 +323,9 @@ public final class JvmlensAgent {
 		}
 		if (control.enabled("cache")) {
 			all.addAll(CacheStore.sections());
+		}
+		if (control.enabled("mongo")) {
+			all.addAll(MongoStore.sections());
 		}
 		if (control.enabled("micrometer")) {
 			all.addAll(MicrometerSource.readGlobal());

@@ -91,7 +91,13 @@ public final class FixHints {
 							+ "the cache isn't paying for itself (the anchor points at the caller)"),
 			sectionRule("messaging", "synchronous per-message send", Lever.STRUCTURAL,
 					"synchronous per-message send in a hot path — batch (Kafka `linger.ms`+`batch.size`, "
-							+ "or a JMS transacted batch) or send asynchronously"));
+							+ "or a JMS transacted batch) or send asynchronously"),
+			sectionRule("mongo", "N\\+1 document fetch", Lever.STRUCTURAL,
+					"N+1 document fetch — the same query runs per item; batch into one "
+							+ "`find(Filters.in(…))` or an aggregation (the anchor points at the caller)"),
+			sectionRule("mongo", "likely un-batched", Lever.STRUCTURAL,
+					"un-batched document writes — replace the per-document insertOne/updateOne loop with "
+							+ "`insertMany`/`bulkWrite` so they flush in one round-trip"));
 
 	private static final String HEADER = "## Likely fix directions [possible]\n"
 			+ "> `[structural]` = mechanical, safe to pull first · `[inherent]` = "

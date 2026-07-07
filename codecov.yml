@@ -1,0 +1,21 @@
+# The bytecode-instrumentation glue (ByteBuddy premain, per-dimension *Advice /
+# *Capture, the control-file watcher) is verified by integration tests, not unit
+# coverage — the JaCoCo `check` gate already excludes it (see jvmlens-agent/pom.xml).
+# Mirror those exclusions here so codecov/patch isn't skewed by intentionally
+# uncovered glue every time a new capture dimension is added.
+ignore:
+  - "**/*Advice.java"
+  - "**/*Capture.java"
+  - "jvmlens-agent/src/main/java/org/alexmond/jvmlens/agent/JvmlensAgent.java"
+  - "jvmlens-agent/src/main/java/org/alexmond/jvmlens/agent/ControlChannel.java"
+
+coverage:
+  status:
+    patch:
+      default:
+        # Don't fail the PR on small coverage dips from non-glue changes; the
+        # authoritative gate is the JaCoCo line floor enforced in the build.
+        threshold: 2%
+    project:
+      default:
+        threshold: 2%
