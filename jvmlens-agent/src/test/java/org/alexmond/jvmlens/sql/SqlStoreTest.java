@@ -67,6 +67,25 @@ class SqlStoreTest {
 	}
 
 	@Test
+	void repeatedSingleRowInsertReadsAsUnbatched() {
+		for (int i = 0; i < 60; i++) {
+			SqlStore.record("INSERT INTO orders (id, total) VALUES (" + i + ", " + i + ")", 2_000_000L);
+		}
+		Ranked row = SqlStore.sections().get(0).rows().get(0);
+		assertThat(row.stack()).contains("60 calls").contains("likely un-batched").doesNotContain("possible N+1");
+	}
+
+	@Test
+	void anAlreadyBatchedInSelectIsNotFlaggedAsNplusOne() {
+		// a repeated `WHERE id IN (…)` is the batch-fetch fix, not the N+1 anti-pattern
+		for (int i = 0; i < 60; i++) {
+			SqlStore.record("SELECT * FROM line WHERE id IN (" + i + ", " + (i + 1) + ", " + (i + 2) + ")", 1_000_000L);
+		}
+		Ranked row = SqlStore.sections().get(0).rows().get(0);
+		assertThat(row.stack()).contains("60 calls").doesNotContain("possible N+1");
+	}
+
+	@Test
 	void resetClearsState() {
 		SqlStore.record("SELECT 1", 1_000_000L);
 		assertThat(SqlStore.sections()).isNotEmpty();

@@ -24,6 +24,13 @@ class DbRuleDetectionTest {
 								"60 calls, avg 1.0 ms — high call count, possible N+1")
 						.build(),
 					Mode.HINTS, List.of("N+1 query", "orders"), List.of("SELECT *")),
+			new Case("db: repeated single-row insert → enable JDBC batching (P3)",
+					Summaries.builder()
+						.db("insert into orders (id, total) values (?, ?)", 120,
+								"60 calls, avg 2.0 ms — repeated single-row insert, likely un-batched")
+						.build(),
+					Mode.HINTS, List.of("un-batched writes", "hibernate.jdbc.batch_size", "orders"),
+					List.of("N+1 query", "SELECT *")),
 			new Case("db: SELECT * → project columns",
 					Summaries.builder().db("select * from report where day = ?", 200, "1 calls, avg 200.0 ms").build(),
 					Mode.HINTS, List.of("SELECT *", "report"), List.of("N+1 query")),

@@ -79,6 +79,10 @@ public final class FixHints {
 			sectionRule("db", "(?i)^select\\s+\\*", Lever.STRUCTURAL,
 					"`SELECT *` — project only the columns you use (cuts row width, wire bytes, and "
 							+ "lets covering indexes apply)"),
+			sectionRule("db", "likely un-batched", Lever.STRUCTURAL,
+					"un-batched writes — the same insert/update runs row-by-row; enable JDBC batching "
+							+ "(`hibernate.jdbc.batch_size`, plus `order_inserts`/`order_updates`) so N writes "
+							+ "flush in one round-trip"),
 			sectionRule("web", "high error rate", Lever.STRUCTURAL,
 					"endpoint has a high error rate — validate inputs and handle downstream failures "
 							+ "before the expensive work (the anchor points at the handler)"),
