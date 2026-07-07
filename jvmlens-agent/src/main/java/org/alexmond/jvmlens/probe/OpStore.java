@@ -44,6 +44,19 @@ public final class OpStore {
 	 * @return a single-element list, or empty
 	 */
 	public List<Section> sections(String key, String title) {
+		return sections(key, title, (label, calls, nanos) -> "");
+	}
+
+	/**
+	 * As {@link #sections(String, String)}, but each row's teaser is enriched with
+	 * {@code flag} — a dimension-specific hedged note computed from the op's own stats
+	 * (keeps this store generic while letting messaging/cache add their own signal).
+	 * @param key the section key
+	 * @param title the section heading
+	 * @param flag the per-op flag (returns {@code ""} for none)
+	 * @return a single-element list, or empty
+	 */
+	public List<Section> sections(String key, String title, OpFlag flag) {
 		if (this.ops.isEmpty()) {
 			return List.of();
 		}
@@ -52,8 +65,12 @@ public final class OpStore {
 			.stream()
 			.sorted((a, b) -> Long.compare(b.getValue().nanos.get(), a.getValue().nanos.get()))
 			.limit(org.alexmond.jvmlens.RankLimits.limit(key))
-			.map((en) -> new Ranked(en.getKey(), (total > 0) ? (double) en.getValue().nanos.get() / total : 0,
-					en.getValue().nanos.get(), en.getValue().teaser()))
+			.map((en) -> {
+				Stat st = en.getValue();
+				String teaser = st.teaser() + flag.apply(en.getKey(), st.calls.get(), st.nanos.get());
+				return new Ranked(en.getKey(), (total > 0) ? (double) st.nanos.get() / total : 0, st.nanos.get(),
+						teaser);
+			})
 			.toList();
 		return List.of(new Section(key, title, "ms", true, rows));
 	}
@@ -69,6 +86,19 @@ public final class OpStore {
 		}
 		int type = label.lastIndexOf('.', method - 1);
 		return (type < 0) ? label : label.substring(type + 1);
+	}
+
+	/**
+	 * A per-op hedged flag (e.g. {@code — synchronous per-message send}) or {@code ""}.
+	 */
+	@FunctionalInterface
+	public interface OpFlag {
+
+		/**
+		 * The flag suffix for an op, given its short label, call count, and total nanos.
+		 */
+		String apply(String label, long calls, long nanos);
+
 	}
 
 	private static final class Stat {
