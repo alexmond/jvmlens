@@ -10,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
+import org.alexmond.jvmlens.ProfileSummary.Section;
 
 /**
  * Enriches a {@link ProfileSummary}'s {@code file:line} anchors (#87) with the actual
@@ -30,6 +31,14 @@ final class SourceResolver {
 
 	/** Hot-leaf teaser is the dominant line, e.g. {@code line 129}. */
 	private static final Pattern LEAF_LINE = Pattern.compile("^line (\\d+)$");
+
+	/**
+	 * An extended-section row (db/web/cache/messaging) carries its captured app call-site
+	 * as {@code … at com.acme.OrderRepo:88}; group 1 is the fully-qualified type, group 2
+	 * the line — so the path comes from the anchor, not the row name (which is the SQL /
+	 * endpoint shape).
+	 */
+	private static final Pattern SECTION_ANCHOR = Pattern.compile("\\bat ([\\w.$]+):(\\d+)");
 
 	private static final int MAX_SRC_LEN = 100;
 
@@ -67,13 +76,63 @@ final class SourceResolver {
 		SourceResolver r = new SourceResolver(roots);
 		List<Ranked> leaves = r.decorateRows(s.hotLeaves(), LEAF_LINE);
 		List<Ranked> alloc = r.decorateRows(s.allocSites(), ALLOC_LINE);
-		if (leaves == null && alloc == null) {
+		List<Section> sections = r.decorateSections(s.sections());
+		if (leaves == null && alloc == null && sections == null) {
 			return s;
 		}
 		return new ProfileSummary(s.source(), s.execSamples(), s.allocTypes(), s.oldObjects(), s.gcPauses(),
 				s.gcPauseMillis(), s.hotPaths(), (leaves != null) ? leaves : s.hotLeaves(),
 				(alloc != null) ? alloc : s.allocSites(), s.allocatedTypes(), s.locks(), s.monitors(), s.cause(),
-				s.appPackage(), s.sections(), s.allocBytes(), s.allocSamples());
+				s.appPackage(), (sections != null) ? sections : s.sections(), s.allocBytes(), s.allocSamples());
+	}
+
+	/**
+	 * Returns a copy of {@code sections} whose rows carrying an {@code at <fqn>:<line>}
+	 * anchor are enriched with the source-line text, or {@code null} when nothing
+	 * resolved.
+	 */
+	private List<Section> decorateSections(List<Section> sections) {
+		List<Section> out = new ArrayList<>(sections.size());
+		boolean changed = false;
+		for (Section sec : sections) {
+			List<Ranked> rows = new ArrayList<>(sec.rows().size());
+			boolean secChanged = false;
+			for (Ranked row : sec.rows()) {
+				String src = (row.stack() != null) ? resolveAnchor(row.stack()) : null;
+				if (src != null) {
+					rows.add(new Ranked(row.name(), row.share(), row.count(), row.stack() + " ⟶ " + src));
+					secChanged = true;
+				}
+				else {
+					rows.add(row);
+				}
+			}
+			out.add(secChanged ? new Section(sec.key(), sec.title(), sec.unit(), sec.measured(), rows) : sec);
+			changed = changed || secChanged;
+		}
+		return changed ? out : null;
+	}
+
+	/**
+	 * Resolve an {@code at <fqn>:<line>} anchor (the type is the anchor's, not the
+	 * row's).
+	 */
+	private String resolveAnchor(String teaser) {
+		Matcher m = SECTION_ANCHOR.matcher(teaser);
+		if (!m.find()) {
+			return null;
+		}
+		String fqType = m.group(1);
+		int dollar = fqType.indexOf('$');
+		String relPath = ((dollar > 0) ? fqType.substring(0, dollar) : fqType).replace('.', '/') + ".java";
+		int line = Integer.parseInt(m.group(2));
+		for (Path root : this.roots) {
+			String text = readLine(root.resolve(relPath), line);
+			if (text != null) {
+				return text;
+			}
+		}
+		return null;
 	}
 
 	/**
