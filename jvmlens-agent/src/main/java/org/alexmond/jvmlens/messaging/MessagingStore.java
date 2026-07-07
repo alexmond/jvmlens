@@ -32,7 +32,10 @@ public final class MessagingStore {
 	 * Record one messaging operation {@code op} taking {@code nanos}; called from advice.
 	 */
 	public static void record(String op, long nanos) {
-		FailGuard.run("messaging", () -> STORE.record(op, nanos, CallSites.capture()));
+		FailGuard.run("messaging", () -> {
+			List<String> path = CallSites.capturePath();
+			STORE.record(op, nanos, CallSites.site(path), CallSites.entryClass(path));
+		});
 	}
 
 	/** Clear all captured operations and scope (used by tests). */

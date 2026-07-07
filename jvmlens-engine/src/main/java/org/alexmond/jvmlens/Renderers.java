@@ -110,8 +110,69 @@ final class Renderers {
 		for (String link : links) {
 			md.append("  - ").append(link).append('\n');
 		}
+		List<String> confirmed = confirmedChains(s);
+		if (!confirmed.isEmpty()) {
+			md.append("- ✓ **Confirmed chain** (shared call path — the deeper op provably ran inside the "
+					+ "endpoint's call tree): ")
+				.append(String.join("; ", confirmed))
+				.append(".\n- Any remaining links above are co-occurrence; confirm with a focused capture.\n\n");
+			return;
+		}
 		md.append("- Likely chain: endpoint → query → cache/alloc → GC; the anchors above are where "
 				+ "to look. Co-occurrence, not proof — confirm with a focused capture.\n\n");
+	}
+
+	/**
+	 * P2b linkage: a deeper op (SQL / cache / messaging) whose captured call-path passes
+	 * through the endpoint's handler class ({@code ↳ under <Class>} matches the
+	 * endpoint's {@code @ <Class>:line} anchor) provably ran inside that request — a
+	 * confirmed chain, not co-occurrence. Empty when nothing is provable (e.g. an offline
+	 * JFR with no agent-captured paths), so the caller falls back to the honest
+	 * co-occurrence wording.
+	 */
+	private static List<String> confirmedChains(ProfileSummary s) {
+		List<String> chains = new ArrayList<>();
+		ProfileSummary.Ranked web = topRow(s, "web");
+		String handler = (web != null) ? classOf(anchorOf(web.stack())) : null;
+		if (handler == null) {
+			return chains;
+		}
+		for (String key : List.of("db", "cache", "messaging")) {
+			ProfileSummary.Ranked deep = topRow(s, key);
+			if (deep != null && handler.equals(entryOf(deep.stack()))) {
+				chains.add("endpoint `" + web.name() + "` → " + key + " `" + deep.name() + "` (via `" + handler + "`)");
+			}
+		}
+		return chains;
+	}
+
+	/**
+	 * The class part of a short {@code Type:line} anchor ({@code UserController}), or
+	 * null.
+	 */
+	private static String classOf(String anchor) {
+		if (anchor == null) {
+			return null;
+		}
+		int colon = anchor.indexOf(':');
+		return (colon < 0) ? anchor : anchor.substring(0, colon);
+	}
+
+	/** The entry class of a P2b {@code ↳ under <Class>} marker, or null when absent. */
+	private static String entryOf(String teaser) {
+		if (teaser == null) {
+			return null;
+		}
+		int at = teaser.indexOf("↳ under ");
+		if (at < 0) {
+			return null;
+		}
+		int start = at + "↳ under ".length();
+		int end = start;
+		while (end < teaser.length() && !Character.isWhitespace(teaser.charAt(end))) {
+			end++;
+		}
+		return teaser.substring(start, end);
 	}
 
 	/**
