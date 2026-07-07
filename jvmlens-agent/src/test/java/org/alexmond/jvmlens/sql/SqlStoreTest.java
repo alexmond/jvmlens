@@ -50,6 +50,23 @@ class SqlStoreTest {
 	}
 
 	@Test
+	void capturesTheAppCallSiteWhenScopeIsSet() {
+		SqlStore.setAppScope(List.of("com.example"));
+		for (int i = 0; i < 60; i++) {
+			com.example.demo.OrderDao.runQuery("SELECT * FROM orders WHERE id = " + i);
+		}
+		Ranked row = SqlStore.sections().get(0).rows().get(0);
+		// anchored to the app frame (OrderDao), never to jvmlens's own classes
+		assertThat(row.stack()).contains("· at com.example.demo.OrderDao:").contains("possible N+1");
+	}
+
+	@Test
+	void capturesNoCallSiteWithoutScope() {
+		com.example.demo.OrderDao.runQuery("SELECT 1");
+		assertThat(SqlStore.sections().get(0).rows().get(0).stack()).doesNotContain("· at");
+	}
+
+	@Test
 	void resetClearsState() {
 		SqlStore.record("SELECT 1", 1_000_000L);
 		assertThat(SqlStore.sections()).isNotEmpty();

@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
@@ -68,7 +69,16 @@ public final class FixHints {
 			rule("java\\.lang\\.reflect\\.(Method|Field|Constructor)|MethodHandle\\.invoke", Lever.STRUCTURAL,
 					"reflective dispatch — cache the handle or call directly"),
 			rule("String\\.format|Formatter\\b", Lever.STRUCTURAL,
-					"String.format in a hot path — prefer concatenation / StringBuilder"));
+					"String.format in a hot path — prefer concatenation / StringBuilder"),
+			// db-section rules — matched only against the `db` section's rows (the SQL
+			// shape
+			// + its teaser), so SQL text can never trip a code rule and vice-versa.
+			dbRule("possible N\\+1|high call count", Lever.STRUCTURAL,
+					"N+1 query — the same shape runs many times per request; batch into one round-trip "
+							+ "(JPA `@BatchSize`/join-fetch, or a single `WHERE id IN (…)`)"),
+			dbRule("(?i)^select\\s+\\*", Lever.STRUCTURAL,
+					"`SELECT *` — project only the columns you use (cuts row width, wire bytes, and "
+							+ "lets covering indexes apply)"));
 
 	private static final String HEADER = "## Likely fix directions [possible]\n"
 			+ "> `[structural]` = mechanical, safe to pull first · `[inherent]` = "
@@ -78,7 +88,12 @@ public final class FixHints {
 	}
 
 	private static Rule rule(String regex, Lever lever, String hint) {
-		return new Rule(Pattern.compile(regex), lever, hint);
+		return new Rule(Pattern.compile(regex), lever, hint, null);
+	}
+
+	/** A rule scoped to the {@code db} extended section only (never code rows). */
+	private static Rule dbRule(String regex, Lever lever, String hint) {
+		return new Rule(Pattern.compile(regex), lever, hint, "db");
 	}
 
 	/**
@@ -90,13 +105,9 @@ public final class FixHints {
 	 */
 	public static List<String> hints(ProfileSummary s) {
 		Map<String, Match> byHint = new LinkedHashMap<>();
-		for (Ranked r : rows(s)) {
-			String text = r.name() + " " + ((r.stack() != null) ? r.stack() : "");
-			for (Rule rule : RULES) {
-				if (rule.pattern().matcher(text).find()) {
-					byHint.putIfAbsent(rule.hint(), new Match(rule.lever(), r.name()));
-				}
-			}
+		scan(rows(s), null, byHint);
+		for (ProfileSummary.Section sec : s.sections()) {
+			scan(sec.rows(), sec.key(), byHint);
 		}
 		List<String> out = new ArrayList<>();
 		byHint.entrySet()
@@ -104,6 +115,21 @@ public final class FixHints {
 			.sorted(Comparator.comparing((e) -> e.getValue().lever()))
 			.forEach((e) -> out.add(e.getValue().render(e.getKey())));
 		return out;
+	}
+
+	/**
+	 * Match {@code rows} against every rule whose {@code sectionKey} equals {@code key}
+	 * ({@code null} = the code rows: hot paths / leaves / allocations / locks).
+	 */
+	private static void scan(List<Ranked> rows, String key, Map<String, Match> byHint) {
+		for (Ranked r : rows) {
+			String text = r.name() + " " + ((r.stack() != null) ? r.stack() : "");
+			for (Rule rule : RULES) {
+				if (Objects.equals(rule.sectionKey(), key) && rule.pattern().matcher(text).find()) {
+					byHint.putIfAbsent(rule.hint(), new Match(rule.lever(), r.name()));
+				}
+			}
+		}
 	}
 
 	/** The hints as a markdown section, or empty when nothing matched. */
@@ -126,7 +152,11 @@ public final class FixHints {
 		return all;
 	}
 
-	private record Rule(Pattern pattern, Lever lever, String hint) {
+	/**
+	 * A hint rule; {@code sectionKey} scopes it to one extended section ({@code null} =
+	 * code rows).
+	 */
+	private record Rule(Pattern pattern, Lever lever, String hint, String sectionKey) {
 	}
 
 	/** A matched rule's lever and the row name that triggered it. */

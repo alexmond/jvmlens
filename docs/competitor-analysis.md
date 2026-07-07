@@ -8,6 +8,13 @@ which capabilities to adopt next. The epic plan that follows from this lives in
 > Verified against official docs during research (2026). Fast-moving facts (commercial
 > pricing, brand-new AI features, maintenance status) are flagged inline — re-verify before
 > quoting externally.
+>
+> **Refreshed 2026-07 against the shipped agent surface.** Most of the extended-profiling plan
+> has since landed: the agent now ships the semantic dimensions (`web`, `db` with sanitized
+> SQL + N+1, `messaging`, `cache`), the JFR-native ones (external I/O, virtual-thread pinning),
+> plus deadlock detection and hedged cross-dimension correlation. The old 🔜 cells below are
+> now ✅ and re-tagged `[shipped]`. Still open: direct **OTel** consumption (only Micrometer-
+> registry summarize ships) and **NoSQL** probes.
 
 **jvmlens** (the subject): a dependency-free **engine** (`jdk.jfr.consumer` only) that reduces
 a JFR recording to a **~400-token, LLM-ready** summary — ranked, application-attributed hot
@@ -15,18 +22,20 @@ paths / allocation sites / lock contention / GC, with a hedged heuristic cause a
 trust signals. Front-ends (CLI `analyze`/`profile`/`watch`/`trend`, an `-javaagent`, an MCP
 server) all feed the same engine. Distinctive bets: **the summary is the product** (not a
 flamegraph or a dashboard); **local-only, zero LLM egress**; **honest under-interpretation**;
-**one JFR-unified engine**. Today it covers the three JFR *resource* dimensions; this doc maps
-the path to *application-semantic* ones.
+**one JFR-unified engine**. It began with the three JFR *resource* dimensions; the agent now
+also covers the *application-semantic* ones (web/db/messaging/cache) this doc originally mapped
+the path to.
 
-Legend: ✅ first-class · ⚠️ partial / add-on / indirect · ❌ not offered · — N/A · 🔜 planned (epic)
+Legend: ✅ first-class · ✅†  shipped since first draft (was 🔜) · ⚠️ partial / add-on / indirect ·
+❌ not offered · — N/A · 🔜 still planned (epic)
 
 ---
 
 ## 1. Capability comparison
 
 Rows are the dimensions this track is about (the resource baseline, then the semantic/extended
-signals), plus the axes where jvmlens differentiates. jvmlens's 🔜 cells reference the epics in
-[`extended-profiling.md`](extended-profiling.md).
+signals), plus the axes where jvmlens differentiates. jvmlens's ✅† cells map to the (now largely
+shipped) epics in [`extended-profiling.md`](extended-profiling.md).
 
 ### 1a. Continuous profilers (jvmlens's home camp)
 
@@ -36,9 +45,10 @@ signals), plus the axes where jvmlens differentiates. jvmlens's 🔜 cells refer
 | Allocation / heap | ✅ | ✅ | ✅ | ✅ |
 | Lock / wait | ✅ | ✅ | ✅ mutex/block | ✅ |
 | Wall-clock | ⚠️ via JFR | ✅ | ✅ | ✅ |
-| Socket / file I/O | 🔜 E1 (JFR events) | ⚠️ | ❌ | ⚠️ |
-| Virtual-thread pinning | 🔜 E1 | ⚠️ | ❌ | ❌ |
-| HTTP / JDBC / messaging **semantics** | 🔜 E2 | ❌ | ❌ (needs tracing) | ⚠️ via Datadog APM |
+| Socket / file I/O | ✅† (JFR events) | ⚠️ | ❌ | ⚠️ |
+| Virtual-thread pinning | ✅† | ⚠️ | ❌ | ❌ |
+| HTTP / JDBC / messaging **semantics** | ✅† (agent probes) | ❌ | ❌ (needs tracing) | ⚠️ via Datadog APM |
+| Deadlock / cross-dim correlation | ✅† | ❌ | ❌ | ⚠️ |
 | Heuristic/automated findings | ✅ (1-line cause) | ❌ | ❌ | ⚠️ |
 | **LLM-ready compact output** | ✅ | ❌ flamegraph | ❌ time-series | ❌ UI |
 | Local / no egress | ✅ | ✅ | ⚠️ self-host server | ❌ SaaS |
@@ -49,12 +59,13 @@ signals), plus the axes where jvmlens differentiates. jvmlens's 🔜 cells refer
 | Dimension | **jvmlens** | JProfiler | YourKit | JDK Mission Control | VisualVM |
 |---|---|---|---|---|---|
 | CPU / alloc / lock | ✅ | ✅ | ✅ | ✅ (JFR) | ✅ sampling |
-| Socket / file I/O | 🔜 E1 | ✅ probe | ✅ probe | ✅ JFR events | ⚠️ |
-| HTTP / web | 🔜 E2a | ✅ servlet/JSP/web-svc probe | ✅ Java EE | ❌ | ❌ |
-| JDBC / SQL | 🔜 E2b | ✅ JDBC probe (+ hot statements) | ✅ Databases probe | ❌ | ❌ |
-| JPA/Hibernate / ORM | 🔜 E2b | ✅ probe | ⚠️ | ❌ | ❌ |
+| Socket / file I/O | ✅† | ✅ probe | ✅ probe | ✅ JFR events | ⚠️ |
+| HTTP / web | ✅† | ✅ servlet/JSP/web-svc probe | ✅ Java EE | ❌ | ❌ |
+| JDBC / SQL | ✅† (sanitized SQL + N+1) | ✅ JDBC probe (+ hot statements) | ✅ Databases probe | ❌ | ❌ |
+| JPA/Hibernate / ORM | ⚠️ N+1 via JDBC (no ORM probe) | ✅ probe | ⚠️ | ❌ | ❌ |
 | NoSQL (Mongo/Cassandra/HBase) | ❌ (later) | ✅ probes | ⚠️ | ❌ | ❌ |
-| Messaging (JMS) | 🔜 E2c | ✅ probe | ⚠️ | ❌ | ❌ |
+| Messaging (JMS / Kafka) | ✅† | ✅ probe | ⚠️ | ❌ | ❌ |
+| Cache (hit/miss + op latency) | ✅† | ⚠️ | ⚠️ | ❌ | ❌ |
 | Automated analysis / rules | ✅ heuristic | ⚠️ | ⚠️ | ✅ **rules engine** | ❌ |
 | Output unit | **digest (tokens)** | rich GUI | rich GUI | GUI + JFR rules | GUI |
 | Production-safe / low overhead | ✅ JFR | ✅ | ✅ | ✅ JFR | ⚠️ dev-only |
@@ -65,8 +76,8 @@ signals), plus the axes where jvmlens differentiates. jvmlens's 🔜 cells refer
 
 | Dimension | **jvmlens** | OpenTelemetry (Java agent) | Datadog APM | New Relic | Dynatrace / AppDynamics | Elastic APM |
 |---|---|---|---|---|---|---|
-| HTTP / JDBC / messaging semantics | 🔜 E2 | ✅ auto-instrument | ✅ | ✅ | ✅ | ✅ |
-| Sanitized SQL + timing | 🔜 E2b | ✅ | ✅ | ✅ | ✅ | ✅ |
+| HTTP / JDBC / messaging semantics | ✅† | ✅ auto-instrument | ✅ | ✅ | ✅ | ✅ |
+| Sanitized SQL + timing | ✅† | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Distributed tracing (cross-service) | ❌ non-goal | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Code-level profiling | ✅ | ⚠️ (profiling sep.) | ✅ correlated | ✅ | ✅ | ⚠️ |
 | Pipeline required (collector/backend) | ❌ none | ✅ heavy | ✅ SaaS | ✅ SaaS | ✅ | ✅ |
@@ -78,8 +89,8 @@ signals), plus the axes where jvmlens differentiates. jvmlens's 🔜 cells refer
 
 | Dimension | **jvmlens** | Glowroot | inspectIT Ocelot |
 |---|---|---|---|
-| Slow-transaction / endpoint capture | 🔜 E2a | ✅ | ✅ |
-| SQL capture + aggregation | 🔜 E2b | ✅ | ⚠️ via OTel |
+| Slow-transaction / endpoint capture | ✅† | ✅ | ✅ |
+| SQL capture + aggregation | ✅† | ✅ | ⚠️ via OTel |
 | Bytecode instrumentation | ✅ (agent ByteBuddy) | ✅ | ✅ |
 | Single-JVM, low overhead, self-contained | ✅ | ✅ | ⚠️ + collector |
 | Output unit | **digest (tokens)** | embedded UI | Grafana |
@@ -90,10 +101,12 @@ signals), plus the axes where jvmlens differentiates. jvmlens's 🔜 cells refer
 — twice over: **APM/OTel** does them via bytecode spans through a collector→backend→dashboard
 pipeline, and **desktop profilers (JProfiler/YourKit)** do them via "probes" in a GUI. **JMC**
 already turns JFR into human-readable findings via a rules engine — the human-facing analog of
-jvmlens's heuristic cause. What *nobody* ships is the intersection jvmlens owns: those semantics
-distilled to a few hundred ranked, source-attributed tokens an LLM/coding-agent can act on, with
-**no pipeline, no GUI, no egress, and a JFR-unified engine**. The capability exists everywhere;
-the *form factor* (LLM-ready digest) is uncontested.
+jvmlens's heuristic cause. What *nobody else* ships is the intersection jvmlens now occupies: those
+semantics distilled to a few hundred ranked, source-attributed tokens an LLM/coding-agent can act
+on, with **no pipeline, no GUI, no egress, and a JFR-unified engine**. As of the 2026-07 refresh
+jvmlens has actually *moved into* that intersection — the `web`/`db`/`messaging`/`cache` dimensions
+now emit as digest sections. The capability exists everywhere; the *form factor* (LLM-ready digest)
+remains uncontested, and jvmlens is now the one tool sitting in both.
 
 ---
 
@@ -121,14 +134,16 @@ the *form factor* (LLM-ready digest) is uncontested.
 
 ---
 
-## 3. Best capabilities to adopt (→ epics)
+## 3. Best capabilities to adopt (→ epics) — status
 
-Mapped to [`extended-profiling.md`](extended-profiling.md):
+Mapped to [`extended-profiling.md`](extended-profiling.md). Most of this section has **shipped**
+since the first draft:
 
-- **From JFR itself, free (→ E1):** socket/file I/O aggregation and `jdk.VirtualThreadPinned` — both already in the recording, both absent from most profilers' default summaries. Smallest, ships first.
-- **From JProfiler/YourKit/Glowroot probes (→ E2):** HTTP-endpoint, **JDBC sanitized-SQL + N+1**, and messaging signal via the agent's existing ByteBuddy — but rendered as ranked digest sections, not GUI tabs. E2b (SQL) is highest-value: most app latency hides there and an LLM fix is most actionable.
-- **From OTel/Micrometer (→ E3):** consume existing telemetry instead of re-instrumenting, for shops already wired up.
-- **From JMC's rules engine (→ E4):** richer heuristic findings, but kept **hedged and LLM-prep** (data over confident labels), and correlated across dimensions (slow endpoint → its query → its GC) the way APM does via spans.
+- **From JFR itself, free (→ E1): ✅ shipped.** Socket/file I/O aggregation and `jdk.VirtualThreadPinned` — both already in the recording, both absent from most profilers' default summaries. Now always-on dimensions.
+- **From JProfiler/YourKit/Glowroot probes (→ E2): ✅ shipped.** HTTP-endpoint (`web`), **JDBC sanitized-SQL + N+1** (`db`), messaging (`messaging`, JMS/Kafka), and cache (`cache`) via the agent's ByteBuddy advice — rendered as ranked digest sections, not GUI tabs. E2b (SQL) was the highest-value and landed first, as planned.
+- **From OTel/Micrometer (→ E3): ⚠️ partial.** The `micrometer` dimension summarizes an *existing* registry; **direct OTel span consumption is still open** — the remaining integration lever for shops already wired up.
+- **From JMC's rules engine (→ E4): ✅ largely shipped.** Deadlock detection and hedged **cross-dimension correlation** now ship (slow endpoint → its query → its GC), kept **hedged and LLM-prep** (data over confident labels). Richer rule coverage can still grow.
+- **Still open:** direct OTel consumption (E3) and **NoSQL** probes (Mongo/Cassandra/HBase).
 
 ---
 
@@ -140,18 +155,23 @@ Mapped to [`extended-profiling.md`](extended-profiling.md):
 - **One JFR-unified engine across every front-end** — offline file, live pid, continuous watch, in-process agent, MCP, and the long-running `trend` all reduce to the same `ProfileSummary`.
 - **Honest under-interpretation** — a hedged cause and per-row trust signals, designed to feed an LLM clean data, not to win a dashboard.
 
-**Where jvmlens is behind (this track's targets):** no application-semantic dimensions yet —
-HTTP endpoints, SQL/ORM, messaging, NoSQL, caches — and only resource-level I/O. JProfiler/YourKit
-(GUI), OTel/APM (pipeline), and Glowroot (single-JVM UI) all have them. The competitive bet is to
-acquire those semantics through the **cheapest faithful source** (JFR first, then targeted
-ByteBuddy, then consuming OTel) and render them in the one form factor the field lacks.
+**Where jvmlens is behind (this track's targets) — mostly closed as of 2026-07.** The
+application-semantic dimensions the first draft lacked — HTTP endpoints, SQL, messaging, caches —
+**now ship** in the agent, alongside external I/O and vthread pinning. The competitive bet played
+out as planned: acquire the semantics through the **cheapest faithful source** (JFR first, then
+targeted ByteBuddy) and render them in the one form factor the field lacks. **Residual gaps:**
+- **No ORM-specific probe** — N+1 is inferred from JDBC, not Hibernate/JPA instrumentation (JProfiler has a dedicated ORM probe).
+- **No NoSQL** — Mongo/Cassandra/HBase/Redis semantics (JProfiler/YourKit have probes).
+- **No direct OTel consumption** — only Micrometer-registry summarize; OTel spans (E3) remain the open integration lever.
+- **No distributed tracing** — an explicit non-goal, not a gap.
 
 **Threat to watch:** profilers adding AI/agent front-ends (JProfiler 16.1, 2026). jvmlens's
 durable edge is being **LLM-native and open from the engine up** — not a GUI with an AI button.
 
-**Proposed epics:** see [`extended-profiling.md`](extended-profiling.md) — E1 (JFR I/O + pinning),
-E2 (semantic web/db/messaging via ByteBuddy), E3 (consume OTel/Micrometer), E4 (unified rendering +
-correlation + long-run coverage). Sequence: E1 → E2b → E2a → E4 → E2c/E2d → E3.
+**Epics:** see [`extended-profiling.md`](extended-profiling.md) — **E1 ✅** (JFR I/O + pinning),
+**E2 ✅** (semantic web/db/messaging/cache via ByteBuddy), **E3 ⚠️** (Micrometer done; OTel span
+consumption open), **E4 ✅** (correlation + deadlock + long-run `trend` coverage). The planned
+sequence E1 → E2b → E2a → E4 → E2c/E2d → E3 held; only E3's OTel half and NoSQL remain.
 
 ---
 

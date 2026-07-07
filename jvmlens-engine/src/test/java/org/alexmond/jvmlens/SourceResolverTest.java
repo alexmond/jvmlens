@@ -8,10 +8,27 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
+import org.alexmond.jvmlens.ProfileSummary.Section;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SourceResolverTest {
+
+	@Test
+	void echoesSourceLineAtSemanticSectionCallSite(@TempDir Path tmp) throws Exception {
+		Path pkg = Files.createDirectories(tmp.resolve("com/x"));
+		Files.writeString(pkg.resolve("OrderRepo.java"),
+				"package com.x;\nclass OrderRepo {\n  List<Order> byId(long id) {\n    return jdbc.query(SQL, id);\n  }\n}\n");
+		// a db row whose teaser carries the captured `at <fqn>:<line>` anchor (line 4)
+		Ranked row = new Ranked("select * from orders where id = ?", 0.9, 200,
+				"200 calls, avg 1.0 ms · at com.x.OrderRepo:4 — high call count, possible N+1");
+		ProfileSummary s = new ProfileSummary("r.jfr", 100, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
+				List.of(), List.of(), "c", "com.x")
+			.withSections(List.of(new Section("db", "Top SQL", "ms", true, List.of(row))));
+
+		ProfileSummary d = SourceResolver.decorate(s, List.of(tmp));
+		assertThat(d.sections().get(0).rows().get(0).stack()).contains("⟶ return jdbc.query(SQL, id);");
+	}
 
 	@Test
 	void echoesSourceLineAtAllocSiteAndHotLeaf(@TempDir Path tmp) throws Exception {
