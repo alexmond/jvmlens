@@ -21,7 +21,7 @@ public final class OpStore {
 
 	/** Record one operation {@code label} taking {@code nanos}. */
 	public void record(String label, long nanos) {
-		record(label, nanos, null);
+		record(label, nanos, null, null);
 	}
 
 	/**
@@ -29,7 +29,16 @@ public final class OpStore {
 	 * call-site {@code site} ({@code null} = none captured).
 	 */
 	public void record(String label, long nanos, String site) {
-		this.ops.computeIfAbsent(shorten(label), (k) -> new Stat()).add(nanos, site);
+		record(label, nanos, site, null);
+	}
+
+	/**
+	 * As {@link #record(String, long, String)}, but also records the op's outermost app
+	 * caller {@code entry} (the request entry) for P2b shared-call-path linkage;
+	 * {@code null} when the op has no app frame above its anchor.
+	 */
+	public void record(String label, long nanos, String site, String entry) {
+		this.ops.computeIfAbsent(shorten(label), (k) -> new Stat()).add(nanos, site, entry);
 	}
 
 	/** Clear all captured operations (used by tests). */
@@ -109,16 +118,21 @@ public final class OpStore {
 
 		private final Map<String, AtomicLong> sites = new ConcurrentHashMap<>();
 
-		void add(long ns, String site) {
+		private final Map<String, AtomicLong> entries = new ConcurrentHashMap<>();
+
+		void add(long ns, String site, String entry) {
 			this.calls.incrementAndGet();
 			this.nanos.addAndGet(Math.max(ns, 0));
 			if (site != null) {
 				this.sites.computeIfAbsent(site, (k) -> new AtomicLong()).incrementAndGet();
 			}
+			if (entry != null) {
+				this.entries.computeIfAbsent(entry, (k) -> new AtomicLong()).incrementAndGet();
+			}
 		}
 
-		private String dominantSite() {
-			return this.sites.entrySet()
+		private String dominant(Map<String, AtomicLong> counts) {
+			return counts.entrySet()
 				.stream()
 				.max(Map.Entry.comparingByValue((a, b) -> Long.compare(a.get(), b.get())))
 				.map(Map.Entry::getKey)
@@ -129,9 +143,13 @@ public final class OpStore {
 			long c = this.calls.get();
 			double avgMs = (c > 0) ? (this.nanos.get() / 1_000_000.0 / c) : 0;
 			StringBuilder base = new StringBuilder(String.format(Locale.ROOT, "%d ops, avg %.1f ms", c, avgMs));
-			String site = dominantSite();
+			String site = dominant(this.sites);
 			if (site != null) {
 				base.append(" · at ").append(site);
+			}
+			String entry = dominant(this.entries);
+			if (entry != null) {
+				base.append(" ↳ under ").append(entry);
 			}
 			return base.toString();
 		}

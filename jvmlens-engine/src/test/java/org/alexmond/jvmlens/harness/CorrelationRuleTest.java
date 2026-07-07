@@ -33,6 +33,24 @@ class CorrelationRuleTest {
 							"SQL `select * from users where id = ?` @ UserRepo:88 (N+1)", "GC `820 ms`",
 							"Co-occurrence, not proof"),
 					List.of("startup/classload-dominated")),
+			new Case("correlation: confirmed chain when the SQL runs under the endpoint handler",
+					Summaries.builder()
+						.web("GET /users", 500, "120 reqs, avg 4.0 ms · at com.acme.UserController:37")
+						.db("select * from users", 480,
+								"60 calls, avg 8.0 ms · at com.acme.UserRepo:88 "
+										+ "↳ under UserController — high call count, possible N+1")
+						.build(),
+					Mode.MARKDOWN,
+					List.of("Confirmed chain",
+							"endpoint `GET /users` → db `select * from users` (via `UserController`)"),
+					List.of("Co-occurrence, not proof")),
+			new Case("correlation: no confirmation when the SQL's entry differs from the handler",
+					Summaries.builder()
+						.web("GET /users", 500, "120 reqs, avg 4.0 ms · at com.acme.UserController:37")
+						.db("select * from orders", 480,
+								"60 calls, avg 8.0 ms · at com.acme.OrderRepo:88 ↳ under OrderBatchJob")
+						.build(),
+					Mode.MARKDOWN, List.of("Co-occurrence, not proof"), List.of("Confirmed chain")),
 			new Case("correlation: startup-dominated capture is softened, not asserted",
 					Summaries.builder()
 						.db("create table users (id bigint)", 200, "1 calls, avg 200.0 ms")

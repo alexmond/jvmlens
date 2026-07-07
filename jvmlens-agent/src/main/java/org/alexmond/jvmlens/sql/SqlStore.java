@@ -36,8 +36,11 @@ public final class SqlStore {
 
 	/** Record one execution of {@code sql} taking {@code nanos}; called from advice. */
 	public static void record(String sql, long nanos) {
-		FailGuard.run("db", () -> SHAPES.computeIfAbsent(SqlSanitizer.sanitize(sql), (k) -> new Stat())
-			.add(nanos, CallSites.capture()));
+		FailGuard.run("db", () -> {
+			List<String> path = CallSites.capturePath();
+			SHAPES.computeIfAbsent(SqlSanitizer.sanitize(sql), (k) -> new Stat())
+				.add(nanos, CallSites.site(path), CallSites.entryClass(path));
+		});
 	}
 
 	/** Clear all captured statements and scope (used by tests). */
@@ -70,17 +73,22 @@ public final class SqlStore {
 
 		private final Map<String, AtomicLong> sites = new ConcurrentHashMap<>();
 
-		void add(long ns, String site) {
+		private final Map<String, AtomicLong> entries = new ConcurrentHashMap<>();
+
+		void add(long ns, String site, String entry) {
 			this.calls.incrementAndGet();
 			this.nanos.addAndGet(Math.max(ns, 0));
 			if (site != null) {
 				this.sites.computeIfAbsent(site, (k) -> new AtomicLong()).incrementAndGet();
 			}
+			if (entry != null) {
+				this.entries.computeIfAbsent(entry, (k) -> new AtomicLong()).incrementAndGet();
+			}
 		}
 
-		/** The most frequent captured call-site, or {@code null} if none was captured. */
-		private String dominantSite() {
-			return this.sites.entrySet()
+		/** The most frequent value in {@code counts}, or {@code null} if none. */
+		private String dominant(Map<String, AtomicLong> counts) {
+			return counts.entrySet()
 				.stream()
 				.max(Map.Entry.comparingByValue((a, b) -> Long.compare(a.get(), b.get())))
 				.map(Map.Entry::getKey)
@@ -91,9 +99,13 @@ public final class SqlStore {
 			long c = this.calls.get();
 			double avgMs = (c > 0) ? (this.nanos.get() / 1_000_000.0 / c) : 0;
 			StringBuilder base = new StringBuilder(String.format(Locale.ROOT, "%d calls, avg %.1f ms", c, avgMs));
-			String site = dominantSite();
+			String site = dominant(this.sites);
 			if (site != null) {
 				base.append(" · at ").append(site);
+			}
+			String entry = dominant(this.entries);
+			if (entry != null) {
+				base.append(" ↳ under ").append(entry);
 			}
 			if (c >= N_PLUS_ONE_CALLS && avgMs < N_PLUS_ONE_AVG_MS) {
 				base.append(" — high call count, possible N+1");
