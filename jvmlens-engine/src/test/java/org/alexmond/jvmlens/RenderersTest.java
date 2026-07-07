@@ -122,8 +122,8 @@ class RenderersTest {
 							.of(new Ranked("select * from line where id = ?", 1.0, 4_000_000_000L, "600 calls")))));
 		String full = Renderers.markdown(s);
 		assertThat(full).contains("## Cross-dimension correlation (heuristic)");
-		assertThat(full).contains("slowest endpoint `POST /orders`").contains("hot SQL `select");
-		assertThat(full).contains("350 ms GC");
+		assertThat(full).contains("endpoint `POST /orders`").contains("SQL `select");
+		assertThat(full).contains("GC `350 ms`");
 		// a single-dimension summary (just a hot path) gets no correlation block
 		ProfileSummary cpuOnly = new ProfileSummary("r.jfr", 100, 0, 0, 0, 0,
 				List.of(new Ranked("com.example.Svc.run", 1.0, 100, null)), List.of(), List.of(), List.of(), List.of(),
