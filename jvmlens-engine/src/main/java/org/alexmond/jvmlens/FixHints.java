@@ -97,7 +97,10 @@ public final class FixHints {
 							+ "`find(Filters.in(…))` or an aggregation (the anchor points at the caller)"),
 			sectionRule("mongo", "likely un-batched", Lever.STRUCTURAL,
 					"un-batched document writes — replace the per-document insertOne/updateOne loop with "
-							+ "`insertMany`/`bulkWrite` so they flush in one round-trip"));
+							+ "`insertMany`/`bulkWrite` so they flush in one round-trip"),
+			sectionRule("redis", "N\\+1 round-trips", Lever.STRUCTURAL,
+					"per-key Redis round-trips — batch them: pipeline the commands or use the multi-key "
+							+ "variant (`MGET`/`HMGET`) so N round-trips collapse to one (the anchor is the caller)"));
 
 	private static final String HEADER = "## Likely fix directions [possible]\n"
 			+ "> `[structural]` = mechanical, safe to pull first · `[inherent]` = "

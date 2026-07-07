@@ -138,6 +138,11 @@ public final class Summaries {
 			return row("mongo", "MongoDB operations (by total time)", "ms", op, 0.5, ms, teaser);
 		}
 
+		/** Add a {@code redis} command row: {@code op}, total {@code ms}, teaser. */
+		public Builder redis(String op, long ms, String teaser) {
+			return row("redis", "Redis commands (by total time)", "ms", op, 0.5, ms, teaser);
+		}
+
 		public ProfileSummary build() {
 			return new ProfileSummary(this.source, this.execSamples, 0, 0, 0, this.gcPauseMillis, this.hotPaths,
 					this.hotLeaves, this.allocSites, List.of(), this.locks, List.of(), "", this.appPackage,

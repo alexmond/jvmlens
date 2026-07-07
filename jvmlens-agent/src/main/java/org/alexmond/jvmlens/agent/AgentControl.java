@@ -34,8 +34,8 @@ import org.alexmond.jvmlens.Scope;
 public final class AgentControl {
 
 	/** Dimensions that {@code enable}/{@code disable} accept. */
-	public static final Set<String> DIMENSIONS = Set.of("db", "web", "messaging", "cache", "mongo", "micrometer",
-			"snapshot", "deadlock");
+	public static final Set<String> DIMENSIONS = Set.of("db", "web", "messaging", "cache", "mongo", "redis",
+			"micrometer", "snapshot", "deadlock");
 
 	/** {@code topn} category aliases → the engine/store category they map to. */
 	private static final Map<String, String> TOPN_ALIASES = Map.of("perf", "cpu", "mem", "memory", "wait", "locks");
