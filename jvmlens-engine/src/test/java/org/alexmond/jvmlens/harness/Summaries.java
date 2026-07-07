@@ -126,6 +126,13 @@ public final class Summaries {
 			return row("cache", "Cache operations (by total time)", "ms", op, 0.5, ms, teaser);
 		}
 
+		/**
+		 * Add a {@code messaging} operation row: {@code op}, total {@code ms}, teaser.
+		 */
+		public Builder messaging(String op, long ms, String teaser) {
+			return row("messaging", "Messaging operations (by total time)", "ms", op, 0.5, ms, teaser);
+		}
+
 		public ProfileSummary build() {
 			return new ProfileSummary(this.source, this.execSamples, 0, 0, 0, this.gcPauseMillis, this.hotPaths,
 					this.hotLeaves, this.allocSites, List.of(), this.locks, List.of(), "", this.appPackage,

@@ -84,7 +84,10 @@ public final class FixHints {
 							+ "before the expensive work (the anchor points at the handler)"),
 			sectionRule("cache", "low hit rate", Lever.STRUCTURAL,
 					"cache is mostly missing — check key cardinality / TTL / warm-up; a low hit rate means "
-							+ "the cache isn't paying for itself (the anchor points at the caller)"));
+							+ "the cache isn't paying for itself (the anchor points at the caller)"),
+			sectionRule("messaging", "synchronous per-message send", Lever.STRUCTURAL,
+					"synchronous per-message send in a hot path — batch (Kafka `linger.ms`+`batch.size`, "
+							+ "or a JMS transacted batch) or send asynchronously"));
 
 	private static final String HEADER = "## Likely fix directions [possible]\n"
 			+ "> `[structural]` = mechanical, safe to pull first · `[inherent]` = "
