@@ -74,6 +74,8 @@
                                         <exclude>org.alexmond.jvmlens.cache.CacheCapture</exclude>
                                         <exclude>org.alexmond.jvmlens.mongo.MongoAdvice</exclude>
                                         <exclude>org.alexmond.jvmlens.mongo.MongoCapture</exclude>
+                                        <exclude>org.alexmond.jvmlens.redis.RedisAdvice</exclude>
+                                        <exclude>org.alexmond.jvmlens.redis.RedisCapture</exclude>
                                         <exclude>org.alexmond.jvmlens.consume.MicrometerSource</exclude>
                                     </excludes>
                                 </rule>
