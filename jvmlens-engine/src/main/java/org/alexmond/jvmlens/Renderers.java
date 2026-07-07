@@ -76,16 +76,21 @@ final class Renderers {
 	 * trace linkage, so it suggests, it does not assert.
 	 */
 	private static void appendCorrelation(StringBuilder md, ProfileSummary s) {
-		List<String> parts = new ArrayList<>();
-		addPart(parts, "slowest endpoint", topName(s, "web"));
-		addPart(parts, "hot SQL", topName(s, "db"));
-		addPart(parts, "blocking I/O on", topName(s, "io"));
-		addPart(parts, "hot path", s.hotPaths().isEmpty() ? null : s.hotPaths().get(0).name());
-		addPart(parts, "lock", s.locks().isEmpty() ? null : s.locks().get(0).name());
+		// Fixed causal narrative order (request → query → cache → messaging → I/O →
+		// hot path → lock → GC), each link shown only if present, carrying its P1
+		// source anchor and a compact flag so the reader sees *where* to look.
+		List<String> links = new ArrayList<>();
+		addLink(links, "endpoint", topRow(s, "web"));
+		addLink(links, "SQL", topRow(s, "db"));
+		addLink(links, "cache", topRow(s, "cache"));
+		addLink(links, "messaging", topRow(s, "messaging"));
+		addLink(links, "blocking I/O", topRow(s, "io"));
+		addLink(links, "hot path", s.hotPaths().isEmpty() ? null : s.hotPaths().get(0));
+		addLink(links, "lock", s.locks().isEmpty() ? null : s.locks().get(0));
 		if (s.gcPauseMillis() > 200) {
-			parts.add(s.gcPauseMillis() + " ms GC");
+			links.add("GC `" + s.gcPauseMillis() + " ms`");
 		}
-		if (parts.size() < 2) {
+		if (links.size() < 2) {
 			return;
 		}
 		md.append("## Cross-dimension correlation (heuristic)\n");
@@ -97,14 +102,16 @@ final class Renderers {
 					+ "JAR/classpath I/O, or schema DDL among the top signals) — sample under "
 					+ "steady-state load for workload signal.\n"
 					+ "- Co-occurring (not necessarily a workload chain): ")
-				.append(String.join(", ", parts))
+				.append(String.join(", ", links))
 				.append(".\n\n");
 			return;
 		}
-		md.append("- Dominant signals co-occur: ")
-			.append(String.join(", ", parts))
-			.append(". If they share a call path the likely chain is request → query / allocation → GC;"
-					+ " confirm with a focused capture.\n\n");
+		md.append("- Co-occurring signals (in call order — verify they share a request path):\n");
+		for (String link : links) {
+			md.append("  - ").append(link).append('\n');
+		}
+		md.append("- Likely chain: endpoint → query → cache/alloc → GC; the anchors above are where "
+				+ "to look. Co-occurrence, not proof — confirm with a focused capture.\n\n");
 	}
 
 	/**
@@ -131,17 +138,77 @@ final class Renderers {
 		return (s != null) ? s : "";
 	}
 
-	private static void addPart(List<String> parts, String label, String name) {
-		if (name != null) {
-			parts.add(label + " `" + name + "`");
+	/** Render one chain link: {@code label `name` @ anchor (flag)}; skips a null row. */
+	private static void addLink(List<String> links, String label, ProfileSummary.Ranked row) {
+		if (row == null) {
+			return;
 		}
+		StringBuilder b = new StringBuilder(label).append(" `").append(row.name()).append('`');
+		String anchor = anchorOf(row.stack());
+		if (anchor != null) {
+			b.append(" @ ").append(anchor);
+		}
+		String flag = flagOf(row.stack());
+		if (flag != null) {
+			b.append(" (").append(flag).append(')');
+		}
+		links.add(b.toString());
+	}
+
+	/**
+	 * The short {@code Type:line} form of a P1 {@code · at <fqn>:<line>} anchor, or null.
+	 */
+	private static String anchorOf(String teaser) {
+		if (teaser == null) {
+			return null;
+		}
+		int at = teaser.indexOf("· at ");
+		if (at < 0) {
+			return null;
+		}
+		int start = at + "· at ".length();
+		int end = start;
+		while (end < teaser.length() && !Character.isWhitespace(teaser.charAt(end)) && teaser.charAt(end) != ',') {
+			end++;
+		}
+		String fqn = teaser.substring(start, end); // com.acme.OrderRepo:88
+		int colon = fqn.indexOf(':');
+		String type = (colon < 0) ? fqn : fqn.substring(0, colon);
+		int dot = type.lastIndexOf('.');
+		String shortType = (dot < 0) ? type : type.substring(dot + 1);
+		return (colon < 0) ? shortType : (shortType + fqn.substring(colon));
+	}
+
+	/** A compact form of the row's hedged flag (N+1 / low hit rate / …), or null. */
+	private static String flagOf(String teaser) {
+		if (teaser == null) {
+			return null;
+		}
+		if (teaser.contains("possible N+1")) {
+			return "N+1";
+		}
+		if (teaser.contains("low hit rate")) {
+			return "low hit rate";
+		}
+		if (teaser.contains("high error rate")) {
+			return "high error rate";
+		}
+		if (teaser.contains("synchronous per-message send")) {
+			return "sync send";
+		}
+		return null;
 	}
 
 	private static String topName(ProfileSummary s, String key) {
+		ProfileSummary.Ranked row = topRow(s, key);
+		return (row != null) ? row.name() : null;
+	}
+
+	private static ProfileSummary.Ranked topRow(ProfileSummary s, String key) {
 		return s.sections()
 			.stream()
 			.filter((sec) -> sec.key().equals(key) && !sec.rows().isEmpty())
-			.map((sec) -> sec.rows().get(0).name())
+			.map((sec) -> sec.rows().get(0))
 			.findFirst()
 			.orElse(null);
 	}
