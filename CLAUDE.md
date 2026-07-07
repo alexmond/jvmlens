@@ -185,6 +185,7 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 - 2026-07-02 — **agent-launch-scope** — agent `scope=app:<prefix>`/`exclude:<prefix>` launch arg pins app attribution from sample 1, no control channel. Why: replays as in-flight `scope` cmds via `AgentControl.apply`. #133.
 - 2026-07-07 — **rule-harness** — new `test/.../harness/` (`Summaries` builder + `RuleDetectionHarness` table runner): a fixture = model-synth scenario → `mustContain`/`mustNotContain` per render mode; false-positive guard = `mustNotContain` on a look-alike. Why: uniform, cheap backfill of detector coverage from field-findings.
 - 2026-07-07 — **db-anchor-hints** — P1a: `db` section feeds `--hints` (N+1→batch, `SELECT *`→project) via section-scoped `FixHints` rules (`sectionKey` keeps SQL text off code rules); `SqlStore` captures first app-frame call-site (bounded, scope-gated, fail-open `StackWalker` → `· at Repo:88`), `SourceResolver` echoes it. Why: semantic dims must meet the CPU/alloc form-factor bar. Shared walk reused by P1b/c/d.
+- 2026-07-07 — **web-anchor-hints** — P1b: extracted the call-site walk to shared `probe.CallSites` (one `setAppScope`, wired once in the agent); `WebStore` anchors each endpoint to its handler + flags `high error rate` (≥20% over ≥10 reqs), a section-scoped web `FixHints` rule. `FixHints.dbRule`→generic `sectionRule(key,…)`. Why: DRY the shared mechanism at its 2nd consumer; slow-endpoint is P2 correlation, not a mechanical hint.
 - 2026-Q2 — **archived** — 12 entries → docs/decisions/2026-Q2.md.
 
 ### Historic
