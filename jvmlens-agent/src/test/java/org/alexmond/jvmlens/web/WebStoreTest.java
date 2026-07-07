@@ -44,6 +44,31 @@ class WebStoreTest {
 	}
 
 	@Test
+	void capturesTheHandlerCallSiteAndFlagsHighErrorRate() {
+		org.alexmond.jvmlens.probe.CallSites.setAppScope(List.of("com.example"));
+		for (int i = 0; i < 8; i++) {
+			com.example.demo.UserController.handle(200);
+		}
+		for (int i = 0; i < 4; i++) {
+			com.example.demo.UserController.handle(500); // 4/12 = 33% > 20% threshold
+		}
+		Ranked row = WebStore.sections().get(0).rows().get(0);
+		assertThat(row.stack()).contains("· at com.example.demo.UserController:")
+			.contains("4 errors")
+			.contains("high error rate");
+	}
+
+	@Test
+	void noHighErrorRateFlagBelowThreshold() {
+		org.alexmond.jvmlens.probe.CallSites.setAppScope(List.of("com.example"));
+		for (int i = 0; i < 20; i++) {
+			com.example.demo.UserController.handle(200); // one error in 21 → below 20%
+		}
+		com.example.demo.UserController.handle(500);
+		assertThat(WebStore.sections().get(0).rows().get(0).stack()).doesNotContain("high error rate");
+	}
+
+	@Test
 	void resetClearsState() {
 		WebStore.record("GET", "/x", 200, 1_000_000L);
 		assertThat(WebStore.sections()).isNotEmpty();
