@@ -60,7 +60,7 @@ public final class SqlStore {
 			.sorted((a, b) -> Long.compare(b.getValue().nanos.get(), a.getValue().nanos.get()))
 			.limit(org.alexmond.jvmlens.RankLimits.limit("db"))
 			.map((en) -> new Ranked(en.getKey(), (total > 0) ? (double) en.getValue().nanos.get() / total : 0,
-					en.getValue().nanos.get(), en.getValue().teaser()))
+					en.getValue().nanos.get(), en.getValue().teaser(en.getKey())))
 			.toList();
 		return List.of(new Section("db", "Top SQL (by total time, sanitized)", "ms", true, rows));
 	}
@@ -95,7 +95,7 @@ public final class SqlStore {
 				.orElse(null);
 		}
 
-		String teaser() {
+		String teaser(String shape) {
 			long c = this.calls.get();
 			double avgMs = (c > 0) ? (this.nanos.get() / 1_000_000.0 / c) : 0;
 			StringBuilder base = new StringBuilder(String.format(Locale.ROOT, "%d calls, avg %.1f ms", c, avgMs));
@@ -107,10 +107,31 @@ public final class SqlStore {
 			if (entry != null) {
 				base.append(" ↳ under ").append(entry);
 			}
-			if (c >= N_PLUS_ONE_CALLS && avgMs < N_PLUS_ONE_AVG_MS) {
-				base.append(" — high call count, possible N+1");
-			}
+			base.append(ormFlag(shape, c, avgMs));
 			return base.toString();
+		}
+
+		/**
+		 * The ORM/N+1 flag for a high-count shape (P3), keyed on the sanitized
+		 * (lowercased) statement: repeated single-row {@code insert}/{@code update} reads
+		 * as un-batched writes (enable JDBC batching); a fast repeated {@code select} is
+		 * a possible N+1 — <em>unless</em> it already uses {@code in (?)}, which is the
+		 * batch-fetch fix, not the anti-pattern, so it is not flagged.
+		 */
+		private static String ormFlag(String shape, long c, double avgMs) {
+			if (c < N_PLUS_ONE_CALLS) {
+				return "";
+			}
+			if (shape.startsWith("insert")) {
+				return " — repeated single-row insert, likely un-batched";
+			}
+			if (shape.startsWith("update")) {
+				return " — repeated single-row update, likely un-batched";
+			}
+			if (avgMs < N_PLUS_ONE_AVG_MS && !shape.contains(" in (?)")) {
+				return " — high call count, possible N+1";
+			}
+			return "";
 		}
 
 	}
