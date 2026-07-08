@@ -30,8 +30,10 @@ JMH module needed), a continuous ring buffer (`watch`, periodic or dump-on-trigg
 in-process `-javaagent` (container-native).
 | Dimensions | CPU hot paths/leaves, memory + GC, lock contention, **external I/O**,
 **virtual-thread pinning**, **deadlocks**, and — via the agent — **SQL**, **HTTP endpoints**,
-**messaging**, **cache**, and **Micrometer** timers, plus **variable snapshots** and a hedged
-**cross-dimension correlation**.
+**messaging** (Kafka / JMS / RabbitMQ), **cache**, **MongoDB**, **Redis**, and **Micrometer**
+timers, plus **variable snapshots** and a **cross-dimension correlation** that confirms an
+endpoint→query→GC chain when the captured call-path proves it. Each agent dimension is
+**source-anchored** (`· at Repo:88`) and feeds `--hints` (N+1 → batch, low hit rate, …).
 | Optimize loop | `analyze --baseline` **diffs** two runs (absolute-anchored), `--assert`
 **gates** a regression in CI (non-zero exit), `--hints` gives hedged fix directions, and
 `--top-k` / `--max-tokens` budget the size. A JMH profiler (`-prof …JvmlensProfiler`) prints

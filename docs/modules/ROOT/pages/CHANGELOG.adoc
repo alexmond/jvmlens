@@ -1,5 +1,36 @@
 = Changelog
 
+== 0.3.0
+
+The semantic dimensions grow up: every agent dimension is now **source-anchored** and feeds
+the fix-hint + correlation machinery, cross-dimension correlation can **confirm** a chain, and
+two new stores (MongoDB, Redis) plus RabbitMQ land — the P1→P5 form-factor cycle.
+
+* **Source anchors + fix-hints on every semantic dimension** — `db`, `web`, `cache`, and
+  `messaging` rows now carry the app call-site they were issued from (`· at UserRepo:88`) and
+  feed `--hints` with their own mechanical levers: N+1 → batch, `SELECT *` → project, high
+  error rate → validate/handle, low cache hit rate → check key/TTL, synchronous per-message
+  send → batch/async. Built on a shared, bounded, fail-open call-site walk (`#137`–`#140`).
+* **Cross-dimension correlation, confirmed** — the correlation note renders an ordered chain
+  (endpoint → SQL → cache → messaging → I/O → hot path → lock → GC) showing each link's anchor
+  and flag, and **upgrades from co-occurrence to a ✓ Confirmed chain** when the agent's
+  captured call-path proves a deeper op ran inside an endpoint's handler; it degrades to the
+  honest co-occurrence wording offline (`#141`, `#142`).
+* **ORM N+1 sharpening** — a repeated single-row `insert`/`update` reads as *un-batched writes*
+  (enable JDBC batching), and a repeated `SELECT` that already uses `WHERE id IN (…)` is the
+  batch-fetch fix, so it's no longer a false N+1 (`#143`).
+* **MongoDB dimension (`mongo`)** — times sync-driver `MongoCollection` ops; a repeated `find`
+  is a possible N+1 document fetch (`Filters.in` / aggregation), a repeated single-document
+  `insertOne`/`updateOne`/`deleteOne` is un-batched (`insertMany`/`bulkWrite`) (`#144`).
+* **Redis dimension (`redis`)** — times direct Lettuce/Jedis commands (distinct from the
+  Spring-Cache `cache` dimension); many single-key reads read as possible N+1 round-trips —
+  pipeline or `MGET`/`HMGET` (`#145`).
+* **RabbitMQ messaging** — the `messaging` dimension now also hooks the low-level
+  `com.rabbitmq.client.Channel` (`basicPublish`/`basicGet`), covering native and Spring AMQP
+  with no double-count; the synchronous-send flag is broker-agnostic. ActiveMQ stays on the
+  JMS path (Classic + Artemis) — instrumenting its core API would double-count JMS-over-Artemis
+  (`#148`).
+
 == 0.2.2
 
 More honest profile diffs, still from dogfooding real projects (the unitrack field-findings).
