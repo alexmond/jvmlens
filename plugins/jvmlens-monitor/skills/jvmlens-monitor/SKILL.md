@@ -21,7 +21,7 @@ trend jar; `jvmlens-agent` is the `-javaagent`). Pull a pinned release, or grab 
 
 ```bash
 # (a) Maven Central — pinned release (set VER to the latest release)
-VER=0.2.2; mkdir -p tools
+VER=0.3.0; mkdir -p tools
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-cli/$VER/jvmlens-cli-$VER.jar"     -o tools/jvmlens.jar
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-agent/$VER/jvmlens-agent-$VER.jar" -o tools/jvmlens-agent.jar
 # (b) or download the rolling pre-release jars
@@ -85,10 +85,15 @@ spans several JVM lifetimes (rolling redeploys) is segmented at the restart gaps
 lifetime's cold-start burst is excluded from the steady-state aggregates.
 
 **Extended dimensions (beyond CPU/memory/wait).** The agent has per-dimension opt-in flags:
-`db` (sanitized SQL + N+1), `web` (HTTP route-shape endpoints), `messaging` (Kafka/JMS),
-`cache` (Spring `Cache`), `micrometer` (summarize an existing registry). Plus always-on
-**external I/O**, **virtual-thread pinning**, and **deadlock** detection, and a hedged
-**cross-dimension correlation**. Add the flags you want: `...=out=…,db,web,interval=300`.
+`db` (sanitized SQL + N+1 + un-batched-write), `web` (HTTP route-shape endpoints + error rate),
+`messaging` (Kafka / JMS / RabbitMQ send+receive; ActiveMQ via JMS), `cache` (Spring `Cache`,
+with a hit-rate flag), `mongo` (MongoDB sync-driver ops + N+1-fetch), `redis` (direct
+Lettuce/Jedis commands + N+1-round-trips), `micrometer` (summarize an existing registry). Every
+dimension row is **source-anchored** (`· at Repo:88`) and feeds `--hints`. Plus always-on
+**external I/O**, **virtual-thread pinning**, and **deadlock** detection, and a
+**cross-dimension correlation** that upgrades from co-occurrence to a **✓ confirmed chain**
+(endpoint→query→GC) when the captured call-path proves it. Add the flags you want:
+`...=out=…,db,web,mongo,interval=300`.
 
 **In-flight control (no restart) + the startup fix.** Add `control=<file>` and steer the
 running agent with `jvmlens control <file> <cmd>` (on the host): `start`/`stop`, `enable`/

@@ -24,7 +24,7 @@ grab the rolling pre-release, or build it (Java 17+). Skip if you already have a
 
 ```bash
 # (a) Maven Central — pinned release (set VER to the latest release)
-VER=0.2.2
+VER=0.3.0
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-cli/$VER/jvmlens-cli-$VER.jar" -o /tmp/jvmlens.jar && JVMLENS=/tmp/jvmlens.jar
 # (b) or the rolling `latest` GitHub pre-release (CLI fat jar)
 gh release download latest -R alexmond/jvmlens -p 'jvmlens.jar' -O /tmp/jvmlens.jar && JVMLENS=/tmp/jvmlens.jar
