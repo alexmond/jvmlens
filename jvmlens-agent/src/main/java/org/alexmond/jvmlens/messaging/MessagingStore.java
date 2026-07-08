@@ -60,8 +60,9 @@ public final class MessagingStore {
 
 	private static String flag(String label, long calls, long nanos) {
 		double avgMs = (calls > 0) ? (nanos / 1_000_000.0 / calls) : 0;
-		int dot = label.lastIndexOf('.');
-		String method = (dot >= 0) ? label.substring(dot + 1) : label;
+		// lastIndexOf('.') == -1 for a dotless label → substring(0) yields the whole
+		// label.
+		String method = label.substring(label.lastIndexOf('.') + 1);
 		if (SEND_METHODS.contains(method) && calls >= SYNC_SEND_MIN_CALLS && avgMs >= SYNC_SEND_MIN_AVG_MS) {
 			return " — synchronous per-message send";
 		}
