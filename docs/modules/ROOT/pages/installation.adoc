@@ -64,6 +64,22 @@ This is a Maven reactor; the jars land in per-module `target/` dirs:
 * `jvmlens-agent/target/jvmlens-agent.jar`
 * `jvmlens-jmh/target/jvmlens-jmh.jar`
 
+=== Option 4 — install the Claude Code skills
+
+To drive jvmlens from a coding agent, this repo is also a
+https://claude.com/claude-code[Claude Code] plugin marketplace:
+
+[source]
+----
+/plugin marketplace add alexmond/jvmlens
+/plugin install jvmlens-perf@jvmlens       # dev-time optimize→measure loop
+/plugin install jvmlens-monitor@jvmlens    # long-running monitor + trend
+----
+
+Each skill fetches the jvmlens jar itself (Options 1–3 above), so this is enough on its own.
+See xref:ai-agent.adoc#_or_install_the_skills_claude_code_plugins[jvmlens + your AI agent] for
+sample usage.
+
 == Run
 
 [source,bash]
