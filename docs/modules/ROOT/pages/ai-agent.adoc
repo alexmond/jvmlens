@@ -87,6 +87,43 @@ xref:usage.adoc#_mcp_server[MCP server] exposing scoped, navigable tools (`overv
 `hot_paths` / `allocations` / `lock_contention`, plus a live `profile` tool). It serves the
 same compact data and never calls an LLM itself.
 
+== Or install the skills — Claude Code plugins
+
+This repo doubles as a small https://claude.com/claude-code[Claude Code] **plugin marketplace**:
+two skills that teach a coding agent to drive jvmlens end-to-end, so you ask in plain language
+instead of remembering commands.
+
+[source]
+----
+/plugin marketplace add alexmond/jvmlens
+/plugin install jvmlens-perf@jvmlens       # the dev-time optimize→measure loop
+/plugin install jvmlens-monitor@jvmlens    # the long-running monitor + trend
+----
+
+[cols="1,3"]
+|===
+| Skill | Drives
+
+| **jvmlens-perf** | The optimize→measure loop — capture a JFR (JMH, `bench --main`, or `profile`),
+`analyze` ranked hot paths + allocation, fix the top lever, `--baseline` diff on absolute weight,
+optional `--assert` CI gate. Pairs with JMH.
+| **jvmlens-monitor** | The long-running monitor — drop in the `-javaagent` with `history=`,
+let it run for days, then `jvmlens trend` reduces the run to a change-over-time digest. Also
+one-shot `analyze`, live `profile <pid>`, and the MCP server.
+|===
+
+Then just ask the agent — sample prompts that route to the skills:
+
+[source]
+----
+"optimize this project with jvmlens"            → jvmlens-perf: profile → top lever → prove the win
+"where is the memory going?"                    → jvmlens-perf: ranked allocation sites + --hints
+"compare before/after my fix"                   → jvmlens-perf: absolute-anchored --baseline diff
+"drop in the jvmlens agent and monitor for a week" → jvmlens-monitor: agent + history= → trend
+----
+
+Both skills run jvmlens **locally** — it never calls an LLM and never ships recordings anywhere.
+
 == Reproduce it yourself
 
 Everything above comes from the committed sample under `assets/demo/`. To regenerate from
