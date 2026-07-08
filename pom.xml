@@ -12,7 +12,7 @@
 
     <groupId>org.alexmond</groupId>
     <artifactId>jvmlens-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1-SNAPSHOT</version>
     <name>jvmlens-parent</name>
     <packaging>pom</packaging>
     <url>https://www.alexmond.org/</url>
