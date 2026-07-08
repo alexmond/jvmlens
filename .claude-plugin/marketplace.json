@@ -13,7 +13,7 @@
       "displayName": "jvmlens — perf loop",
       "source": "./plugins/jvmlens-perf",
       "description": "Drive the dev-time optimize→measure loop with jvmlens: capture a JFR, analyze ranked hot paths + allocation sites (source-attributed), fix the top lever, diff before/after on absolute weight, and optionally gate regressions in CI. Pairs with JMH.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "performance",
       "keywords": [
         "jvm",
@@ -29,7 +29,7 @@
       "displayName": "jvmlens — long-run monitor",
       "source": "./plugins/jvmlens-monitor",
       "description": "Drop the jvmlens agent into a JVM to profile it over days: it appends one compact CPU/memory/wait sample per interval, then `jvmlens trend` reduces the run to a change-over-time digest. Also covers one-shot analyze, live profile <pid>, and an MCP server.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "performance",
       "keywords": [
         "jvm",
