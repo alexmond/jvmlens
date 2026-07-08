@@ -25,6 +25,11 @@ class MessagingRuleDetectionTest {
 						.build(),
 					Mode.HINTS, List.of("synchronous per-message send", "JmsTemplate.send"),
 					List.of("N+1 query", "low hit rate")),
+			new Case("messaging: a RabbitMQ per-message publish → batch/async (broker-agnostic)", Summaries.builder()
+				.messaging("ChannelN.basicPublish", 900,
+						"300 ops, avg 3.0 ms " + "· at com.acme.OrderPublisher:64 — synchronous per-message send")
+				.build(), Mode.HINTS, List.of("synchronous per-message send", "RabbitMQ", "ChannelN.basicPublish"),
+					List.of("low hit rate")),
 			new Case("messaging: a fast async producer fires nothing",
 					Summaries.builder().messaging("KafkaProducer.send", 5, "5000 ops, avg 0.0 ms").build(), Mode.HINTS,
 					List.of(), List.of("synchronous per-message send")),
