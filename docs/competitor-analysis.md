@@ -9,12 +9,15 @@ which capabilities to adopt next. The epic plan that follows from this lives in
 > pricing, brand-new AI features, maintenance status) are flagged inline — re-verify before
 > quoting externally.
 >
-> **Refreshed 2026-07 against the shipped agent surface.** Most of the extended-profiling plan
-> has since landed: the agent now ships the semantic dimensions (`web`, `db` with sanitized
-> SQL + N+1, `messaging`, `cache`), the JFR-native ones (external I/O, virtual-thread pinning),
-> plus deadlock detection and hedged cross-dimension correlation. The old 🔜 cells below are
-> now ✅ and re-tagged `[shipped]`. Still open: direct **OTel** consumption (only Micrometer-
-> registry summarize ships) and **NoSQL** probes.
+> **Refreshed 2026-07 against the shipped agent surface (0.3.0).** The extended-profiling plan
+> has landed: the agent ships the semantic dimensions — `web`, `db` (sanitized SQL + N+1 +
+> un-batched-write), `messaging` (Kafka / JMS / RabbitMQ, ActiveMQ via JMS), `cache` (hit-rate),
+> `mongo`, and direct `redis` — the JFR-native ones (external I/O, virtual-thread pinning), plus
+> deadlock detection and a cross-dimension correlation that **confirms** an endpoint→query→GC
+> chain when the captured call-path proves it. Every dimension is source-anchored and feeds
+> `--hints`. The old 🔜 cells below are now ✅ and re-tagged `[shipped]`. Still open: direct
+> **OTel** consumption (only Micrometer-registry summarize ships) and the remaining **NoSQL**
+> stores (Cassandra/HBase).
 
 **jvmlens** (the subject): a dependency-free **engine** (`jdk.jfr.consumer` only) that reduces
 a JFR recording to a **~400-token, LLM-ready** summary — ranked, application-attributed hot
@@ -23,8 +26,8 @@ trust signals. Front-ends (CLI `analyze`/`profile`/`watch`/`trend`, an `-javaage
 server) all feed the same engine. Distinctive bets: **the summary is the product** (not a
 flamegraph or a dashboard); **local-only, zero LLM egress**; **honest under-interpretation**;
 **one JFR-unified engine**. It began with the three JFR *resource* dimensions; the agent now
-also covers the *application-semantic* ones (web/db/messaging/cache) this doc originally mapped
-the path to.
+also covers the *application-semantic* ones (web/db/messaging/cache/mongo/redis) this doc
+originally mapped the path to.
 
 Legend: ✅ first-class · ✅†  shipped since first draft (was 🔜) · ⚠️ partial / add-on / indirect ·
 ❌ not offered · — N/A · 🔜 still planned (epic)
@@ -62,9 +65,9 @@ shipped) epics in [`extended-profiling.md`](extended-profiling.md).
 | Socket / file I/O | ✅† | ✅ probe | ✅ probe | ✅ JFR events | ⚠️ |
 | HTTP / web | ✅† | ✅ servlet/JSP/web-svc probe | ✅ Java EE | ❌ | ❌ |
 | JDBC / SQL | ✅† (sanitized SQL + N+1) | ✅ JDBC probe (+ hot statements) | ✅ Databases probe | ❌ | ❌ |
-| JPA/Hibernate / ORM | ⚠️ N+1 via JDBC (no ORM probe) | ✅ probe | ⚠️ | ❌ | ❌ |
-| NoSQL (Mongo/Cassandra/HBase) | ❌ (later) | ✅ probes | ⚠️ | ❌ | ❌ |
-| Messaging (JMS / Kafka) | ✅† | ✅ probe | ⚠️ | ❌ | ❌ |
+| JPA/Hibernate / ORM | ⚠️† N+1 + un-batched-write via JDBC shape (no ORM probe) | ✅ probe | ⚠️ | ❌ | ❌ |
+| NoSQL (Mongo / Redis / Cassandra/HBase) | ✅† Mongo + Redis (Cassandra/HBase later) | ✅ probes | ⚠️ | ❌ | ❌ |
+| Messaging (JMS / Kafka / RabbitMQ) | ✅† (ActiveMQ via JMS) | ✅ probe | ⚠️ | ❌ | ❌ |
 | Cache (hit/miss + op latency) | ✅† | ⚠️ | ⚠️ | ❌ | ❌ |
 | Automated analysis / rules | ✅ heuristic | ⚠️ | ⚠️ | ✅ **rules engine** | ❌ |
 | Output unit | **digest (tokens)** | rich GUI | rich GUI | GUI + JFR rules | GUI |
@@ -140,10 +143,10 @@ Mapped to [`extended-profiling.md`](extended-profiling.md). Most of this section
 since the first draft:
 
 - **From JFR itself, free (→ E1): ✅ shipped.** Socket/file I/O aggregation and `jdk.VirtualThreadPinned` — both already in the recording, both absent from most profilers' default summaries. Now always-on dimensions.
-- **From JProfiler/YourKit/Glowroot probes (→ E2): ✅ shipped.** HTTP-endpoint (`web`), **JDBC sanitized-SQL + N+1** (`db`), messaging (`messaging`, JMS/Kafka), and cache (`cache`) via the agent's ByteBuddy advice — rendered as ranked digest sections, not GUI tabs. E2b (SQL) was the highest-value and landed first, as planned.
+- **From JProfiler/YourKit/Glowroot probes (→ E2): ✅ shipped.** HTTP-endpoint (`web`), **JDBC sanitized-SQL + N+1 + un-batched-write** (`db`), messaging (`messaging`, Kafka / JMS / RabbitMQ, ActiveMQ via JMS), cache (`cache`, with hit-rate), **MongoDB** (`mongo`), and **direct Redis** (`redis`) via the agent's ByteBuddy advice — rendered as ranked digest sections, not GUI tabs. Every dimension is **source-anchored** (`· at Repo:88`), feeds `--hints` with its own mechanical lever, and joins the correlation chain — which **confirms** an endpoint→query→GC path when the captured call-path proves it. E2b (SQL) was the highest-value and landed first, as planned.
 - **From OTel/Micrometer (→ E3): ⚠️ partial.** The `micrometer` dimension summarizes an *existing* registry; **direct OTel span consumption is still open** — the remaining integration lever for shops already wired up.
 - **From JMC's rules engine (→ E4): ✅ largely shipped.** Deadlock detection and hedged **cross-dimension correlation** now ship (slow endpoint → its query → its GC), kept **hedged and LLM-prep** (data over confident labels). Richer rule coverage can still grow.
-- **Still open:** direct OTel consumption (E3) and **NoSQL** probes (Mongo/Cassandra/HBase).
+- **Still open:** direct OTel consumption (E3) and the remaining **NoSQL** stores (Cassandra/HBase — Mongo + Redis shipped).
 
 ---
 
@@ -160,8 +163,8 @@ application-semantic dimensions the first draft lacked — HTTP endpoints, SQL, 
 **now ship** in the agent, alongside external I/O and vthread pinning. The competitive bet played
 out as planned: acquire the semantics through the **cheapest faithful source** (JFR first, then
 targeted ByteBuddy) and render them in the one form factor the field lacks. **Residual gaps:**
-- **No ORM-specific probe** — N+1 is inferred from JDBC, not Hibernate/JPA instrumentation (JProfiler has a dedicated ORM probe).
-- **No NoSQL** — Mongo/Cassandra/HBase/Redis semantics (JProfiler/YourKit have probes).
+- **No ORM-specific probe** — N+1 and un-batched writes are inferred from JDBC shape, not Hibernate/JPA instrumentation (JProfiler has a dedicated ORM probe). Sharpened in 0.3.0 but still shape-based.
+- **Partial NoSQL** — Mongo + direct Redis ship (0.3.0); Cassandra/HBase remain (JProfiler/YourKit have probes for all).
 - **No direct OTel consumption** — only Micrometer-registry summarize; OTel spans (E3) remain the open integration lever.
 - **No distributed tracing** — an explicit non-goal, not a gap.
 
@@ -169,9 +172,11 @@ targeted ByteBuddy) and render them in the one form factor the field lacks. **Re
 durable edge is being **LLM-native and open from the engine up** — not a GUI with an AI button.
 
 **Epics:** see [`extended-profiling.md`](extended-profiling.md) — **E1 ✅** (JFR I/O + pinning),
-**E2 ✅** (semantic web/db/messaging/cache via ByteBuddy), **E3 ⚠️** (Micrometer done; OTel span
-consumption open), **E4 ✅** (correlation + deadlock + long-run `trend` coverage). The planned
-sequence E1 → E2b → E2a → E4 → E2c/E2d → E3 held; only E3's OTel half and NoSQL remain.
+**E2 ✅** (semantic web/db/messaging/cache/mongo/redis via ByteBuddy — all source-anchored,
+hint-feeding, correlation-joined), **E3 ⚠️** (Micrometer done; OTel span consumption open),
+**E4 ✅** (confirmed-chain correlation + deadlock + long-run `trend` coverage). The planned
+sequence E1 → E2b → E2a → E4 → E2c/E2d → E3 held; only E3's OTel half and the remaining NoSQL
+stores (Cassandra/HBase) remain.
 
 ---
 

@@ -200,6 +200,14 @@ source line) → "hoist the `Pattern` to a `static final` field and reuse `Match
 by default** (the report stays clean data) and every line is tagged `[possible]` — a direction
 to investigate, never an assertion.
 
+The **semantic dimensions feed `--hints` too**, each with its own mechanical lever, grounded
+in the app call-site the row is anchored to (`· at <Class>:line`): `db` — N+1 → batch
+(`WHERE id IN (…)` / `@BatchSize`), `SELECT *` → project columns, and repeated single-row
+`insert`/`update` → enable JDBC batching; `web` — a high error-rate endpoint → validate/handle
+first; `cache` — a low hit rate → check key cardinality / TTL; `messaging` — a synchronous
+per-message send → batch or send async; `mongo` — a repeated `find` → `Filters.in`, repeated
+`insertOne` → `insertMany`/`bulkWrite`; `redis` — many single-key reads → pipeline / `MGET`.
+
 [source,bash]
 ----
 java -jar jvmlens.jar analyze recording.jfr --hints
@@ -249,8 +257,10 @@ server exposes):
 | `pinning` | Virtual-thread pinning sites, by pinned time (measured).
 | `db` | Top SQL statements (agent JDBC instrumentation).
 | `web` | Top HTTP endpoints (agent servlet instrumentation).
-| `messaging` | Top messaging operations (agent Kafka/JMS instrumentation).
-| `cache` | Top cache operations (agent Spring-Cache instrumentation).
+| `messaging` | Top messaging operations (agent Kafka / JMS / RabbitMQ instrumentation; ActiveMQ via JMS).
+| `cache` | Top cache operations (agent Spring-Cache instrumentation, with a hit-rate flag).
+| `mongo` | Top MongoDB operations (agent sync-driver instrumentation).
+| `redis` | Top direct Redis commands (agent Lettuce / Jedis instrumentation).
 | `metrics` | Top Micrometer timers (consumed from an existing registry).
 | `deadlock` | Deadlocked threads and their wait-for cycle (agent recordings).
 |===
@@ -263,9 +273,14 @@ agent-only). When present, a `Deadlocked threads (wait-for cycle)` section names
 thread and the lock it waits on / who holds it.
 
 The `full` report also appends a hedged **Cross-dimension correlation** note when two or more
-dimensions carry signal — it co-locates the dominant endpoint / query / I/O / hot path / lock
-/ GC so an LLM sees the candidate chain in one place. It's co-occurrence, not proof (jvmlens
-has no per-request trace linkage), so it suggests rather than asserts.
+dimensions carry signal — it renders an ordered chain (endpoint → SQL → cache → messaging →
+I/O → hot path → lock → GC), each link carrying its source anchor (`@ UserRepo:88`) and a
+compact flag (`N+1`, `low hit rate`, `sync send`) so an LLM sees *where* to look. By default
+it's co-occurrence, not proof — but when the agent's captured call-path shows a deeper op ran
+*inside* an endpoint's handler (the row's `↳ under <Class>` marker matches the endpoint's
+anchor class), the note is upgraded to a **✓ Confirmed chain (shared call path)**; otherwise
+it degrades to the honest co-occurrence wording (e.g. an offline recording with no agent
+call-paths).
 
 The `io` and `pinning` sections appear in the `full` report whenever the recording carries
 those events. `io` aggregates `jdk.SocketRead`/`jdk.SocketWrite` (by remote `host:port`) and
@@ -425,8 +440,10 @@ java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,interval=60 -jar your-
 Options (comma-separated `key=value`): `out` (latest-summary file), `interval` (seconds
 between summaries), `settings` (JFR config, default `profile`), `snapshot` (see below),
 `db` (instrument JDBC — see *Database (SQL)* below), `web` (instrument HTTP — see *Web
-(HTTP endpoints)* below), `messaging` (time Kafka/JMS send + poll/receive), `cache` (time
-Spring `Cache` get/put/evict), `micrometer` (summarize an existing Micrometer registry —
+(HTTP endpoints)* below), `messaging` (time Kafka / JMS / RabbitMQ send + poll/receive/basicPublish;
+ActiveMQ via JMS), `cache` (time Spring `Cache` get/put/evict, with a hit-rate flag),
+`mongo` (time MongoDB sync-driver ops — see *MongoDB* below), `redis` (time direct Lettuce/Jedis
+commands — see *Redis* below), `micrometer` (summarize an existing Micrometer registry —
 no extra instrumentation; degrades to nothing if Micrometer is absent), `history` (see
 *Long-running monitor* below), `paused` (launch without emitting — `start` it after warm-up;
 see *Runtime control* below), `control` (a file the agent watches for in-flight
@@ -473,7 +490,7 @@ java -jar jvmlens.jar control /agent/jvmlens.control status         # read curre
 ----
 
 Commands: `start` / `stop`, `clear` (reset the window + stores), `dump` (emit now),
-`enable <dim>` / `disable <dim>` (db/web/messaging/cache/micrometer/snapshot/deadlock),
+`enable <dim>` / `disable <dim>` (db/web/messaging/cache/mongo/redis/micrometer/snapshot/deadlock),
 `settings <profile|default>` (sampling density), `interval <seconds>`, `scope app|exclude
 <prefix>` / `scope reset` (filtering), `topn [<category>] <n>` / `topn reset` (rows per
 section — `category` is cpu/perf, memory/mem, locks, io, pinning, or a plugin like db/web),
@@ -524,8 +541,10 @@ restart). A gapless single-lifetime run is unaffected.
 Add `db` to the agent options and it instruments `java.sql.Statement.execute*` (ByteBuddy)
 to time JDBC calls, aggregating them by **sanitized SQL shape** (literals parameterized, so
 no values reach the summary) into a `Top SQL (by total time)` section — each shape with its
-call count, average latency, and a hedged *possible N+1* flag for high-count low-latency
-shapes:
+call count, average latency, the app call-site it was issued from (`· at <Repo>:line`), and a
+shape-aware hint: a high-count low-latency `select` is a *possible N+1* (unless it already uses
+`WHERE id IN (…)`, the batch-fetch fix — then it isn't flagged), while a repeated single-row
+`insert`/`update` reads as *likely un-batched* (enable JDBC batching):
 
 [source,bash]
 ----
@@ -548,6 +567,49 @@ an error count (status ≥ 400):
 [source,bash]
 ----
 java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,web,db -jar app.jar
+----
+
+=== Messaging (Kafka / JMS / RabbitMQ)
+
+Add `messaging` and the agent times each broker at its **lowest client level** — Kafka
+`Producer`/`Consumer` (`send`/`poll`), JMS `MessageProducer`/`MessageConsumer` (`send`/
+`receive`, both `jakarta.jms` and `javax.jms`), and RabbitMQ `com.rabbitmq.client.Channel`
+(`basicPublish`/`basicGet`) — matched by interface name, so jvmlens needs no broker
+dependency. Hooking the client (not the Spring template above it — `KafkaTemplate`/
+`JmsTemplate`/`RabbitTemplate`) means a Spring app is instrumented once, never double-counted.
+**ActiveMQ** (Classic on `javax.jms`, Artemis on `jakarta.jms`) is covered via the JMS path.
+A high-volume per-message publish with material latency is flagged a *synchronous per-message
+send* (batch or send async).
+
+=== MongoDB
+
+Add `mongo` and the agent instruments the sync driver's `com.mongodb.client.MongoCollection`
+operations (`find`/`aggregate`/`insert*`/`update*`/`delete*`/…, matched by name, no Mongo
+dependency) into a `MongoDB operations (by total time)` section, each anchored to its app
+call-site. The document analogues of the SQL N+1 levers: a repeated `find`/`aggregate` reads
+as a *possible N+1 document fetch* (batch with `Filters.in(…)` / an aggregation), a repeated
+single-document `insertOne`/`updateOne`/`deleteOne` as *un-batched* (use `insertMany`/
+`bulkWrite`). Note `find`/`aggregate` return lazy iterables, so their *count* is the N+1
+signal, not their latency.
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,mongo,interval=60 -jar app.jar
+----
+
+=== Redis
+
+Add `redis` and the agent times direct Redis commands — Lettuce (`RedisAsyncCommands`, which
+the sync API delegates to) and Jedis (`JedisCommands`), matched by name — into a
+`Redis commands (by total time)` section, anchored to the app call-site. This is distinct
+from the `cache` dimension (which tracks Spring `Cache` hit rate); `redis` is for apps hitting
+Redis directly (session stores, rate limiters, queues). A high count of single-key reads
+(`get`/`hget`/…) is flagged *possible N+1 round-trips* — pipeline them or use a multi-key
+command (`MGET`/`HMGET`).
+
+[source,bash]
+----
+java -javaagent:jvmlens-agent.jar=out=/var/log/jvmlens.md,redis,interval=60 -jar app.jar
 ----
 
 === Variable snapshots

@@ -21,7 +21,7 @@ green build on `main`), no build required. Java 17+.
 ----
 mkdir -p tools
 # a tagged release (set VER to the latest 0.x):
-VER=0.2.2
+VER=0.3.0
 curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens.jar
 curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-agent.jar
 curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-jmh.jar
