@@ -3,16 +3,18 @@ package org.alexmond.jvmlens.messaging;
 import org.alexmond.jvmlens.probe.CallSites;
 import org.alexmond.jvmlens.probe.FailGuard;
 import java.util.List;
+import java.util.Set;
 
 import org.alexmond.jvmlens.ProfileSummary.Section;
 import org.alexmond.jvmlens.probe.OpStore;
 
 /**
- * Static facade over an {@link OpStore} for messaging operations (Kafka / JMS producer
- * send + consumer poll/receive) captured by {@code MessagingAdvice}, rendered as the
- * {@code messaging} extended section. Each op is anchored to its application call-site,
- * and a high-volume {@code send} with material average latency is flagged as a
- * synchronous per-message send (Kafka's fast async sends stay well under the latency
+ * Static facade over an {@link OpStore} for messaging operations (Kafka / JMS / RabbitMQ
+ * producer send + consumer poll/receive) captured by {@code MessagingAdvice}, rendered as
+ * the {@code messaging} extended section. Each op is anchored to its application
+ * call-site, and a high-volume per-message publish ({@code send}/{@code basicPublish})
+ * with material average latency is flagged as a synchronous per-message send (Kafka's
+ * fast async sends, and RabbitMQ publishes without confirms, stay well under the latency
  * gate).
  */
 public final class MessagingStore {
@@ -22,6 +24,13 @@ public final class MessagingStore {
 
 	/** Average send latency (ms) above which sends read as synchronous/per-message. */
 	private static final double SYNC_SEND_MIN_AVG_MS = 2.0;
+
+	/**
+	 * The low-level per-message publish methods across brokers (Kafka/JMS {@code send},
+	 * RabbitMQ {@code basicPublish}) — a high count of these with material latency is the
+	 * synchronous-send anti-pattern. Consumer methods (poll/receive/basicGet) are absent.
+	 */
+	private static final Set<String> SEND_METHODS = Set.of("send", "basicPublish");
 
 	private static final OpStore STORE = new OpStore();
 
@@ -51,7 +60,10 @@ public final class MessagingStore {
 
 	private static String flag(String label, long calls, long nanos) {
 		double avgMs = (calls > 0) ? (nanos / 1_000_000.0 / calls) : 0;
-		if (label.endsWith(".send") && calls >= SYNC_SEND_MIN_CALLS && avgMs >= SYNC_SEND_MIN_AVG_MS) {
+		// lastIndexOf('.') == -1 for a dotless label → substring(0) yields the whole
+		// label.
+		String method = label.substring(label.lastIndexOf('.') + 1);
+		if (SEND_METHODS.contains(method) && calls >= SYNC_SEND_MIN_CALLS && avgMs >= SYNC_SEND_MIN_AVG_MS) {
 			return " — synchronous per-message send";
 		}
 		return "";

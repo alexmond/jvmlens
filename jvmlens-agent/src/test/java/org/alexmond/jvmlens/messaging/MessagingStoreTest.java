@@ -41,6 +41,28 @@ class MessagingStoreTest {
 	}
 
 	@Test
+	void flagsAHighVolumeRabbitPublishAsSynchronous() {
+		CallSites.setAppScope(List.of("com.example"));
+		for (int i = 0; i < 60; i++) {
+			com.example.demo.RabbitPublisher.publish(3_000_000L); // basicPublish, 3ms
+																	// each
+		}
+		Ranked row = MessagingStore.sections().get(0).rows().get(0);
+		assertThat(row.stack()).contains("· at com.example.demo.RabbitPublisher:")
+			.contains("synchronous per-message send");
+	}
+
+	@Test
+	void aFastRabbitPublishWithoutConfirmsIsNotFlagged() {
+		CallSites.setAppScope(List.of("com.example"));
+		for (int i = 0; i < 200; i++) {
+			com.example.demo.RabbitPublisher.publish(50_000L); // 0.05ms — under the gate
+		}
+		assertThat(MessagingStore.sections().get(0).rows().get(0).stack())
+			.doesNotContain("synchronous per-message send");
+	}
+
+	@Test
 	void capturesTheOutermostAppCallerAsTheRequestEntry() {
 		CallSites.setAppScope(List.of("com.example"));
 		for (int i = 0; i < 10; i++) {
