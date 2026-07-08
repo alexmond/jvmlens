@@ -9,10 +9,16 @@ import net.bytebuddy.matcher.ElementMatchers;
 import org.alexmond.jvmlens.probe.AgentIgnores;
 
 /**
- * Installs {@link MessagingAdvice} on the dominant Kafka / JMS producer-send and
- * consumer-poll/receive methods (matched by interface name so jvmlens needs no Kafka/JMS
- * dependency, and works for both {@code jakarta.jms} and {@code javax.jms}). Tight scope:
- * only the send/poll/receive entry points, not the whole client.
+ * Installs {@link MessagingAdvice} on the dominant Kafka / JMS / RabbitMQ producer-send
+ * and consumer-poll/receive methods (matched by interface name so jvmlens needs no broker
+ * dependency, and works for both {@code jakarta.jms} and {@code javax.jms}; ActiveMQ —
+ * Classic on {@code javax.jms}, Artemis on {@code jakarta.jms} — is covered via JMS).
+ * Each broker is hooked at its <em>lowest client level</em> — Kafka {@code Producer}, JMS
+ * {@code MessageProducer}, RabbitMQ {@code Channel.basicPublish} — never the Spring
+ * template above it ({@code KafkaTemplate}/{@code JmsTemplate}/{@code RabbitTemplate}),
+ * so a Spring app is instrumented once, not double-counted. Tight scope: only the
+ * send/poll/receive (and RabbitMQ basicPublish/basicGet) entry points, not the whole
+ * client.
  */
 public final class MessagingCapture {
 
@@ -32,10 +38,12 @@ public final class MessagingCapture {
 				.or(ElementMatchers.named("jakarta.jms.MessageProducer"))
 				.or(ElementMatchers.named("javax.jms.MessageProducer"))
 				.or(ElementMatchers.named("jakarta.jms.MessageConsumer"))
-				.or(ElementMatchers.named("javax.jms.MessageConsumer"))))
+				.or(ElementMatchers.named("javax.jms.MessageConsumer"))
+				.or(ElementMatchers.named("com.rabbitmq.client.Channel"))))
 			.transform((b, td, classLoader, module,
 					pd) -> b.visit(Advice.to(MessagingAdvice.class)
-						.on(ElementMatchers.namedOneOf("send", "poll", "receive").and(ElementMatchers.isPublic()))))
+						.on(ElementMatchers.namedOneOf("send", "poll", "receive", "basicPublish", "basicGet")
+							.and(ElementMatchers.isPublic()))))
 			.installOn(instrumentation);
 	}
 

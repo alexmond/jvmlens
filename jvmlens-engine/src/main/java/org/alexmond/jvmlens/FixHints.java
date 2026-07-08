@@ -90,8 +90,9 @@ public final class FixHints {
 					"cache is mostly missing — check key cardinality / TTL / warm-up; a low hit rate means "
 							+ "the cache isn't paying for itself (the anchor points at the caller)"),
 			sectionRule("messaging", "synchronous per-message send", Lever.STRUCTURAL,
-					"synchronous per-message send in a hot path — batch (Kafka `linger.ms`+`batch.size`, "
-							+ "or a JMS transacted batch) or send asynchronously"),
+					"synchronous per-message send in a hot path — batch or send asynchronously "
+							+ "(Kafka `linger.ms`+`batch.size`, a JMS transacted batch, or RabbitMQ batched "
+							+ "publisher confirms)"),
 			sectionRule("mongo", "N\\+1 document fetch", Lever.STRUCTURAL,
 					"N+1 document fetch — the same query runs per item; batch into one "
 							+ "`find(Filters.in(…))` or an aggregation (the anchor points at the caller)"),
