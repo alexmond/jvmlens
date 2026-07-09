@@ -154,6 +154,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-07-09 — **per-recording-breakdown** — `analyze --per-recording` (multi-file only) adds a `## Per-recording breakdown`: each `.jfr`'s exec-sample count + dominant hot paths, so a merged JMH `-prof jfr` dir of many methods shows *which* recording a hot path came from. Feeds each event to a per-file `Aggregates` beside the merged one in one loop; assembly lives in `Teasers` (`profile.jfr` collision → `parent/name`) to keep `Summarizer` ≤800 lines. Why: #153 — merging a `FeatureBenchmark` dir hid that printf alone was regex-bound.
+
 - 2026-06-26 — **jmh-integration** — `analyze <dir>` merges JMH per-fork JFRs (#39 gap 2a); `JvmlensProfiler` ExternalProfiler invoked by FQN `-prof org.alexmond.jvmlens.jmh.JvmlensProfiler` (no ServiceLoader). #48 / #39 gap 2b.
 - 2026-06-26 — **fix-hints** — `analyze --hints` (opt-in) appends `Likely fix directions [possible]`; tags each direction **structural** (mechanical-safe) vs **inherent** (parity-sensitive), structural-first. #39 gap5, #53 item2.
 - 2026-06-26 — **token-budget** — `analyze --top-k <n>` (rows/section) + `--max-tokens <n>` (shrink top-k until ~chars/4 fits) via `RankLimits.set("all",…)`; the budget loop re-analyzes per candidate k. #39 gap 6.
