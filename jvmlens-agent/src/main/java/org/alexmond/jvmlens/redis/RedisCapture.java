@@ -14,6 +14,15 @@ import org.alexmond.jvmlens.probe.AgentIgnores;
  * proxy that can't be instrumented directly) and Jedis's command interface. Matched by
  * name, so jvmlens needs no Redis dependency. Tight scope: only the common command
  * methods.
+ *
+ * <p>
+ * The Lettuce type is matched on {@code io.lettuce.core.api.async.*} (the command
+ * sub-interfaces), not just {@code RedisAsyncCommands}: the concrete
+ * {@code RedisAsyncCommandsImpl} implements {@code RedisAsyncCommands} but the
+ * {@code get} / {@code set} / … methods are actually <em>declared</em> in its superclass
+ * {@code AbstractRedisAsyncCommands} (which implements the sub-interfaces), and ByteBuddy
+ * only advises methods declared by a matched type — so matching just
+ * {@code RedisAsyncCommands} instrumented nothing (#146).
  */
 public final class RedisCapture {
 
@@ -28,7 +37,7 @@ public final class RedisCapture {
 		new AgentBuilder.Default().disableClassFormatChanges()
 			.with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
 			.ignore(AgentIgnores.base())
-			.type(ElementMatchers.hasSuperType(ElementMatchers.named("io.lettuce.core.api.async.RedisAsyncCommands")
+			.type(ElementMatchers.hasSuperType(ElementMatchers.nameStartsWith("io.lettuce.core.api.async.")
 				.or(ElementMatchers.named("redis.clients.jedis.commands.JedisCommands"))))
 			.transform((b, td, classLoader, module,
 					pd) -> b.visit(Advice.to(RedisAdvice.class)
