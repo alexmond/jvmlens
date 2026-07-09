@@ -154,6 +154,7 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-07-09 — **mongo-per-collection** — mongo rows are now `<collection>.<op>` (e.g. `users.find`), not method-only: `MongoAdvice` binds `@This` (like `SqlAdvice`); `MongoStore.label` reads `getNamespace().getCollectionName()` reflectively — **no `setAccessible`** (PMD bans it; real types are public), fail-open to bare op. `flag` made op-suffix-aware (`substring(lastIndexOf('.')+1)`) so the collection prefix can't defeat N+1 detection. Why: a method-only roll-up hid *which* collection was the N+1 offender. #147.
 - 2026-07-09 — **per-recording-breakdown** — `analyze --per-recording` (multi-file only) adds a `## Per-recording breakdown`: each `.jfr`'s exec-sample count + dominant hot paths, so a merged JMH `-prof jfr` dir of many methods shows *which* recording a hot path came from. Feeds each event to a per-file `Aggregates` beside the merged one in one loop; assembly lives in `Teasers` (`profile.jfr` collision → `parent/name`) to keep `Summarizer` ≤800 lines. Why: #153 — merging a `FeatureBenchmark` dir hid that printf alone was regex-bound.
 
 - 2026-06-26 — **jmh-integration** — `analyze <dir>` merges JMH per-fork JFRs (#39 gap 2a); `JvmlensProfiler` ExternalProfiler invoked by FQN `-prof org.alexmond.jvmlens.jmh.JvmlensProfiler` (no ServiceLoader). #48 / #39 gap 2b.

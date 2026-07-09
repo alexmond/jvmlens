@@ -21,20 +21,20 @@ class MongoRuleDetectionTest {
 	private static final List<Case> CASES = List.of(
 			new Case("mongo: repeated find → N+1 document fetch",
 					Summaries.builder()
-						.mongo("find", 620,
+						.mongo("users.find", 620,
 								"520 ops, avg 1.2 ms · at com.acme.UserRepo:44 "
 										+ "— high call count, possible N+1 document fetch")
 						.build(),
 					Mode.HINTS, List.of("N+1 document fetch", "Filters.in"), List.of("un-batched")),
 			new Case("mongo: repeated single-document insert → insertMany/bulkWrite",
 					Summaries.builder()
-						.mongo("insertOne", 300,
+						.mongo("orders.insertOne", 300,
 								"60 ops, avg 5.0 ms — repeated single-document write, likely un-batched")
 						.build(),
 					Mode.HINTS, List.of("un-batched document writes", "insertMany"), List.of("N+1 document fetch")),
 			new Case("mongo: an already-batched insertMany fires nothing",
-					Summaries.builder().mongo("insertMany", 100, "60 ops, avg 1.7 ms").build(), Mode.HINTS, List.of(),
-					List.of("un-batched", "N+1 document fetch")));
+					Summaries.builder().mongo("logs.insertMany", 100, "60 ops, avg 1.7 ms").build(), Mode.HINTS,
+					List.of(), List.of("un-batched", "N+1 document fetch")));
 
 	@TestFactory
 	Stream<DynamicTest> mongoRuleFixtures() {
