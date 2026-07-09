@@ -125,6 +125,11 @@ Useful flags:
   (`floatString:129 ⟶ mantissa.substring(0, dot) + …`), so you see the offending line without
   opening the file. Off by default; comma/path-sep roots (e.g. `src/main/java`); resolves
   locally, degrades silently if a file isn't found. Great for feeding an agent.
+- `--per-recording` — when `analyze` is pointed at a **directory of many benchmark methods**
+  (a whole `FeatureBenchmark` `-prof jfr` dir), the merged summary blends them; this adds a
+  `## Per-recording breakdown` section naming each `.jfr`'s sample count + dominant hot paths,
+  so you see *which* recording a hot path came from **without** re-running `analyze` against
+  each subdir. Multi-file only; colliding `profile.jfr` names disambiguated by parent dir.
 
 **Reading the output:**
 - Each hot-path row's teaser lists the **top leaves with counts** (`Bar.baz:88 30/168`) — where

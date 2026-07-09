@@ -203,19 +203,50 @@ public final class Summarizer {
 	 */
 	public static ProfileSummary analyze(List<Path> files, Scope scope, String source, long skipWarmupMs)
 			throws IOException {
+		return analyze(files, scope, source, skipWarmupMs, false);
+	}
+
+	/**
+	 * As {@link #analyze(List, Scope, String, long)}, but when {@code perRecording} is
+	 * set and more than one recording is merged, also attaches a <em>per-recording</em>
+	 * section: each source {@code .jfr}'s execution-sample count and its dominant hot
+	 * paths. So a JMH {@code -prof jfr} run whose directory holds many benchmark methods
+	 * shows which recording a hot path concentrates in, without a second single-file
+	 * {@code analyze} pass (field-finding #153). A no-op for a single recording — it is
+	 * already its own breakdown.
+	 * @param files the {@code .jfr} recordings to read and merge
+	 * @param scope which frames count as application code
+	 * @param source the label for the merged summary
+	 * @param skipWarmupMs drop events in the first this-many ms of each recording
+	 * @param perRecording attach the per-recording breakdown section (multi-file only)
+	 * @return the structured summary
+	 * @throws IOException if a recording cannot be read
+	 */
+	public static ProfileSummary analyze(List<Path> files, Scope scope, String source, long skipWarmupMs,
+			boolean perRecording) throws IOException {
 		Aggregates agg = new Aggregates(scope);
+		List<Teasers.PerRecording> perFile = (perRecording && files.size() > 1) ? new ArrayList<>() : null;
 		for (Path file : files) {
 			Instant cutoff = (skipWarmupMs > 0) ? recordingStart(file).plusMillis(skipWarmupMs) : null;
+			Aggregates fileAgg = (perFile != null) ? new Aggregates(scope) : null;
 			try (RecordingFile rf = new RecordingFile(file)) {
 				while (rf.hasMoreEvents()) {
 					RecordedEvent event = rf.readEvent();
 					if (cutoff == null || !event.getStartTime().isBefore(cutoff)) {
 						agg.add(event);
+						if (fileAgg != null) {
+							fileAgg.add(event);
+						}
 					}
 				}
 			}
+			if (perFile != null) {
+				perFile.add(new Teasers.PerRecording(file, fileAgg.execSamples,
+						Teasers.topHotPaths(fileAgg.cpuByApp, fileAgg.execSamples)));
+			}
 		}
-		return agg.toSummary(source);
+		ProfileSummary summary = agg.toSummary(source);
+		return (perFile != null) ? summary.withSections(List.of(Teasers.perRecordingSection(perFile))) : summary;
 	}
 
 	/**

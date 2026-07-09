@@ -52,6 +52,12 @@ public class AnalyzeCommand implements Callable<Integer> {
 					+ "anchor, e.g. `src/main/java`; off by default.")
 	String sourceRoots;
 
+	@Option(names = { "--per-recording" },
+			description = "For a merged JMH -prof jfr directory, add a per-recording breakdown (each .jfr's "
+					+ "sample count + dominant hot paths), so you see which recording a hot path concentrates "
+					+ "in without a second single-file pass. Multi-file only.")
+	boolean perRecording;
+
 	@Mixin
 	OutputOptions output;
 
@@ -92,8 +98,8 @@ public class AnalyzeCommand implements Callable<Integer> {
 			System.out.print(withinBudget(afterFiles, labeled(Recordings.label(file, null)), maxTokens));
 			return 0;
 		}
-		ProfileSummary summary = withSource(
-				Summarizer.analyze(afterFiles, output.scope(), labeled(Recordings.label(file, null)), warmupMs()));
+		ProfileSummary summary = withSource(Summarizer.analyze(afterFiles, output.scope(),
+				labeled(Recordings.label(file, null)), warmupMs(), perRecording));
 		System.out.print(render(summary));
 		return 0;
 	}
@@ -124,7 +130,7 @@ public class AnalyzeCommand implements Callable<Integer> {
 		String out = "";
 		for (int k : new int[] { RankLimits.DEFAULT, 4, 3, 2, 1 }) {
 			RankLimits.set("all", k);
-			out = render(withSource(Summarizer.analyze(files, output.scope(), label, warmupMs())));
+			out = render(withSource(Summarizer.analyze(files, output.scope(), label, warmupMs(), perRecording)));
 			if (out.length() / 4 <= maxTokens) {
 				break;
 			}

@@ -122,6 +122,21 @@ delay the recording past warm-up, compare steady-state runs, or pass `--skip-war
 `analyze` — it drops the first `<ms>` of each recording, measured **per file** from that file's
 earliest event, so each fork's own warm-up is trimmed and hot paths reflect steady state.)
 
+When a run holds **many benchmark methods** (a whole `FeatureBenchmark` directory), the merged
+summary blends them. Add `--per-recording` for a `## Per-recording breakdown` section that lists
+each `.jfr` with its execution-sample count and dominant hot paths — so you see *which* recording
+a merged hot path came from without a second single-subdir `analyze` pass. Colliding `profile.jfr`
+names are disambiguated by their parent directory. It's multi-file only (a single recording is
+already its own breakdown).
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze /tmp/run-after -a com.example --per-recording
+# ## Per-recording breakdown [sampled]
+# - `printf-Throughput/profile.jfr` — 32% (489 samples)  (PrintfFunction.lambda$printf$0 55% · extractVerbs 29%)
+# - `sprig-Throughput/profile.jfr`  — 20% (300 samples)  (SprigFunctions.get 41% · …)
+----
+
 Or skip the separate step entirely with the **JMH profiler plugin** — it records the fork and
 prints the summary inline when the trial ends. Put `jvmlens-jmh.jar` (a tiny
 engine+profiler jar, no Spring/picocli/jmh) on the benchmark's classpath and:

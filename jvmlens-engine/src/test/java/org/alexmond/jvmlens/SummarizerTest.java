@@ -239,6 +239,50 @@ class SummarizerTest {
 		}
 	}
 
+	@Test
+	void perRecordingBreakdownAttributesEachFile() throws Exception {
+		// two JMH-style forks, both named profile.jfr in their own subdir (the collision
+		// case)
+		Path dirA = Files.createTempDirectory("jvmlens-recA");
+		Path dirB = Files.createTempDirectory("jvmlens-recB");
+		Path a = Files.move(cpuRecording(), dirA.resolve("profile.jfr"));
+		Path b = Files.move(cpuRecording(), dirB.resolve("profile.jfr"));
+		try {
+			ProfileSummary merged = Summarizer.analyze(List.of(a, b), Scope.defaults(), "jmh-run", 0L, true);
+
+			ProfileSummary.Section sec = merged.sections()
+				.stream()
+				.filter((s) -> s.key().equals("per-recording"))
+				.findFirst()
+				.orElseThrow();
+			assertThat(sec.rows()).hasSize(2);
+			// filenames collide, so each row is disambiguated by its parent dir,
+			// distinctly
+			assertThat(sec.rows()).allSatisfy((r) -> assertThat(r.name()).endsWith("/profile.jfr"));
+			assertThat(sec.rows().stream().map(ProfileSummary.Ranked::name).distinct().count()).isEqualTo(2);
+			// per-file sample counts sum to the merged total, and each row names its hot
+			// path
+			assertThat(sec.rows().stream().mapToLong(ProfileSummary.Ranked::count).sum())
+				.isEqualTo(merged.execSamples());
+			assertThat(sec.rows().get(0).stack()).contains("SummarizerTest");
+			assertThat(Summarizer.render(merged, Summarizer.Format.MARKDOWN, Summarizer.Report.FULL))
+				.contains("Per-recording breakdown")
+				.contains("/profile.jfr");
+
+			// single recording, or perRecording off → no breakdown section
+			assertThat(Summarizer.analyze(List.of(a), Scope.defaults(), "one", 0L, true).sections())
+				.noneMatch((s) -> s.key().equals("per-recording"));
+			assertThat(Summarizer.analyze(List.of(a, b), Scope.defaults(), "jmh-run").sections())
+				.noneMatch((s) -> s.key().equals("per-recording"));
+		}
+		finally {
+			Files.deleteIfExists(a);
+			Files.deleteIfExists(b);
+			Files.deleteIfExists(dirA);
+			Files.deleteIfExists(dirB);
+		}
+	}
+
 	private static Path cpuRecording() throws Exception {
 		return recordFile(() -> {
 			long end = System.nanoTime() + 2_000_000_000L;
