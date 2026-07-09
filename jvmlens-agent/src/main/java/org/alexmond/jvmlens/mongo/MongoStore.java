@@ -1,6 +1,7 @@
 package org.alexmond.jvmlens.mongo;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.List;
 
 import org.alexmond.jvmlens.ProfileSummary.Section;
@@ -63,14 +64,47 @@ public final class MongoStore {
 			return op;
 		}
 		try {
-			Method getNamespace = collection.getClass().getMethod("getNamespace");
-			Object namespace = getNamespace.invoke(collection);
-			Method getCollectionName = namespace.getClass().getMethod("getCollectionName");
-			Object name = getCollectionName.invoke(namespace);
+			Object namespace = invokeNoArg(collection, "getNamespace");
+			Object name = (namespace != null) ? invokeNoArg(namespace, "getCollectionName") : null;
 			return (name instanceof String s && !s.isEmpty()) ? s + "." + op : op;
 		}
 		catch (ReflectiveOperationException | RuntimeException ex) {
 			return op;
+		}
+	}
+
+	/**
+	 * Invoke a public no-arg method resolved via a <em>public</em> type in
+	 * {@code target}'s hierarchy — the driver's {@code MongoCollection} impl class is
+	 * non-public, so a method looked up on it would throw {@code IllegalAccessException}
+	 * on invoke; the public interface it overrides (e.g.
+	 * {@code com.mongodb.client.MongoCollection}) does not. No {@code setAccessible} (PMD
+	 * bans it).
+	 */
+	private static Object invokeNoArg(Object target, String name) throws ReflectiveOperationException {
+		for (Class<?> type = target.getClass(); type != null; type = type.getSuperclass()) {
+			if (Modifier.isPublic(type.getModifiers())) {
+				Method m = noArg(type, name);
+				if (m != null) {
+					return m.invoke(target);
+				}
+			}
+			for (Class<?> iface : type.getInterfaces()) {
+				Method m = Modifier.isPublic(iface.getModifiers()) ? noArg(iface, name) : null;
+				if (m != null) {
+					return m.invoke(target);
+				}
+			}
+		}
+		return null;
+	}
+
+	private static Method noArg(Class<?> type, String name) {
+		try {
+			return type.getMethod(name);
+		}
+		catch (NoSuchMethodException ex) {
+			return null;
 		}
 	}
 
