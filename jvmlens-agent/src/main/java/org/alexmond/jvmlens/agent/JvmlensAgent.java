@@ -20,6 +20,7 @@ import org.alexmond.jvmlens.History;
 import org.alexmond.jvmlens.ProfileSummary;
 import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
+import org.alexmond.jvmlens.WatchTrigger;
 import org.alexmond.jvmlens.cache.CacheCapture;
 import org.alexmond.jvmlens.cache.CacheStore;
 import org.alexmond.jvmlens.consume.MicrometerSource;
@@ -52,8 +53,12 @@ import org.alexmond.jvmlens.web.WebStore;
  * {@code messaging} / {@code cache} (instrumentation dimensions), {@code micrometer}
  * (summarize an existing registry), {@code history} (a JSONL file the agent appends one
  * {@link History.Sample} to each interval), {@code paused} (launch without emitting —
- * start it after warm-up to skip startup noise), and {@code control} (a file the agent
- * watches for in-flight commands; see {@link AgentControl}).
+ * start it after warm-up to skip startup noise), {@code on-gc-ms} / {@code on-cpu-pct} /
+ * {@code on-old-objects} (dump-on-breach thresholds — while any is set the agent stays
+ * quiet and writes a summary only when a window breaches, the in-process analog of
+ * {@code watch}'s {@code --on-*} flags; history still appends every interval), and
+ * {@code control} (a file the agent watches for in-flight commands; see
+ * {@link AgentControl}).
  */
 public final class JvmlensAgent {
 
@@ -115,6 +120,7 @@ public final class JvmlensAgent {
 		control = new AgentControl(running, settings, interval, enabled, List.of("org.alexmond.jvmlens"),
 				JvmlensAgent::lazyInstall);
 		applyLaunchScope(opts.get("scope"));
+		applyLaunchTriggers(opts);
 		CallSites.setAppScope(control.scope().includePackages());
 
 		String controlFile = opts.get("control");
@@ -176,6 +182,36 @@ public final class JvmlensAgent {
 				+ control.scope().excludePackages());
 	}
 
+	/**
+	 * Map the launch-time {@code on-gc-ms} / {@code on-cpu-pct} / {@code on-old-objects}
+	 * args (mirroring {@code watch}'s {@code --on-*} flags) to the equivalent in-flight
+	 * {@code trigger} command lines, so a headless monitor can be armed to emit only on a
+	 * breach with no control channel. A blank/absent value contributes no command.
+	 */
+	static List<String> triggerCommands(String onGcMs, String onCpuPct, String onOldObjects) {
+		List<String> cmds = new ArrayList<>();
+		addTrigger(cmds, "gc-ms", onGcMs);
+		addTrigger(cmds, "cpu-pct", onCpuPct);
+		addTrigger(cmds, "old-objects", onOldObjects);
+		return cmds;
+	}
+
+	private static void addTrigger(List<String> cmds, String dim, String value) {
+		if (value != null && !value.isBlank()) {
+			cmds.add("trigger " + dim + " " + value.trim());
+		}
+	}
+
+	/** Arm launch-time dump-on-breach thresholds by replaying them as {@code trigger}. */
+	private static void applyLaunchTriggers(Map<String, String> opts) {
+		List<String> cmds = triggerCommands(opts.get("on-gc-ms"), opts.get("on-cpu-pct"), opts.get("on-old-objects"));
+		if (cmds.isEmpty()) {
+			return;
+		}
+		cmds.forEach(control::apply);
+		System.err.println("jvmlens-agent: dump-on-breach armed -> " + control.trigger());
+	}
+
 	/** Install a dimension's ByteBuddy advice once (no-op if already installed). */
 	private static void lazyInstall(String dim) {
 		if (instr == null || !INSTALLED.add(dim)) {
@@ -219,8 +255,18 @@ public final class JvmlensAgent {
 					recording = restart(recording, control.settings());
 				}
 				boolean dump = sleepInterval();
-				if (control.running() || dump) {
+				if (!control.running() && !dump) {
+					continue; // paused and no manual dump — record silently, emit nothing
+				}
+				WatchTrigger trigger = control.trigger();
+				if (dump || !trigger.active()) {
+					// a manual dump, or no armed threshold — write the latest summary
 					snapshot(recording, out, history, control.scope());
+				}
+				else {
+					// armed: append the trend sample every interval, but write markdown
+					// only when this window breaches a threshold
+					emitOnBreach(recording, out, history, control.scope(), trigger);
 				}
 			}
 			catch (InterruptedException ex) {
@@ -285,24 +331,67 @@ public final class JvmlensAgent {
 	/**
 	 * Dump the current ring buffer, summarize it, write the latest markdown to
 	 * {@code out}, and (when {@code history} is set) append one compact JSONL sample for
-	 * the run.
+	 * the run. Unconditional — the normal-cadence and manual-{@code dump} path.
 	 */
 	static void snapshot(Recording recording, Path out, Path history, Scope scope) throws Exception {
 		Path dump = Files.createTempFile("jvmlens-agent", ".jfr");
 		try {
-			recording.dump(dump);
-			CallSites.setAppScope(scope.includePackages());
-			ProfileSummary ps = Summarizer.analyze(dump, scope).withSections(instrumentationSections());
-			String summary = Summarizer.render(ps, Summarizer.Format.MARKDOWN);
-			String snapshots = SnapshotStore.render();
-			Files.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
-			if (history != null) {
-				Files.writeString(history, History.toJsonLine(ps, System.currentTimeMillis()) + "\n",
-						StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+			ProfileSummary ps = capture(recording, dump, scope);
+			writeMarkdown(ps, out, null);
+			appendHistory(ps, history);
+		}
+		finally {
+			Files.deleteIfExists(dump);
+		}
+	}
+
+	/**
+	 * Armed path: always append the trend sample (so {@code history}/{@code trend} stays
+	 * continuous), but write the markdown summary only when this window breaches a
+	 * {@code trigger} threshold — the in-process analog of {@code watch --on-*}.
+	 */
+	static void emitOnBreach(Recording recording, Path out, Path history, Scope scope, WatchTrigger trigger)
+			throws Exception {
+		Path dump = Files.createTempFile("jvmlens-agent", ".jfr");
+		try {
+			ProfileSummary ps = capture(recording, dump, scope);
+			appendHistory(ps, history);
+			String reason = trigger.reason(ps);
+			if (reason != null) {
+				writeMarkdown(ps, out, reason);
+				System.err.println("jvmlens-agent: triggered -> " + reason);
 			}
 		}
 		finally {
 			Files.deleteIfExists(dump);
+		}
+	}
+
+	/** Dump the ring buffer into {@code dump} and reduce it to a scoped summary. */
+	private static ProfileSummary capture(Recording recording, Path dump, Scope scope) throws Exception {
+		recording.dump(dump);
+		CallSites.setAppScope(scope.includePackages());
+		return Summarizer.analyze(dump, scope).withSections(instrumentationSections());
+	}
+
+	/**
+	 * Render {@code ps} (plus any variable snapshots) to {@code out}, optionally prefixed
+	 * with a {@code triggered:} note naming the breached threshold(s).
+	 */
+	private static void writeMarkdown(ProfileSummary ps, Path out, String triggerNote) throws Exception {
+		String summary = Summarizer.render(ps, Summarizer.Format.MARKDOWN);
+		if (triggerNote != null) {
+			summary = "> **triggered**: " + triggerNote + "\n\n" + summary;
+		}
+		String snapshots = SnapshotStore.render();
+		Files.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
+	}
+
+	/** Append one compact JSONL trend sample for the run, when {@code history} is set. */
+	private static void appendHistory(ProfileSummary ps, Path history) throws Exception {
+		if (history != null) {
+			Files.writeString(history, History.toJsonLine(ps, System.currentTimeMillis()) + "\n",
+					StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 		}
 	}
 

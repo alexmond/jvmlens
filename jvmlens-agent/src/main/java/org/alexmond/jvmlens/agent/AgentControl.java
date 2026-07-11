@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import org.alexmond.jvmlens.RankLimits;
 import org.alexmond.jvmlens.Scope;
+import org.alexmond.jvmlens.WatchTrigger;
 
 /**
  * The agent's <em>in-flight</em> control state — what an operator can change at runtime
@@ -23,9 +24,12 @@ import org.alexmond.jvmlens.Scope;
  * the window + instrumentation stores), {@code dump} (emit now), {@code enable <dim>} /
  * {@code disable <dim>}, {@code settings profile|default} (sampling density),
  * {@code interval <seconds>}, {@code scope app|exclude <prefix>} / {@code scope reset}
- * (application-frame filtering), and {@code status}. Launching with {@code paused} and
- * then {@code start} after warm-up is the clean answer to short cold runs profiling
- * startup.
+ * (application-frame filtering), {@code trigger gc-ms|cpu-pct|old-objects <n>} /
+ * {@code trigger reset} (dump-on-breach thresholds — while any is set the agent stays
+ * quiet and emits a summary only when a window breaches, the in-process analog of
+ * {@code watch}'s {@code --on-*} flags), and {@code status}. Launching with
+ * {@code paused} and then {@code start} after warm-up is the clean answer to short cold
+ * runs profiling startup.
  *
  * <p>
  * State is held in atomics / copy-on-write lists so the watcher thread and the agent loop
@@ -51,6 +55,8 @@ public final class AgentControl {
 	private final AtomicReference<String> settings;
 
 	private final AtomicReference<String> pendingSettings = new AtomicReference<>();
+
+	private final AtomicReference<WatchTrigger> trigger = new AtomicReference<>(WatchTrigger.NONE);
 
 	private final Set<String> enabled = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -102,6 +108,7 @@ public final class AgentControl {
 			case "settings" -> changeSettings(t);
 			case "interval" -> changeInterval(t);
 			case "scope" -> changeScope(t);
+			case "trigger" -> changeTrigger(t);
 			case "topn" -> changeTopN(t);
 			case "status" -> status();
 			default -> "unknown command: " + t[0];
@@ -161,6 +168,51 @@ public final class AgentControl {
 			target.add(t[2]);
 		}
 		return "scope " + t[1] + " += " + t[2];
+	}
+
+	/**
+	 * {@code trigger} — dump-on-breach thresholds: query (no args), reset, or set one
+	 * dimension ({@code trigger gc-ms <ms>}, {@code trigger cpu-pct <0-100>},
+	 * {@code trigger old-objects <count>}; {@code 0} disables that dimension). While any
+	 * threshold is active the loop stays quiet and emits a summary only when a window
+	 * breaches — the in-process analog of {@code watch}'s {@code --on-*} flags.
+	 */
+	private String changeTrigger(String[] t) {
+		if (t.length < 2) {
+			return "trigger: " + describeTrigger();
+		}
+		if ("reset".equals(t[1])) {
+			this.trigger.set(WatchTrigger.NONE);
+			return "trigger reset";
+		}
+		if (t.length < 3) {
+			return "usage: trigger gc-ms <ms> | trigger cpu-pct <0-100> | trigger old-objects <count> | trigger reset";
+		}
+		try {
+			long n = Long.parseLong(t[2]);
+			WatchTrigger current = this.trigger.get();
+			switch (t[1]) {
+				case "gc-ms" -> this.trigger.set(current.withGcMillis(n));
+				case "cpu-pct" -> this.trigger.set(current.withCpuShare(n / 100.0));
+				case "old-objects" -> this.trigger.set(current.withOldObjects(n));
+				default -> {
+					return "usage: trigger gc-ms|cpu-pct|old-objects <n> | trigger reset";
+				}
+			}
+			return "trigger: " + describeTrigger();
+		}
+		catch (NumberFormatException ex) {
+			return "usage: trigger gc-ms|cpu-pct|old-objects <n> | trigger reset";
+		}
+	}
+
+	private String describeTrigger() {
+		WatchTrigger tr = this.trigger.get();
+		if (!tr.active()) {
+			return "off";
+		}
+		return "gc-ms=" + tr.gcMillis() + " cpu-pct=" + Math.round(tr.cpuShare() * 100) + " old-objects="
+				+ tr.oldObjects();
 	}
 
 	/**
@@ -241,11 +293,18 @@ public final class AgentControl {
 		return Scope.of(List.copyOf(this.include), List.copyOf(this.exclude));
 	}
 
+	/**
+	 * The current dump-on-breach {@link WatchTrigger} ({@link WatchTrigger#NONE} = off).
+	 */
+	public WatchTrigger trigger() {
+		return this.trigger.get();
+	}
+
 	/** A compact rendering of the current control state. */
 	public String status() {
 		return "running=" + this.running.get() + " interval=" + this.interval.get() + "s settings="
 				+ this.settings.get() + " enabled=" + this.enabled + " scope[app=" + this.include + " exclude="
-				+ this.exclude + "] topn[" + RankLimits.describe() + "]";
+				+ this.exclude + "] trigger[" + describeTrigger() + "] topn[" + RankLimits.describe() + "]";
 	}
 
 }

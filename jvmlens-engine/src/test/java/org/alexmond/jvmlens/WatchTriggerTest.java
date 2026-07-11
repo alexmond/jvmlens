@@ -52,4 +52,21 @@ class WatchTriggerTest {
 		assertThat(reason).contains("GC pause").contains("hot path").contains("old-object");
 	}
 
+	@Test
+	void noneIsInactiveAndWithersSetOneDimensionAtATime() {
+		assertThat(WatchTrigger.NONE.active()).isFalse();
+		WatchTrigger t = WatchTrigger.NONE.withGcMillis(250).withCpuShare(0.80).withOldObjects(40);
+		assertThat(t.active()).isTrue();
+		assertThat(t.gcMillis()).isEqualTo(250);
+		assertThat(t.cpuShare()).isEqualTo(0.80);
+		assertThat(t.oldObjects()).isEqualTo(40);
+		// each wither preserves the other two dimensions
+		WatchTrigger bumped = t.withGcMillis(500);
+		assertThat(bumped.gcMillis()).isEqualTo(500);
+		assertThat(bumped.cpuShare()).isEqualTo(0.80);
+		assertThat(bumped.oldObjects()).isEqualTo(40);
+		// 0 disables a dimension
+		assertThat(WatchTrigger.NONE.withCpuShare(0).active()).isFalse();
+	}
+
 }

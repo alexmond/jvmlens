@@ -34,6 +34,31 @@ class JvmlensAgentTest {
 	}
 
 	@Test
+	void launchTriggerArgsParseIntoTriggerCommands() {
+		// on-* launch args map to the equivalent in-flight `trigger` commands (like
+		// scope).
+		assertThat(JvmlensAgent.triggerCommands("250", "80", "40")).containsExactly("trigger gc-ms 250",
+				"trigger cpu-pct 80", "trigger old-objects 40");
+		// blank/absent dimensions contribute nothing
+		assertThat(JvmlensAgent.triggerCommands("250", null, "  ")).containsExactly("trigger gc-ms 250");
+		assertThat(JvmlensAgent.triggerCommands(null, null, null)).isEmpty();
+	}
+
+	@Test
+	void launchTriggerCommandsArmBreachOnlyWhenReplayedIntoControl() {
+		// End-to-end: replaying the launch commands arms a real control's WatchTrigger,
+		// so
+		// a headless monitor emits only on a breach with no control channel.
+		AgentControl control = new AgentControl(true, "profile", 60, Set.of(), List.of("org.alexmond.jvmlens"), (d) -> {
+		});
+		JvmlensAgent.triggerCommands("250", "80", null).forEach(control::apply);
+		assertThat(control.trigger().active()).isTrue();
+		assertThat(control.trigger().gcMillis()).isEqualTo(250);
+		assertThat(control.trigger().cpuShare()).isEqualTo(0.80);
+		assertThat(control.trigger().oldObjects()).isZero();
+	}
+
+	@Test
 	void launchScopeCommandsPinAttributionWhenReplayedIntoControl() {
 		// End-to-end: replaying the launch commands into a real control yields a scope
 		// pinned to the target module from the first sample (same path as `scope app`).

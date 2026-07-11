@@ -5,10 +5,11 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * A dump-on-trigger condition for {@code watch}: thresholds that, when breached by a
- * rolling-window {@link ProfileSummary}, mark the window worth surfacing. Each threshold
- * is disabled when {@code <= 0}. Computed purely from the structured summary so
- * {@code watch} stays an external observer.
+ * A dump-on-trigger condition: thresholds that, when breached by a rolling-window
+ * {@link ProfileSummary}, mark the window worth surfacing. Each threshold is disabled
+ * when {@code <= 0}. Computed purely from the structured summary, so both the external
+ * {@code watch} command and the in-process agent (which stays quiet and emits only on a
+ * breach) reuse it unchanged.
  *
  * @param gcMillis fire when total GC pause time in the window reaches this many ms
  * @param cpuShare fire when the top hot path's sample share reaches this fraction (0..1)
@@ -16,9 +17,27 @@ import java.util.Locale;
  */
 public record WatchTrigger(long gcMillis, double cpuShare, long oldObjects) {
 
-	/** Whether any threshold is set (i.e. {@code watch} should emit only on breach). */
+	/** An inactive trigger — no threshold set (emit on the normal cadence). */
+	public static final WatchTrigger NONE = new WatchTrigger(0, 0, 0);
+
+	/** Whether any threshold is set (i.e. emission should be breach-only). */
 	public boolean active() {
 		return this.gcMillis > 0 || this.cpuShare > 0 || this.oldObjects > 0;
+	}
+
+	/** This trigger with a new GC-pause threshold (0 disables it). */
+	public WatchTrigger withGcMillis(long ms) {
+		return new WatchTrigger(ms, this.cpuShare, this.oldObjects);
+	}
+
+	/** This trigger with a new top-hot-path share threshold (0..1; 0 disables it). */
+	public WatchTrigger withCpuShare(double share) {
+		return new WatchTrigger(this.gcMillis, share, this.oldObjects);
+	}
+
+	/** This trigger with a new old-object-count threshold (0 disables it). */
+	public WatchTrigger withOldObjects(long count) {
+		return new WatchTrigger(this.gcMillis, this.cpuShare, count);
 	}
 
 	/**

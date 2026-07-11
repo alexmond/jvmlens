@@ -44,6 +44,36 @@ class ProfileDiffTest {
 	}
 
 	@Test
+	void perOpNormalizationMakesCrossRunTotalsComparable() {
+		// #157: across two JVMs the raw alloc total is ~flat (a faster JVM does more ops
+		// in
+		// a fixed-duration capture) even though per-op allocation fell sharply — dividing
+		// by
+		// an ops count exposes the real per-op reduction the totals hide.
+		ProfileSummary before = summary(100, 12_000_000_000L, List.of(), List.of());
+		ProfileSummary after = summary(120, 12_100_000_000L, List.of(), List.of());
+
+		// no ops → no per-op block (unchanged behavior for the ordinary same-JVM diff)
+		assertThat(ProfileDiff.diff(before, after)).doesNotContain("Totals per operation");
+
+		String d = ProfileDiff.diff(before, after, 1000, 2000);
+		// the raw total still reads ~flat (+1%) — the confound the finding describes
+		assertThat(d).contains("- Allocation: 11.2 GB → 11.3 GB").contains("+1%");
+		// the per-op block appears and shows the real reduction: 12MB/op → ~6MB/op
+		// (~-50%)
+		assertThat(d).contains("## Totals per operation");
+		assertThat(d).contains("Normalized by `--ops` (before 1000, after 2000)");
+		assertThat(line(d, "Allocation/op")).contains("-50%");
+		// exec samples/op (1000/1000 → 1000/2000) also halve; GC ms/op renders with a
+		// unit
+		assertThat(line(d, "Exec samples/op")).contains("-50%");
+		assertThat(line(d, "GC pause/op")).contains("ms").contains("-40%");
+		// a zero-baseline metric can't take a percentage — reported n/a, not a divide
+		// error
+		assertThat(line(d, "Old-object samples/op")).contains("n/a");
+	}
+
+	@Test
 	void diffsHotPathsByAbsoluteWithNewAndGone() {
 		ProfileSummary before = summary(0, 0,
 				List.of(new Ranked("com.acme.A.run", 0.50, 500, null), new Ranked("com.acme.B.iter", 0.16, 160, null)),
