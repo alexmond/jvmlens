@@ -24,6 +24,8 @@ is hundreds of thousands of tokens and routinely overflows a model's context
 window. jvmlens reads a JFR recording and emits a few hundred tokens of ranked,
 source-attributed signal you can hand straight to a coding agent.
 
+📖 **Documentation:** <https://www.alexmond.org/jvmlens/current/>
+
 ## What it captures
 
 Beyond the classic three (CPU / memory / wait), jvmlens summarizes **external I/O**,
