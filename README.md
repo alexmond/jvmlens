@@ -1,5 +1,12 @@
 # jvmlens
 
+[![Release](https://img.shields.io/github/v/release/alexmond/jvmlens)](https://github.com/alexmond/jvmlens/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/alexmond/jvmlens/maven.yml?branch=main)](https://github.com/alexmond/jvmlens/actions)
+[![codecov](https://codecov.io/gh/alexmond/jvmlens/graph/badge.svg)](https://codecov.io/gh/alexmond/jvmlens)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-17%2B-blue.svg)](https://openjdk.org/)
+[![Docs](https://img.shields.io/badge/docs-alexmond.org-blue)](https://www.alexmond.org/jvmlens/current/)
+
 Turn JVM runtime evidence into a compact, **LLM-ready** diagnosis.
 
 **Ask an AI to "debug this."** A raw `jfr print` dump of a short recording is **2.7 MB ≈ 684K
