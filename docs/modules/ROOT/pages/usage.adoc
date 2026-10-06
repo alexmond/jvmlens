@@ -24,6 +24,12 @@ actually goes* with counts, each carrying its source line (`com.example.Svc.comp
 The locator turns "diagnose → find the spot → edit" into one step for a coding agent.
 * **Leaf confidence** — when no single leaf holds more than ~20% of a path's samples the
 teaser is flagged `⚠ diffuse`, so you don't chase a frame that isn't where the cost is.
+* **Via frame** — when a library frame *between* the application frame and the leaves owns
+most of a path's samples, the teaser names it (`· mostly via ognl.OgnlRuntime.getReadMethod
+530/963`). The app entry and a JDK leaf are often both correct and neither is the lever; the
+frame that funnels the time into the JDK is. Counts are inclusive, and of the frames holding
+at least half the path the one nearest the leaves is named. It appears when the scope leaves
+a library out of the application (`-a`, or a default-excluded framework).
 * **Allocation confidence** — a short recording yields few allocation samples; a
 `⚠ Only N allocation samples` caveat means the per-site **byte shares** are noisy (the
 **total** bytes stay reliable).
@@ -211,7 +217,9 @@ triggered it — e.g. `DoubleToDecimal`/`formatUnsignedInt` → "number→string
 `LinkedList$ListItr.<init>` self-time → "per-iteration iterator allocation",
 `AbstractStringBuilder.ensureCapacity` → "presize the buffer", and per-call regex compilation
 (`java.util.regex.Pattern.*` leaves, or a `String.replaceAll(String,…)`/`matches`/`split`
-source line) → "hoist the `Pattern` to a `static final` field and reuse `Matcher`". It is **off
+source line) → "hoist the `Pattern` to a `static final` field and reuse `Matcher`", and an
+uncached reflective lookup (`Class.getMethods`/`copyMethods`/`getDeclaredMethods`,
+`Introspector.getBeanInfo` leaves) → "memoize the resolved `Method` per (Class, name)". It is **off
 by default** (the report stays clean data) and every line is tagged `[possible]` — a direction
 to investigate, never an assertion.
 

@@ -70,6 +70,14 @@ final class Teasers {
 		return diffuse ? leaves + " ⚠ diffuse — no leaf >" + (int) (LEAF_CONFIDENCE * 100) + "% of path" : leaves;
 	}
 
+	/** The most-weighted source line in a histogram, or 0 if none was recorded (#87). */
+	static int dominantLine(Map<Integer, Long> hist) {
+		if (hist == null || hist.isEmpty()) {
+			return 0;
+		}
+		return hist.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(0);
+	}
+
 	/**
 	 * A non-escaping-allocation candidate C2 can scalar-replace — a boxed primitive or a
 	 * captured lambda. A hot alloc site dominated by one may vanish in steady state, so

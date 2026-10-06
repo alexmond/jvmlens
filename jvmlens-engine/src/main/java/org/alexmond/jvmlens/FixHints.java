@@ -68,6 +68,12 @@ public final class FixHints {
 							+ "C2 scalar-replaces non-escaping boxes, so verify the win with -prof gc)"),
 			rule("java\\.lang\\.reflect\\.(Method|Field|Constructor)|MethodHandle\\.invoke", Lever.STRUCTURAL,
 					"reflective dispatch — cache the handle or call directly"),
+			rule("Class\\.(getMethods|getDeclaredMethods|copyMethods|privateGetDeclaredMethods|getMethod0|getFields"
+					+ "|getDeclaredFields|copyFields|getConstructors|copyConstructors)\\b|PublicMethods"
+					+ "|Introspector\\.getBeanInfo", Lever.STRUCTURAL,
+					"reflective member lookup per call — Class.getMethods()/getDeclaredMethods() copy the whole "
+							+ "member table every time; memoize the resolved Method per (Class, name), e.g. in a "
+							+ "ClassValue or ConcurrentHashMap"),
 			rule("String\\.format|Formatter\\b", Lever.STRUCTURAL,
 					"String.format in a hot path — prefer concatenation / StringBuilder"),
 			// Section-scoped rules — matched only against their own extended section's

@@ -410,6 +410,31 @@ class SummarizerTest {
 	}
 
 	@Test
+	void hotPathTeaserNamesTheLibraryFrameBetweenAppAndJdkLeaf() throws Exception {
+		// #162: the app frame calls a library whose cost is all in a JDK leaf. With the
+		// app scoped to its own package, only a "via" names the frame you can change.
+		Path file = recordFile(() -> {
+			long end = System.nanoTime() + 2_000_000_000L;
+			int hits = 0;
+			while (System.nanoTime() < end) {
+				hits += org.alexmond.jvmlens.viaapp.Entry.render(200);
+			}
+			if (hits < 0) {
+				throw new IllegalStateException("unreachable");
+			}
+		});
+		try {
+			Scope scope = Scope.of(List.of("org.alexmond.jvmlens.viaapp"), List.of());
+			ProfileSummary s = Summarizer.analyze(List.of(file), scope, "x", 0L);
+			assertThat(s.hotPaths().get(0).name()).isEqualTo("org.alexmond.jvmlens.viaapp.Entry.render");
+			assertThat(s.hotPaths().get(0).stack()).contains("mostly via org.alexmond.jvmlens.vialib.Resolver.resolve");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
 	void hotPathTeaserShowsLeafDistributionWithCounts() throws Exception {
 		Path file = cpuRecording();
 		try {
