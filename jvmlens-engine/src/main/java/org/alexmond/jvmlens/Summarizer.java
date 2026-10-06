@@ -296,7 +296,7 @@ public final class Summarizer {
 			.stream()
 			.filter((f) -> f.isJavaFrame() && f.getMethod() != null)
 			.filter((f) -> ownerMatches.test(f.getMethod().getType().getName()))
-			.map((f) -> new Frame(f.getMethod().getType().getName() + "." + f.getMethod().getName(), f.getLineNumber()))
+			.map((f) -> new Frame(Teasers.frameKey(f), f.getLineNumber()))
 			.findFirst()
 			.orElse(null);
 	}
@@ -607,7 +607,7 @@ public final class Summarizer {
 			long w = e.hasField("weight") ? e.getLong("weight") : 0;
 			this.allocBytes += w;
 			String type = (e.hasField("objectClass") && e.getClass("objectClass") != null)
-					? e.getClass("objectClass").getName() : null;
+					? Teasers.stableName(e.getClass("objectClass").getName()) : null;
 			if (type != null) {
 				this.allocByType.merge(type, w, Long::sum);
 			}
@@ -629,7 +629,7 @@ public final class Summarizer {
 				this.lockByMethod.merge(m, d, Long::sum);
 			}
 			if (e.hasField("monitorClass") && e.getClass("monitorClass") != null) {
-				this.lockByMonitor.merge(e.getClass("monitorClass").getName(), d, Long::sum);
+				this.lockByMonitor.merge(Teasers.stableName(e.getClass("monitorClass").getName()), d, Long::sum);
 			}
 		}
 
