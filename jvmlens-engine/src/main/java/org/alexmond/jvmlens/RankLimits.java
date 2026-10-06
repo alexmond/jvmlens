@@ -20,6 +20,9 @@ public final class RankLimits {
 
 	private static final Map<String, Integer> OVERRIDES = new ConcurrentHashMap<>();
 
+	/** Set on a thread while it runs inside {@link #full}. */
+	private static final ThreadLocal<Boolean> FULL = new ThreadLocal<>();
+
 	private RankLimits() {
 	}
 
@@ -28,6 +31,9 @@ public final class RankLimits {
 	 * default).
 	 */
 	public static int limit(String category) {
+		if (FULL.get() != null) {
+			return Integer.MAX_VALUE;
+		}
 		Integer specific = OVERRIDES.get(category);
 		if (specific != null) {
 			return specific;
@@ -38,6 +44,26 @@ public final class RankLimits {
 	/** Set the top-N for a category ({@code all} for the global fallback). */
 	public static void set(String category, int n) {
 		OVERRIDES.put(category, Math.max(n, 1));
+	}
+
+	/**
+	 * Run {@code work} with every limit lifted on this thread, so a summary it builds
+	 * keeps its <em>whole</em> ranked distribution. A diff needs that: against a top-N
+	 * baseline, a path that was merely below the cutoff reads as NEW (#165).
+	 * @param <T> the result type
+	 * @param <E> the checked exception {@code work} may throw
+	 * @param work the analysis to run un-truncated
+	 * @return whatever {@code work} returns
+	 * @throws E if {@code work} throws
+	 */
+	public static <T, E extends Exception> T full(Work<T, E> work) throws E {
+		FULL.set(Boolean.TRUE);
+		try {
+			return work.run();
+		}
+		finally {
+			FULL.remove();
+		}
 	}
 
 	/** Clear all overrides (back to {@link #DEFAULT}). */
@@ -54,6 +80,19 @@ public final class RankLimits {
 			}
 		});
 		return b.toString();
+	}
+
+	/**
+	 * A unit of work run under {@link #full}.
+	 *
+	 * @param <T> the result type
+	 * @param <E> the checked exception it may throw
+	 */
+	@FunctionalInterface
+	public interface Work<T, E extends Exception> {
+
+		T run() throws E;
+
 	}
 
 }

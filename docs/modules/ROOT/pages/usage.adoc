@@ -83,12 +83,17 @@ pull request). Rules are comma-separated `metric < threshold`:
 | `gc-pct` | GC pause increased by more than the limit (%)
 | `alloc-pct` | **total** allocation bytes increased by more than the limit (%) — the absolute memory gate
 | `oldobj-delta` | retained (old-object) samples grew by more than the limit
-| `regression-pp` | a hot path's share rose by more than the limit (percentage points)
-| `new-hotpath-pp` | a *new* hot path appears at/above the limit (% share)
+| `regression-pp` | a hot path's share rose by more than the limit (percentage points) *and* its absolute samples back that rise
+| `new-hotpath-pp` | a *new* hot path appears at/above the limit — the smaller of its share and its samples as a % of the baseline total
 |===
 
-Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC; the
-`*-pp` ones are share-based and can shuffle when the leader shrinks in an optimize loop.
+Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC. The `*-pp`
+gates are share-based, so they are checked against absolute samples too: optimizing shrinks
+the total, and a path whose samples fell can still show a *rising* share. A share move only
+counts as far as the sample count backs it (the smaller of the two, measured against the
+baseline total). **New** means absent from the whole baseline, not merely below its top-N —
+a diff reads both recordings un-truncated, so a path that only crossed the top-N cutoff shows
+its real before→after instead of `NEW`/`GONE`.
 
 [source,bash]
 ----

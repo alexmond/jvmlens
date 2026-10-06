@@ -22,8 +22,10 @@ import org.alexmond.jvmlens.ProfileSummary.Ranked;
  * (retained-sample growth), {@code regression-pp} (largest hot-path share increase, pp),
  * {@code new-hotpath-pp} (largest NEW hot-path share). All use {@code <} ("must stay
  * under"). Prefer the absolute gates ({@code gc-*}, {@code alloc-pct},
- * {@code oldobj-delta}); the {@code *-pp} ones are share-based and can shuffle when the
- * leader shrinks.
+ * {@code oldobj-delta}). The {@code *-pp} ones are share-based, but a share move only
+ * counts as far as the absolute sample count backs it (see {@code confirmed}), and NEW
+ * means absent from the whole baseline — feed summaries built under
+ * {@link RankLimits#full} so that is the full distribution, not a top-N (#165).
  */
 public final class PerfGate {
 
@@ -66,8 +68,8 @@ public final class PerfGate {
 			case "alloc-pct" -> pct("alloc bytes", before.allocBytes(), after.allocBytes(), threshold);
 			case "oldobj-delta" -> num(after.oldObjects() - before.oldObjects(), threshold,
 					"old-objects " + before.oldObjects() + " → " + after.oldObjects());
-			case "regression-pp" -> regression(before.hotPaths(), after.hotPaths(), threshold);
-			case "new-hotpath-pp" -> newHot(before.hotPaths(), after.hotPaths(), threshold);
+			case "regression-pp" -> regression(before, after, threshold);
+			case "new-hotpath-pp" -> newHot(before, after, threshold);
 			default -> new Eval(false, "unknown metric `" + metric + "`");
 		};
 	}
@@ -83,14 +85,14 @@ public final class PerfGate {
 				label + " " + before + " → " + after + " (" + shown + "%, limit " + fmt(threshold) + "%)");
 	}
 
-	private static Eval regression(List<Ranked> before, List<Ranked> after, double threshold) {
-		Map<String, Double> b = shares(before);
+	private static Eval regression(ProfileSummary before, ProfileSummary after, double threshold) {
+		Map<String, Ranked> b = byName(before.hotPaths());
 		String worst = null;
 		double worstPp = 0;
-		for (Ranked r : after) {
-			Double prev = b.get(r.name());
+		for (Ranked r : after.hotPaths()) {
+			Ranked prev = b.get(r.name());
 			if (prev != null) {
-				double pp = (r.share() - prev) * 100;
+				double pp = confirmed((r.share() - prev.share()) * 100, r.count() - prev.count(), before.execSamples());
 				if (pp > worstPp) {
 					worstPp = pp;
 					worst = r.name();
@@ -101,23 +103,43 @@ public final class PerfGate {
 		return new Eval(worstPp < threshold, detail + " (limit " + fmt(threshold) + "pp)");
 	}
 
-	private static Eval newHot(List<Ranked> before, List<Ranked> after, double threshold) {
-		Map<String, Double> b = shares(before);
-		String worst = null;
+	private static Eval newHot(ProfileSummary before, ProfileSummary after, double threshold) {
+		Map<String, Ranked> b = byName(before.hotPaths());
+		Ranked worst = null;
 		double worstPp = 0;
-		for (Ranked r : after) {
-			if (!b.containsKey(r.name()) && r.share() * 100 > worstPp) {
-				worstPp = r.share() * 100;
-				worst = r.name();
+		for (Ranked r : after.hotPaths()) {
+			double pp = confirmed(r.share() * 100, r.count(), before.execSamples());
+			if (!b.containsKey(r.name()) && pp > worstPp) {
+				worstPp = pp;
+				worst = r;
 			}
 		}
-		String detail = (worst != null) ? ("NEW `" + worst + "` " + fmt(worstPp) + "%") : "no new hot path";
+		String detail = (worst != null)
+				? ("NEW `" + worst.name() + "` " + fmt(worst.share() * 100) + "% share, "
+						+ fmt(ofBaseline(worst.count(), before.execSamples())) + "% of the baseline total")
+				: "no new hot path";
 		return new Eval(worstPp < threshold, detail + " (limit " + fmt(threshold) + "%)");
 	}
 
-	private static Map<String, Double> shares(List<Ranked> rows) {
-		Map<String, Double> m = new LinkedHashMap<>();
-		rows.forEach((r) -> m.merge(r.name(), r.share(), Double::sum));
+	/**
+	 * A share move counts only as far as the <em>absolute</em> samples back it: the
+	 * smaller of the share change and the sample change as a % of the baseline total.
+	 * Optimizing shrinks the denominator, so a path whose samples fell (or a small new
+	 * path) can show a large share of a much smaller total — share alone failed every
+	 * improvement-only diff (#165, the gate-side twin of #43). Falls back to share when
+	 * the summaries carry no sample counts.
+	 */
+	private static double confirmed(double sharePp, long sampleDelta, long baselineTotal) {
+		return (baselineTotal > 0) ? Math.min(sharePp, ofBaseline(sampleDelta, baselineTotal)) : sharePp;
+	}
+
+	private static double ofBaseline(long samples, long baselineTotal) {
+		return (baselineTotal > 0) ? (100.0 * samples / baselineTotal) : 0;
+	}
+
+	private static Map<String, Ranked> byName(List<Ranked> rows) {
+		Map<String, Ranked> m = new LinkedHashMap<>();
+		rows.forEach((r) -> m.putIfAbsent(r.name(), r));
 		return m;
 	}
 
