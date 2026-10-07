@@ -33,6 +33,11 @@ git clone https://github.com/alexmond/jvmlens /tmp/jvmlens-src && ( cd /tmp/jvml
 JVMLENS=/tmp/jvmlens-src/jvmlens-cli/target/jvmlens.jar
 ```
 
+> **Newer than 0.3.0:** `bench -o` and its isolated `--cp`, `--ops`, the `· mostly via` teaser,
+> the test-harness note and the absolute-backed `*-pp` gates landed after the 0.3.0 release.
+> Until 0.3.1 is out, use **(b)** the rolling `latest` build (or **(c)** build from source) to
+> get them.
+
 ## 1. Capture a JFR of the hot workload
 
 Pick the capture that matches what you're optimizing:
@@ -88,8 +93,12 @@ Pick the capture that matches what you're optimizing:
   java -jar "$JVMLENS" bench --main com.example.app.RenderDriver --cp target/classes:$(cat cp.txt) \
        -w 20 -i 200 -a com.example.app --jfr /tmp/before.jfr -- <driver args>
   ```
-  `--cp` loads the workload (it needn't be on jvmlens's classpath); `-w/--warmup` + `-i/--iters`
-  are iteration counts; `--jfr` keeps the recording for a `--baseline` diff (else a temp file).
+  `--cp` must be the workload's **full** classpath: the workload is isolated from jvmlens's own
+  libraries, so it runs on *its* Spring/Jackson/SLF4J versions, not the ones inside `jvmlens.jar`
+  (a `ClassNotFoundException` means an entry is missing from `--cp`). `-w/--warmup` +
+  `-i/--iters` are iteration counts; `--jfr` keeps the recording for a `--baseline` diff (else a
+  temp file). The summary shares stdout with the workload — if the workload logs there, add
+  `-o <file>` to write the summary to a file instead.
   This is the no-JMH path most consumer apps want — write a tiny driver `main` that exercises the
   hot path once, and `bench` is the loop.
 - **A standalone run / `main` (manual):** `java -XX:StartFlightRecording=filename=/tmp/run.jfr,settings=profile,duration=30s -jar app.jar` — prefer `bench` over this when you can call a `main`.
@@ -115,7 +124,9 @@ contention, and a hedged cause. **Act on the top 1–2 lines.**
 Useful flags:
 - `--hints` — append a hedged `[possible]` fix-direction section, tagged **structural**
   (mechanical/safe, e.g. iterator+lambda alloc, presize, reflect, **per-call regex compile →
-  hoist the `Pattern` to `static final`**) vs **inherent** (parity-sensitive, e.g. number→string
+  hoist the `Pattern` to `static final`**, **uncached reflective lookup
+  (`Class.getMethods`/`getDeclaredMethods`) → memoize the `Method` per (Class, name)**) vs
+  **inherent** (parity-sensitive, e.g. number→string
   formatting) — pull the structural lever first.
 - `--max-tokens <n>` (or `--top-k <n>`) — budget the output: shrinks rows until it fits ~`<n>`
   tokens. Handy when feeding several summaries to a model.
@@ -135,11 +146,20 @@ Useful flags:
 - Each hot-path row's teaser lists the **top leaves with counts** (`Bar.baz:88 30/168`) — where
   time *actually* goes — and the **source line** (`:88`); alloc sites show their call-site line.
   Flags `⚠ diffuse` when no single leaf holds >20% of the path (don't chase one frame).
+- A teaser may end `· mostly via <frame> n/total` — the **library frame between your code and
+  the leaves** that owns at least half of the path. When the app entry and a JDK leaf are both
+  correct but neither is something you can change, this is the lever (e.g. a library method
+  that calls `Class.getMethods()` on every read). It shows when the scope leaves that library
+  out of the application (`-a`, or a default-excluded framework).
 - A `⚠ Only N allocation samples` caveat means per-site **byte shares** are noisy on a short
   trial — the **total** bytes are still reliable.
 - An alloc row may carry `⚠ <type> may be scalar-replaced (escape analysis)` — JFR still samples
   a non-escaping box/lambda that C2 *eliminates* at steady state, so it can be a **false lever**.
-  Confirm it's real with `-prof gc` before optimizing it.
+  Its est-bytes share is an **upper bound** on what you can remove (a real site measured 28%
+  sampled vs 10% actual) — confirm the win with `-prof gc` before optimizing it.
+- The suspected cause may add `⚠ Looks test-harness dominated` — a large share of CPU samples
+  or allocation ran inside a mock framework (Mockito, EasyMock, …). The numbers then describe
+  the harness, not the code under test: profile a plain driver (`bench --main`) instead.
 
 ## 3. The optimize→measure loop
 
@@ -152,7 +172,9 @@ Useful flags:
    java -jar "$JVMLENS" analyze "$after" -b "$before" -a com.example.app
    ```
    The diff shows totals Δ, then hot paths / allocation sites as absolute before → after with
-   the share beside it (`52 → 31 (▼ 40%) [share 9%→14%]`) + `NEW` / `GONE`, ranked by change size. Iterate until the summary points somewhere not worth chasing.
+   the share beside it (`52 → 31 (▼ 40%) [share 9%→14%]`) + `NEW` / `GONE`, ranked by change size. `NEW` / `GONE` mean **truly absent** on the other side: a diff
+   reads both recordings in full, so a path that only crossed the top-N cutoff shows its real
+   before → after. Iterate until the summary points somewhere not worth chasing.
    - **Extract-method refactors:** the diff also prints an **"Allocation by type (rollup)"** block
      that *sums extracted helpers* (`GoFmt.* — 7.6 GB → 5.8 GB [3 methods]`), so a win split across
      a new helper row reads as one net change instead of a misleading per-method `−52%` next to a
@@ -164,6 +186,11 @@ Useful flags:
      also warns that fixed-duration exec-sample deltas conflate per-op cost with throughput → use a
      fixed-iteration `bench` A/B for a clean per-op CPU comparison.
 
+   - **Diffing across JVMs or throughputs (e.g. JDK 17 vs 25):** raw totals conflate per-op cost
+     with throughput (a faster JVM does more ops in a fixed-duration capture). Pass the ops
+     executed on each side — `--ops <before,after>`, e.g. from JMH `ops/s` × measured seconds —
+     and the diff adds a `## Totals per operation` block that is comparable.
+
 ## 4. Optional — CI perf-gate
 
 Fail a build on regression (non-zero exit), keyed on the diff:
@@ -173,7 +200,10 @@ java -jar "$JVMLENS" analyze "$after" -b "$before" -a com.example.app \
      --assert "gc-ms < 100, regression-pp < 5, new-hotpath-pp < 10"
 ```
 Metrics: `gc-ms`, `gc-pct`, `alloc-pct`, `oldobj-delta`, `regression-pp`, `new-hotpath-pp`. Exit
-1 on regression, 0 pass, 2 bad-args.
+1 on regression, 0 pass, 2 bad-args. The two `*-pp` gates are safe on an improvement-only diff:
+a share move only counts as far as the absolute sample count backs it (the smaller of the share
+change and the sample change as a % of the **baseline** total), and "new" means absent from the
+whole baseline, not merely below its top-N.
 
 ## 5. Pair with JMH — they answer different questions
 
@@ -204,7 +234,12 @@ and jvmlens to find *what* to fix.
   read `profile.jfr → profile.jfr` — keep the before/after dirs distinct and remember which is
   which. (`analyze` also accepts a **directory** and merges all per-fork `.jfr` under it.)
 - The recorder's own sink (`file null`) is filtered out of External I/O — so an "I/O" line on a
-  pure CPU/alloc microbenchmark would be a jvmlens bug, not your code.
+  pure CPU/alloc microbenchmark would be a jvmlens bug, not your code. Samples taken inside
+  JFR's own start-up instrumentation are dropped too (on JDK 24+ they showed as gigabytes of
+  phantom `jdk.internal.classfile` allocation).
+- **Lambda rows read `Foo$$Lambda`** — the per-JVM address is stripped so the same lambda
+  matches across two runs. Several lambdas of one class share that row; use the line anchor and
+  the leaf teaser to tell them apart.
 
 ## Leave the project self-serving
 
