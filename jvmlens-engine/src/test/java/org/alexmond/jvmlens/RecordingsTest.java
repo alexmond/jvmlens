@@ -53,4 +53,25 @@ class RecordingsTest {
 		assertThat(Recordings.label(Path.of("only.jfr"), null)).isEqualTo("only.jfr");
 	}
 
+	@Test
+	void recognizesTheRecordersOwnMachineryFrames() {
+		// #160: Recording.start() retransforms event classes — those samples are JFR's
+		// work, not the workload's
+		assertThat(Recordings.isRecorderType("jdk.jfr.internal.PlatformRecorder")).isTrue();
+		assertThat(Recordings.isRecorderType("jdk.jfr.internal.EventInstrumentation")).isTrue();
+		assertThat(Recordings.isRecorderType("jdk.jfr.internal.EventInstrumentation$MethodDesc")).isTrue();
+		assertThat(Recordings.isRecorderType("jdk.jfr.internal.JVMUpcalls")).isTrue();
+	}
+
+	@Test
+	void keepsApplicationAndEventCommitFrames() {
+		assertThat(Recordings.isRecorderType("com.example.OrderService")).isFalse();
+		// the public API and an app-triggered event commit stay: that cost follows the
+		// app's own use of events
+		assertThat(Recordings.isRecorderType("jdk.jfr.Recording")).isFalse();
+		assertThat(Recordings.isRecorderType("jdk.jfr.internal.event.EventWriter")).isFalse();
+		// the classfile API alone is not proof — only a recorder frame above it is
+		assertThat(Recordings.isRecorderType("jdk.internal.classfile.impl.StackMapGenerator")).isFalse();
+	}
+
 }

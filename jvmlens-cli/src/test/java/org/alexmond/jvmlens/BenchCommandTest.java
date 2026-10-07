@@ -1,6 +1,7 @@
 package org.alexmond.jvmlens;
 
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 
 import org.alexmond.jvmlens.testimpl.BenchWorkload;
+import org.alexmond.jvmlens.testimpl.IsolationProbe;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -102,6 +104,29 @@ class BenchCommandTest {
 		int rc = new CommandLine(new BenchCommand()).execute("--main", WORKLOAD, "--jfr",
 				tmp.resolve("b.jfr").toString(), "--no-analyze", "-o", tmp.resolve("s.md").toString());
 		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
+	void classpathWorkloadIsIsolatedFromHarnessDependencies(@TempDir Path tmp) throws Exception {
+		// #164: a --cp workload must resolve libraries from its own classpath, never from
+		// jvmlens's. Stage the probe alone in a directory, so the only way it can see
+		// picocli is by leaking through the harness loader.
+		String resource = IsolationProbe.class.getName().replace('.', '/') + ".class";
+		Path staged = tmp.resolve(resource);
+		Files.createDirectories(staged.getParent());
+		try (InputStream in = IsolationProbe.class.getClassLoader().getResourceAsStream(resource)) {
+			Files.copy(in, staged);
+		}
+		System.clearProperty(IsolationProbe.SEES_HARNESS);
+		try {
+			int rc = new CommandLine(new BenchCommand()).execute("--main", IsolationProbe.class.getName(), "--cp",
+					tmp.toString(), "-w", "0", "-i", "1", "--jfr", tmp.resolve("probe.jfr").toString(), "--no-analyze");
+			assertThat(rc).isZero();
+			assertThat(System.getProperty(IsolationProbe.SEES_HARNESS)).isEqualTo("false");
+		}
+		finally {
+			System.clearProperty(IsolationProbe.SEES_HARNESS);
+		}
 	}
 
 	/** A workload whose main throws — drives the timed-run failure path (exit 3). */

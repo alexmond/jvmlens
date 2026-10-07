@@ -83,12 +83,17 @@ pull request). Rules are comma-separated `metric < threshold`:
 | `gc-pct` | GC pause increased by more than the limit (%)
 | `alloc-pct` | **total** allocation bytes increased by more than the limit (%) — the absolute memory gate
 | `oldobj-delta` | retained (old-object) samples grew by more than the limit
-| `regression-pp` | a hot path's share rose by more than the limit (percentage points)
-| `new-hotpath-pp` | a *new* hot path appears at/above the limit (% share)
+| `regression-pp` | a hot path's share rose by more than the limit (percentage points) *and* its absolute samples back that rise
+| `new-hotpath-pp` | a *new* hot path appears at/above the limit — the smaller of its share and its samples as a % of the baseline total
 |===
 
-Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC; the
-`*-pp` ones are share-based and can shuffle when the leader shrinks in an optimize loop.
+Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC. The `*-pp`
+gates are share-based, so they are checked against absolute samples too: optimizing shrinks
+the total, and a path whose samples fell can still show a *rising* share. A share move only
+counts as far as the sample count backs it (the smaller of the two, measured against the
+baseline total). **New** means absent from the whole baseline, not merely below its top-N —
+a diff reads both recordings un-truncated, so a path that only crossed the top-N cutoff shows
+its real before→after instead of `NEW`/`GONE`.
 
 [source,bash]
 ----
@@ -350,7 +355,9 @@ java -jar jvmlens.jar bench --main com.example.RenderDriver --cp target/classes:
 Each `main` invocation is one iteration. `-w` / `--warmup` iterations run **before** the
 recording starts (so JIT/classload churn stays out of the steady-state signal); `-i` /
 `--iters` are timed. `--cp` / `--classpath` loads the workload through a separate class
-loader; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
+loader that is **isolated from jvmlens's own dependencies** — the workload sees only the JDK
+plus the entries you pass, so it runs on *its* Spring/Jackson/SLF4J versions, not the ones
+bundled in `jvmlens.jar`. Pass the workload's full classpath; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
 the next run; `--no-analyze` captures without printing. A one-line timing summary (iters,
 ms/iter) goes to stderr; the report to stdout, so it stays pipeable. The workload shares that
 stdout, so if it logs there use `-o` / `--output <file>` to write the report to a file instead.
