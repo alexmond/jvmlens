@@ -253,7 +253,11 @@ triggered it — e.g. `DoubleToDecimal`/`formatUnsignedInt` → "number→string
 (`java.util.regex.Pattern.*` leaves, or a `String.replaceAll(String,…)`/`matches`/`split`
 source line) → "hoist the `Pattern` to a `static final` field and reuse `Matcher`", and an
 uncached reflective lookup (`Class.getMethods`/`copyMethods`/`getDeclaredMethods`,
-`Introspector.getBeanInfo` leaves) → "memoize the resolved `Method` per (Class, name)". It is **off
+`Introspector.getBeanInfo` leaves) → "memoize the resolved `Method` per (Class, name)". Two
+library shapes are recognised too: logging-backend frames (Logback, Log4j, `java.util.logging`)
+in a hot path → "check the enabled level, parameterise messages, use an async appender"; and
+Jackson *building* (de)serializers (`ObjectMapper.<init>`, `BeanSerializerFactory`,
+`DeserializerCache._create…`) → "an `ObjectMapper` is probably created per call — reuse one". It is **off
 by default** (the report stays clean data) and every line is tagged `[possible]` — a direction
 to investigate, never an assertion.
 

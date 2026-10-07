@@ -32,3 +32,9 @@ plugins/*/skills/*/extensions/
 
 # Stray local copy of an external marketplace plugin (not part of this repo's marketplace)
 plugins/screenshot-tour/
+
+# JVM crash debris (HotSpot error logs carry the host name, hardware, env and local paths)
+hs_err_pid*.log
+replay_pid*.log
+.attach_pid*
+core.[0-9]*
