@@ -404,6 +404,17 @@ EasyMock, PowerMock, jMock, MockK), the suspected cause adds `⚠ Looks test-har
 — the numbers then describe the harness more than the code under test, and a plain driver
 gives representative ones. This applies to every capture path, not only `bench`.
 
+A recording taken **from a test JVM** is called out too: `⚠ Recorded from a test run (Maven
+Surefire)` — fixture setup, test data and assertions are part of the numbers. jvmlens reads
+this from the JVM's launch command (Surefire, a Gradle test worker, an IDE JUnit runner, the
+JUnit console launcher, TestNG), falling back to JUnit/TestNG/Spock/Kotest frames under at
+least half of the CPU samples. A JMH fork is a benchmark, not a test run, and is not flagged.
+
+Test, mock, assertion and benchmark-harness libraries (JUnit, TestNG, Mockito, ByteBuddy,
+AssertJ, Hamcrest, Testcontainers, WireMock, JMH, …) are **never application code** under the
+default scope, so a mock-heavy run attributes its cost to *your* calling method instead of
+naming a Mockito internal as the hot path. Name one with `-a` to profile the library itself.
+
 == Remote servers (run on the host)
 
 For a JVM deployed elsewhere, run jvmlens *on that host* through the access channel you
