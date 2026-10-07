@@ -23,6 +23,7 @@ import org.openjdk.jmh.results.Result;
 
 import org.alexmond.jvmlens.ProfileDiff;
 import org.alexmond.jvmlens.ProfileSummary;
+import org.alexmond.jvmlens.RankLimits;
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
 import org.alexmond.jvmlens.Scope;
 import org.alexmond.jvmlens.Summarizer;
@@ -217,8 +218,8 @@ public class JvmlensProfiler implements ExternalProfiler {
 		try {
 			Scope scope = Scope.of(this.appPackages, List.of());
 			if (this.baseline != null) {
-				ProfileSummary before = Summarizer.analyze(this.baseline, scope);
-				ProfileSummary after = Summarizer.analyze(this.jfr, scope);
+				ProfileSummary before = RankLimits.full(() -> Summarizer.analyze(this.baseline, scope));
+				ProfileSummary after = RankLimits.full(() -> Summarizer.analyze(this.jfr, scope));
 				double sampledPct = (before.allocBytes() > 0)
 						? 100.0 * (after.allocBytes() - before.allocBytes()) / before.allocBytes() : 0;
 				System.out.println(

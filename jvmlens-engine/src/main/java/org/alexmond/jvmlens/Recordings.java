@@ -6,6 +6,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
 
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordedFrame;
+import jdk.jfr.consumer.RecordedStackTrace;
+
 /**
  * Resolves a recording argument that may be a single {@code .jfr} file <em>or a
  * directory</em> — the latter being a JMH {@code -prof jfr} output, where every fork
@@ -15,7 +19,46 @@ import java.util.stream.Stream;
  */
 public final class Recordings {
 
+	/**
+	 * JFR classes that only run to operate a recording — starting it, (re)instrumenting
+	 * event classes, the periodic task. Deliberately narrow:
+	 * {@code jdk.jfr.internal.event} (an app-triggered event commit) is not here.
+	 */
+	private static final List<String> RECORDER_TYPES = List.of("jdk.jfr.internal.PlatformRecorder",
+			"jdk.jfr.internal.EventInstrumentation", "jdk.jfr.internal.JVMUpcalls");
+
 	private Recordings() {
+	}
+
+	/**
+	 * Whether an event was sampled inside the recorder's own machinery rather than the
+	 * workload. {@code Recording.start()} retransforms event classes through the JDK
+	 * classfile API, and one such allocation sample can carry gigabytes of weight — it
+	 * read as the workload generating bytecode at steady state (#160). Dropped the same
+	 * way the recorder's own {@code file null} sink is dropped from I/O.
+	 * @param event the event to test
+	 * @return {@code true} if any frame of its stack belongs to the recorder
+	 */
+	static boolean isRecorder(RecordedEvent event) {
+		RecordedStackTrace stack = event.getStackTrace();
+		if (stack == null) {
+			return false;
+		}
+		for (RecordedFrame frame : stack.getFrames()) {
+			if (frame.isJavaFrame() && isRecorderType(frame.getMethod().getType().getName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static boolean isRecorderType(String type) {
+		for (String recorder : RECORDER_TYPES) {
+			if (type.startsWith(recorder)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

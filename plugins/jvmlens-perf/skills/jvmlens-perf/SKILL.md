@@ -1,6 +1,6 @@
 ---
 name: jvmlens-perf
-description: Use jvmlens to drive the dev-time optimize→measure loop on the CURRENT JVM project — find where CPU/allocation goes, fix the top lever, prove the win, and gate regressions. jvmlens turns a JFR recording into a ~400-token, source-attributed (down to `file:line`), LLM-ready hot-path/allocation summary (vs a ~1M-token raw `jfr print`), so a coding agent can reason over it. Pairs with JMH — JMH gives the number (throughput, bytes/op), jvmlens gives the where/why. Workflow — capture a JFR (JMH `-prof jfr` or the inline `JvmlensProfiler`, **`bench --main` for a non-JMH app/`main`**, a standalone `-XX:StartFlightRecording`, or `profile <pid>`) → `analyze <jfr> -a <app.pkg>` for ranked hot paths + allocation sites (add `--hints` for fix directions, `--max-tokens` to budget the output) → fix the top lever → `analyze <after> -b <before>` to diff what changed on **absolute** weight (NEW/GONE, Δ) → optional `--assert` CI perf-gate. Use when the user says "make X faster", "optimize this", "where is the time/memory going", "profile this benchmark", "profile this app/main (no JMH)", "why is this slow", "compare before/after a fix", "find the hot path / allocation", or "add a perf gate". For long-running production monitoring (drop-in agent + `trend` over days) use the sibling **jvmlens-monitor** skill instead. jvmlens lives at github.com/alexmond/jvmlens; it runs locally, never calls an LLM, never ships recordings anywhere.
+description: Use jvmlens to drive the dev-time optimize-and-measure loop on the CURRENT JVM project — find where CPU/allocation goes, fix the top lever, prove the win, and gate regressions. It turns a JFR recording into a ~400-token, source-attributed (`file:line`) hot-path/allocation summary a coding agent can reason over, vs a ~1M-token raw `jfr print`; JMH gives the number, jvmlens gives the where and why. Use when the user says "make X faster", "optimize this", "where is the time/memory going", "profile this benchmark", "profile this app/main (no JMH)", "why is this slow", "compare before/after a fix", "find the hot path / allocation", or "add a perf gate". For long-running production monitoring use the sibling **jvmlens-monitor** skill. jvmlens lives at github.com/alexmond/jvmlens; it runs locally, never calls an LLM, never ships recordings anywhere.
 ---
 
 # Optimize the current project with jvmlens
@@ -48,8 +48,8 @@ Pick the capture that matches what you're optimizing:
   dependency-light `jvmlens-jmh.jar` (engine + profiler; `gh release download latest -R
   alexmond/jvmlens -p 'jvmlens-jmh.jar'`, or build → `jvmlens-jmh/target/jvmlens-jmh.jar`) on the benchmark classpath and
   run jvmlens's JMH profiler. It's invoked by **fully-qualified name** (JMH has no profiler
-  ServiceLoader) and its scope option is **`appPackage=`** (singular, `+`-separated — *not* the
-  CLI's `-a`/comma; the short name or `appPackages=` fail silently):
+  ServiceLoader — the short name is not found) and its scope option is **`appPackage=`**
+  (`appPackages=` also works; separate several with `+` or `,`). Options are `;`-separated:
   ```bash
   java -cp "target/benchmarks.jar:/path/to/jvmlens-jmh.jar" \
        org.openjdk.jmh.Main "MyBenchmark.hotMethod" \
@@ -151,8 +151,8 @@ Useful flags:
    after=$(find /tmp/jfr-after  -name '*.jfr' | head -1)
    java -jar "$JVMLENS" analyze "$after" -b "$before" -a com.example.app
    ```
-   The diff shows totals Δ, then hot paths / allocation sites with `50%→8% (▼42pp)` + `NEW` /
-   `GONE`, ranked by change size. Iterate until the summary points somewhere not worth chasing.
+   The diff shows totals Δ, then hot paths / allocation sites as absolute before → after with
+   the share beside it (`52 → 31 (▼ 40%) [share 9%→14%]`) + `NEW` / `GONE`, ranked by change size. Iterate until the summary points somewhere not worth chasing.
    - **Extract-method refactors:** the diff also prints an **"Allocation by type (rollup)"** block
      that *sums extracted helpers* (`GoFmt.* — 7.6 GB → 5.8 GB [3 methods]`), so a win split across
      a new helper row reads as one net change instead of a misleading per-method `−52%` next to a

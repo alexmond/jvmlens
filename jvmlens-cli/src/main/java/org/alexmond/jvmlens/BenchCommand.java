@@ -1,6 +1,7 @@
 package org.alexmond.jvmlens;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -46,7 +47,8 @@ public class BenchCommand implements Callable<Integer> {
 	String mainClass;
 
 	@Option(names = { "--classpath", "--cp" }, paramLabel = "<cp>",
-			description = "Extra classpath to load the workload from (entries separated by the platform path separator).")
+			description = "Classpath to load the workload from (entries separated by the platform path separator). "
+					+ "Isolated from jvmlens's own dependencies, so it must be the workload's full classpath.")
 	String classpath;
 
 	@Option(names = { "-w", "--warmup" }, paramLabel = "<n>",
@@ -68,6 +70,11 @@ public class BenchCommand implements Callable<Integer> {
 	@Option(names = "--no-analyze", description = "Only capture the JFR (requires --jfr); skip printing the summary.")
 	boolean noAnalyze;
 
+	@Option(names = { "-o", "--output" }, paramLabel = "<file>",
+			description = "Write the summary to this file instead of stdout — keeps it apart from a workload "
+					+ "that logs to stdout.")
+	Path outputFile;
+
 	@Parameters(paramLabel = "<args>",
 			description = "Arguments passed to the workload's main on every iteration (use -- to separate).")
 	String[] workloadArgs = new String[0];
@@ -87,6 +94,10 @@ public class BenchCommand implements Callable<Integer> {
 		}
 		if (noAnalyze && jfr == null) {
 			System.err.println("jvmlens: --no-analyze needs --jfr (nothing would be produced otherwise)");
+			return 2;
+		}
+		if (noAnalyze && outputFile != null) {
+			System.err.println("jvmlens: --output has nothing to write with --no-analyze");
 			return 2;
 		}
 		ClassLoader loader;
@@ -141,7 +152,7 @@ public class BenchCommand implements Callable<Integer> {
 		}
 		try {
 			if (!noAnalyze) {
-				System.out.print(Summarizer.summarize(recording, output.format, output.scope(), output.report));
+				report(recording);
 			}
 		}
 		finally {
@@ -152,9 +163,29 @@ public class BenchCommand implements Callable<Integer> {
 		return 0;
 	}
 
+	/** Summarize the recording to {@code --output}, else stdout. */
+	private void report(Path recording) throws IOException {
+		String summary = Summarizer.summarize(recording, output.format, output.scope(), output.report);
+		if (outputFile != null) {
+			Files.writeString(outputFile, summary);
+			System.err.println("jvmlens: summary written to " + outputFile);
+		}
+		else {
+			System.out.print(summary);
+		}
+	}
+
+	/**
+	 * A {@code --cp} workload gets a loader parented on the <em>platform</em> loader, so
+	 * it sees only the JDK plus its own classpath. Parenting it on jvmlens's loader
+	 * resolved every library jvmlens bundles (Spring, Jackson, SLF4J…) parent-first from
+	 * jvmlens's jar — the workload silently ran on the wrong versions (#164).
+	 */
 	private ClassLoader workloadLoader() throws MalformedURLException {
-		ClassLoader context = Thread.currentThread().getContextClassLoader();
-		return (classpath == null || classpath.isBlank()) ? context : new URLClassLoader(toUrls(classpath), context);
+		if (classpath == null || classpath.isBlank()) {
+			return Thread.currentThread().getContextClassLoader();
+		}
+		return new URLClassLoader(toUrls(classpath), ClassLoader.getPlatformClassLoader());
 	}
 
 	private static URL[] toUrls(String cp) throws MalformedURLException {

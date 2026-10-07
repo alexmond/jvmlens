@@ -281,4 +281,25 @@ class ProfileDiffTest {
 		assertThat(ProfileDiff.diff(before, after)).doesNotContain("Low allocation samples");
 	}
 
+	@Test
+	void aRowBelowTheOtherSidesTopNIsNotNewOrGone() {
+		// #165: with the full distribution on hand, a path that merely crossed the top-N
+		// cutoff shows its real before→after — NEW/GONE mean truly absent
+		List<Ranked> before = new java.util.ArrayList<>();
+		List<Ranked> after = new java.util.ArrayList<>();
+		for (int i = 0; i < RankLimits.DEFAULT; i++) {
+			before.add(new Ranked("a.Top" + i + ".run", 0.15, 300, null));
+			after.add(new Ranked("a.Top" + i + ".run", 0.15, 300, null));
+		}
+		before.add(new Ranked("a.Attributes.write", 0.025, 50, null));
+		before.add(new Ranked("a.Tail.noise", 0.001, 2, null));
+		after.add(0, new Ranked("a.Attributes.write", 0.20, 400, null));
+		after.add(new Ranked("a.Tail.noise", 0.002, 4, null));
+		String d = ProfileDiff.diff(withSamples(2000, before), withSamples(2000, after));
+
+		assertThat(line(d, "a.Attributes.write")).contains("50 → 400").doesNotContain("NEW");
+		// a tail row on both sides is not a diff candidate — only each side's top-N is
+		assertThat(d).doesNotContain("a.Tail.noise");
+	}
+
 }
