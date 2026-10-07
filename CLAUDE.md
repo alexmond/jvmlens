@@ -154,6 +154,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-10-07 — **summarizer-headroom** — `Summarizer` 800 → 736 lines, behaviour-neutral: the pure suspected-cause heuristic moved to `Cause` (`Cause.suspected(Cause.Signals)`), and three identical `humanBytes` copies (Summarizer, Renderers, ProfileDiff) became one `Teasers.humanBytes`. Why: every change this week needed a helper moved out first to stay under the checkstyle cap.
+
 - 2026-10-07 — **default-library-scope** — `Scope` default not-application list widened (Kotlin/Scala, Guava/Gson/Protobuf, gRPC, Jetty/Undertow/Quarkus/Micronaut/Vert.x, OkHttp, Mongo/Redis/MySQL/MariaDB/Oracle drivers, jOOQ, Caffeine, AspectJ, ASM, OGNL, FreeMarker, OTel); `org.xml`/`org.w3c`/`org.ietf` are RUNTIME. Paired with `ScopeCoverage`: when ≥50% of CPU samples have no app frame it names the package holding them + the `-a` to pass. Why: a wider list makes "scope hides everything → silent empty hot paths" likelier. `Summarizer` is at 800 lines again.
 
 - 2026-10-07 — **test-run-detection** — `HarnessShare` now also notes `⚠ Recorded from a test run (<launcher>)`, read from `jdk.JVMInformation.javaArguments` (Surefire / Gradle test worker / IDE runner / console launcher / TestNG), frames only as fallback. Why: runner frames sit at the stack bottom, the first thing JFR's depth-64 limit cuts. `Scope` defaults gain `TEST_LIBRARIES` (JUnit, Mockito, ByteBuddy, AssertJ, JMH, … + `BenchCommand`) as never-application: a Mockito run named `org.mockito.internal…` the app hot path. `-a` still overrides.
