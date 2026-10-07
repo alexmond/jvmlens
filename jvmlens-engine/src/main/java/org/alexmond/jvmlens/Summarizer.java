@@ -232,7 +232,7 @@ public final class Summarizer {
 			try (RecordingFile rf = new RecordingFile(file)) {
 				while (rf.hasMoreEvents()) {
 					RecordedEvent event = rf.readEvent();
-					if (cutoff == null || !event.getStartTime().isBefore(cutoff)) {
+					if ((cutoff == null || !event.getStartTime().isBefore(cutoff)) && !Recordings.isRecorder(event)) {
 						agg.add(event);
 						if (fileAgg != null) {
 							fileAgg.add(event);
