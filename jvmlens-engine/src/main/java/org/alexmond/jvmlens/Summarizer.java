@@ -483,6 +483,8 @@ public final class Summarizer {
 
 		private final Map<String, Map<String, Long>> leafByApp = new HashMap<>();
 
+		private final HarnessShare harness = new HarnessShare();
+
 		/** Per leaf/alloc-site method: source-line → weight, for line anchoring (#87). */
 		private final Map<String, Map<Integer, Long>> leafLine = new HashMap<>();
 
@@ -527,6 +529,7 @@ public final class Summarizer {
 		}
 
 		private void add(RecordedEvent e) {
+			this.harness.add(e);
 			switch (e.getEventType().getName()) {
 				case "jdk.ExecutionSample" -> addExecution(e);
 				case "jdk.ObjectAllocationSample" -> addAllocation(e);
@@ -767,10 +770,7 @@ public final class Summarizer {
 			return teasers;
 		}
 
-		/**
-		 * App frames to detect the package from: CPU samples, or allocation sites if no
-		 * CPU.
-		 */
+		/** Frames to detect the app package from: CPU samples, else alloc sites. */
 		private Map<String, Long> detectionWeights() {
 			return this.cpuByApp.isEmpty() ? this.allocBySite : this.cpuByApp;
 		}
@@ -783,7 +783,7 @@ public final class Summarizer {
 					this.allocBytes / (1024L * 1024L), this.execSamples * 10L, sum(this.pinnedBySite) / 1_000_000L,
 					this.oldObjects, topApp, topShare, top(this.allocBySite), top(this.lockByMethod),
 					top(this.lockByMonitor), top(this.ioByEndpoint), top(this.pinnedBySite));
-			return suspectedCause(signals);
+			return suspectedCause(signals) + this.harness.note(this.execSamples, this.allocBytes);
 		}
 
 	}

@@ -77,6 +77,33 @@ class BenchCommandTest {
 		assertThat(Files.size(jfr)).isPositive();
 	}
 
+	@Test
+	void writesSummaryToAFileInsteadOfStdout(@TempDir Path tmp) throws Exception {
+		// #163: a chatty workload buries the summary in its own stdout — -o keeps them
+		// apart
+		Path out = tmp.resolve("summary.md");
+		PrintStream originalOut = System.out;
+		ByteArrayOutputStream captured = new ByteArrayOutputStream();
+		try {
+			System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
+			int rc = new CommandLine(new BenchCommand()).execute("--main", WORKLOAD, "-w", "2", "-i", "30", "-o",
+					out.toString());
+			assertThat(rc).isZero();
+		}
+		finally {
+			System.setOut(originalOut);
+		}
+		assertThat(Files.readString(out)).contains("# JVM profile summary");
+		assertThat(captured.toString(StandardCharsets.UTF_8)).doesNotContain("# JVM profile summary");
+	}
+
+	@Test
+	void rejectsOutputWithNoAnalyze(@TempDir Path tmp) {
+		int rc = new CommandLine(new BenchCommand()).execute("--main", WORKLOAD, "--jfr",
+				tmp.resolve("b.jfr").toString(), "--no-analyze", "-o", tmp.resolve("s.md").toString());
+		assertThat(rc).isEqualTo(2);
+	}
+
 	/** A workload whose main throws — drives the timed-run failure path (exit 3). */
 	public static final class ThrowingWorkload {
 

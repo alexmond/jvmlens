@@ -410,6 +410,33 @@ class SummarizerTest {
 	}
 
 	@Test
+	void notesAProfileDominatedByMockFrameworkFrames() throws Exception {
+		// #163: a real recording whose CPU all runs under an org.mockito frame
+		String md = record(() -> {
+			long end = System.nanoTime() + 2_000_000_000L;
+			double x = 0;
+			while (System.nanoTime() < end) {
+				x += org.mockito.jvmlenstest.FakeMockDispatch.intercept(50_000);
+			}
+			if (x < 0) {
+				throw new IllegalStateException("unreachable");
+			}
+		});
+		assertThat(md).contains("test-harness dominated").contains("org.mockito");
+	}
+
+	@Test
+	void anOrdinaryProfileCarriesNoHarnessNote() throws Exception {
+		Path file = cpuRecording();
+		try {
+			assertThat(Summarizer.summarize(file)).doesNotContain("test-harness");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
 	void hotPathTeaserShowsLeafDistributionWithCounts() throws Exception {
 		Path file = cpuRecording();
 		try {

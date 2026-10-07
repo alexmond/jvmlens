@@ -352,7 +352,13 @@ recording starts (so JIT/classload churn stays out of the steady-state signal); 
 `--iters` are timed. `--cp` / `--classpath` loads the workload through a separate class
 loader; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
 the next run; `--no-analyze` captures without printing. A one-line timing summary (iters,
-ms/iter) goes to stderr; the report to stdout, so it stays pipeable.
+ms/iter) goes to stderr; the report to stdout, so it stays pipeable. The workload shares that
+stdout, so if it logs there use `-o` / `--output <file>` to write the report to a file instead.
+
+If a large share of the CPU samples or allocation ran inside a mock framework (Mockito,
+EasyMock, PowerMock, jMock, MockK), the suspected cause adds `⚠ Looks test-harness dominated`
+— the numbers then describe the harness more than the code under test, and a plain driver
+gives representative ones. This applies to every capture path, not only `bench`.
 
 == Remote servers (run on the host)
 
