@@ -37,9 +37,10 @@ class PerfGateTest {
 
 	@Test
 	void failsOnHotPathRegressionAndNewHotPath() {
-		ProfileSummary before = summary(0, 0, List.of(new Ranked("com.acme.A", 0.20, 10, null)));
+		// counts agree with the shares of the 1000-sample total: the gate now needs both
+		ProfileSummary before = summary(0, 0, List.of(new Ranked("com.acme.A", 0.20, 200, null)));
 		ProfileSummary after = summary(0, 0,
-				List.of(new Ranked("com.acme.A", 0.55, 10, null), new Ranked("com.acme.B", 0.40, 10, null)));
+				List.of(new Ranked("com.acme.A", 0.55, 550, null), new Ranked("com.acme.B", 0.40, 400, null)));
 		// A regressed +35pp
 		assertThat(PerfGate.evaluate(before, after, "regression-pp < 10").passed()).isFalse();
 		// B is a new hot path at 40%
@@ -71,6 +72,60 @@ class PerfGateTest {
 		assertThat(PerfGate.evaluate(before, after, "oldobj-delta < 10").passed()).isFalse();
 		assertThat(PerfGate.evaluate(before, after, "not-a-rule").passed()).isFalse();
 		assertThat(PerfGate.evaluate(before, after, "gc-ms < notanumber").passed()).isFalse();
+	}
+
+	private static ProfileSummary sampled(long execSamples, List<Ranked> hotPaths) {
+		return new ProfileSummary("r.jfr", execSamples, 1, 0, 0, 0, hotPaths, List.of(), List.of(), List.of(),
+				List.of(), List.of(), "cause", "com.acme");
+	}
+
+	@Test
+	void aPathBelowTheBaselineTopNIsNotNew() {
+		// #165 cause 2: Attributes.write was in the baseline, just under the top-N. The
+		// total fell, its share rose into the list — that is not a NEW hot path.
+		ProfileSummary before = sampled(2000,
+				List.of(new Ranked("a.A.a", 0.40, 800, null), new Ranked("a.B.b", 0.20, 400, null),
+						new Ranked("a.C.c", 0.15, 300, null), new Ranked("a.D.d", 0.10, 200, null),
+						new Ranked("a.E.e", 0.08, 160, null), new Ranked("a.Attributes.write", 0.025, 50, null)));
+		ProfileSummary after = sampled(900, List.of(new Ranked("a.A.a", 0.50, 450, null),
+				new Ranked("a.B.b", 0.30, 270, null), new Ranked("a.Attributes.write", 0.06, 54, null)));
+		PerfGate.Result r = PerfGate.evaluate(before, after, "new-hotpath-pp < 5");
+		assertThat(r.passed()).isTrue();
+		assertThat(r.report()).contains("no new hot path");
+	}
+
+	@Test
+	void aNewPathIsMeasuredAgainstTheBaselineTotalWhenTheTotalFell() {
+		// #165 cause 3: genuinely new code, but 78 samples where the run shed 1190 — a 9%
+		// share of a much smaller total is not a 9% regression
+		ProfileSummary before = sampled(2075, List.of(new Ranked("a.Old.slow", 0.46, 963, null)));
+		ProfileSummary after = sampled(885, List.of(new Ranked("a.New.fast", 0.09, 78, null)));
+		PerfGate.Result r = PerfGate.evaluate(before, after, "new-hotpath-pp < 5");
+		assertThat(r.passed()).isTrue();
+		assertThat(r.report()).contains("NEW `a.New.fast`").contains("9% share").contains("4% of the baseline");
+	}
+
+	@Test
+	void aNewPathStillFailsWhenItAddsRealWork() {
+		// total flat: share and baseline-relative agree, so the gate must still fire
+		ProfileSummary before = sampled(1000, List.of(new Ranked("a.A.a", 0.50, 500, null)));
+		ProfileSummary after = sampled(1000,
+				List.of(new Ranked("a.A.a", 0.50, 500, null), new Ranked("a.New.slow", 0.09, 90, null)));
+		assertThat(PerfGate.evaluate(before, after, "new-hotpath-pp < 5").passed()).isFalse();
+	}
+
+	@Test
+	void regressionNeedsARiseInAbsoluteSamplesToo() {
+		// the leader shrank; A's samples fell 300 → 280 while its share rose 15% → 31%
+		ProfileSummary before = sampled(2000,
+				List.of(new Ranked("a.Lead.x", 0.60, 1200, null), new Ranked("a.A.a", 0.15, 300, null)));
+		ProfileSummary after = sampled(900,
+				List.of(new Ranked("a.A.a", 0.31, 280, null), new Ranked("a.Lead.x", 0.22, 200, null)));
+		assertThat(PerfGate.evaluate(before, after, "regression-pp < 5").passed()).isTrue();
+		// same shares, but A really did more work: 300 → 620 under a flat total
+		ProfileSummary worse = sampled(2000,
+				List.of(new Ranked("a.Lead.x", 0.60, 1200, null), new Ranked("a.A.a", 0.31, 620, null)));
+		assertThat(PerfGate.evaluate(before, worse, "regression-pp < 5").passed()).isFalse();
 	}
 
 }

@@ -174,6 +174,44 @@ class SummarizerTest {
 	}
 
 	@Test
+	void stableNameDropsThePerJvmLambdaIdentity() {
+		// #161: the hidden-class address differs per JVM, so one lambda diffed as
+		// GONE+NEW
+		assertThat(Teasers.stableName("org.thymeleaf.util.ExpressionUtils$$Lambda.0x00000000963fbcc0"))
+			.isEqualTo("org.thymeleaf.util.ExpressionUtils$$Lambda");
+		assertThat(Teasers.stableName("org.thymeleaf.util.ExpressionUtils$$Lambda.0x000000001d3fb538"))
+			.isEqualTo("org.thymeleaf.util.ExpressionUtils$$Lambda");
+		// older JDKs: a linkage counter, then the address
+		assertThat(Teasers.stableName("com.example.Foo$$Lambda$14/0x0000000800c03000"))
+			.isEqualTo("com.example.Foo$$Lambda");
+		assertThat(Teasers.stableName("com.example.Foo$$Lambda/0x0000000800c03000"))
+			.isEqualTo("com.example.Foo$$Lambda");
+		// any other hidden class carries the same per-JVM suffix
+		assertThat(Teasers.stableName("java.lang.invoke.LambdaForm$MH.0x0000000012345678"))
+			.isEqualTo("java.lang.invoke.LambdaForm$MH");
+	}
+
+	@Test
+	void stableNameLeavesOrdinaryNamesAlone() {
+		assertThat(Teasers.stableName("com.example.OrderService")).isEqualTo("com.example.OrderService");
+		assertThat(Teasers.stableName("com.example.Outer$Inner$1")).isEqualTo("com.example.Outer$Inner$1");
+		assertThat(Teasers.stableName("[Lcom.example.Box0x10;")).isEqualTo("[Lcom.example.Box0x10;");
+	}
+
+	@Test
+	void lambdaTypesInARealRecordingCarryNoAddress() throws Exception {
+		Object[] sink = new Object[1024];
+		String md = record(() -> {
+			for (int i = 0; i < 30_000_000; i++) {
+				int captured = i;
+				java.util.function.IntSupplier escaping = () -> captured;
+				sink[i & 1023] = escaping;
+			}
+		});
+		assertThat(md).contains("$$Lambda").doesNotContain("$$Lambda.0x").doesNotContain("$$Lambda/0x");
+	}
+
+	@Test
 	void foldsExcludedTypesIntoOneRolledUpRow() {
 		// #128: on an in-process H2 capture the "Top allocated types" block is dominated
 		// by
@@ -415,7 +453,7 @@ class SummarizerTest {
 		// app scoped to its own package, only a "via" names the frame you can change.
 		Path file = recordFile(() -> {
 			long end = System.nanoTime() + 2_000_000_000L;
-			int hits = 0;
+			long hits = 0;
 			while (System.nanoTime() < end) {
 				hits += org.alexmond.jvmlens.viaapp.Entry.render(200);
 			}
@@ -428,6 +466,33 @@ class SummarizerTest {
 			ProfileSummary s = Summarizer.analyze(List.of(file), scope, "x", 0L);
 			assertThat(s.hotPaths().get(0).name()).isEqualTo("org.alexmond.jvmlens.viaapp.Entry.render");
 			assertThat(s.hotPaths().get(0).stack()).contains("mostly via org.alexmond.jvmlens.vialib.Resolver.resolve");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
+	void notesAProfileDominatedByMockFrameworkFrames() throws Exception {
+		// #163: a real recording whose CPU all runs under an org.mockito frame
+		String md = record(() -> {
+			long end = System.nanoTime() + 2_000_000_000L;
+			double x = 0;
+			while (System.nanoTime() < end) {
+				x += org.mockito.jvmlenstest.FakeMockDispatch.intercept(50_000);
+			}
+			if (x < 0) {
+				throw new IllegalStateException("unreachable");
+			}
+		});
+		assertThat(md).contains("test-harness dominated").contains("org.mockito");
+	}
+
+	@Test
+	void anOrdinaryProfileCarriesNoHarnessNote() throws Exception {
+		Path file = cpuRecording();
+		try {
+			assertThat(Summarizer.summarize(file)).doesNotContain("test-harness");
 		}
 		finally {
 			Files.deleteIfExists(file);

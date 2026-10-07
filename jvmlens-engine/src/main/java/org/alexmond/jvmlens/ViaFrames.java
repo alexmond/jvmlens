@@ -46,9 +46,8 @@ final class ViaFrames {
 				if (scope.isApplication(owner)) {
 					return;
 				}
-				String key = owner + "." + frame.getMethod().getName();
-				if (!Scope.isRuntime(owner) && seen.add(key)) {
-					count(app, key, depth);
+				if (!Scope.isRuntime(owner) && seen.add(Teasers.frameKey(frame))) {
+					count(app, Teasers.frameKey(frame), depth);
 				}
 			}
 			depth++;

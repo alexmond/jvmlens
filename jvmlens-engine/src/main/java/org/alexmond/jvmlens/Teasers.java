@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+
+import jdk.jfr.consumer.RecordedFrame;
 
 /**
  * Small confidence/teaser heuristics shared by the {@link Summarizer} rendering — the
@@ -44,10 +47,30 @@ final class Teasers {
 			"java.lang.Double", "java.lang.Short", "java.lang.Byte", "java.lang.Character", "java.lang.Boolean",
 			"java.lang.Float");
 
+	/** A hidden class's per-JVM suffix: an optional linkage counter, then its address. */
+	private static final Pattern HIDDEN_CLASS_ID = Pattern.compile("(?:\\$\\d+)?[/.]0x[0-9a-fA-F]+");
+
 	/** How many hot paths to name in a per-recording breakdown teaser (#153). */
 	private static final int PER_RECORDING_TEASER_PATHS = 3;
 
 	private Teasers() {
+	}
+
+	/**
+	 * A type name with its per-JVM hidden-class identity removed:
+	 * {@code Foo$$Lambda.0x00000000963fbcc0} (and the older {@code Foo$$Lambda$14/0x…})
+	 * become {@code Foo$$Lambda}. The address differs on every run, so without this the
+	 * same lambda never matched across two recordings and diffed as a GONE + NEW pair
+	 * (#161). Lambdas of one class share a row — the address never told them apart in a
+	 * way a reader could use.
+	 */
+	static String stableName(String type) {
+		return (type.indexOf("0x") < 0) ? type : HIDDEN_CLASS_ID.matcher(type).replaceAll("");
+	}
+
+	/** The {@code Type.method} row key for a frame, on a {@link #stableName}. */
+	static String frameKey(RecordedFrame frame) {
+		return stableName(frame.getMethod().getType().getName()) + "." + frame.getMethod().getName();
 	}
 
 	/**

@@ -49,6 +49,12 @@ public final class ProfileDiff {
 	 */
 	private static final double SAMPLED_NOISE_PCT = 15.0;
 
+	/** The {@link RankLimits} category of the hot-path rows. */
+	private static final String CPU = "cpu";
+
+	/** The {@link RankLimits} category of the allocation-site rows. */
+	private static final String MEMORY = "memory";
+
 	private ProfileDiff() {
 	}
 
@@ -59,6 +65,27 @@ public final class ProfileDiff {
 	 * @return LLM-ready markdown
 	 */
 	public static String diff(ProfileSummary before, ProfileSummary after) {
+		return diff(before, after, 0, 0);
+	}
+
+	/**
+	 * As {@link #diff(ProfileSummary, ProfileSummary)}, but when {@code opsBefore} and
+	 * {@code opsAfter} are both positive it adds a <strong>per-operation</strong> totals
+	 * block (allocation / samples / GC / old-objects divided by the ops count on each
+	 * side). Cross-run diff totals otherwise conflate per-op cost with throughput — in a
+	 * fixed-duration JMH capture a faster JVM runs more ops per iteration, so unchanged
+	 * per-op work accrues more total allocation and more samples. Dividing by an ops
+	 * proxy makes the totals directly comparable across runs of different throughput
+	 * (e.g. a cross-JDK sweep); field-finding #157. The existing hedges only *warn* about
+	 * this — this makes the numbers usable.
+	 * @param before the baseline summary
+	 * @param after the new summary
+	 * @param opsBefore operations executed in the baseline capture ({@code <= 0} =
+	 * unknown)
+	 * @param opsAfter operations executed in the after capture ({@code <= 0} = unknown)
+	 * @return LLM-ready markdown
+	 */
+	public static String diff(ProfileSummary before, ProfileSummary after, long opsBefore, long opsAfter) {
 		StringBuilder md = new StringBuilder("# JVM profile diff (").append(before.source())
 			.append(" → ")
 			.append(after.source())
@@ -69,18 +96,19 @@ public final class ProfileDiff {
 		scalar(md, "Old-object samples", before.oldObjects(), after.oldObjects(), "");
 		sampledAllocNoiseNote(md, before.allocBytes(), after.allocBytes());
 		md.append('\n');
-		section(md, "Hot paths", "samples", before.hotPaths(), after.hotPaths(),
+		perOpTotals(md, before, after, opsBefore, opsAfter);
+		section(md, "Hot paths", "samples", CPU, before.hotPaths(), after.hotPaths(),
 				redistributionNote(before.execSamples(), after.execSamples(), "samples", true));
 		flatExecSampleCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
 		disproportionateShiftCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
-		section(md, "Allocation sites", "bytes", before.allocSites(), after.allocSites(),
+		section(md, "Allocation sites", "bytes", MEMORY, before.allocSites(), after.allocSites(),
 				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc", false));
 		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
 				before.allocBytes() > 0 || after.allocBytes() > 0);
 		allocTypeRollup(md, before.allocSites(), after.allocSites());
-		section(md, "Lock contention", "ms", before.locks(), after.locks(), null);
+		section(md, "Lock contention", "ms", "locks", before.locks(), after.locks(), null);
 		for (String key : sectionKeys(before, after)) {
-			section(md, key, unit(before, after, key), sectionRows(before, key), sectionRows(after, key), null);
+			section(md, key, unit(before, after, key), key, sectionRows(before, key), sectionRows(after, key), null);
 		}
 		return md.toString();
 	}
@@ -230,10 +258,8 @@ public final class ProfileDiff {
 	private static double maxShareShift(List<Ranked> before, List<Ranked> after) {
 		Map<String, Double> bs = shares(before);
 		Map<String, Double> as = shares(after);
-		Set<String> names = new LinkedHashSet<>(bs.keySet());
-		names.addAll(as.keySet());
 		double max = 0;
-		for (String name : names) {
+		for (String name : candidates(before, after, CPU)) {
 			max = Math.max(max, Math.abs(share(as, name) - share(bs, name)));
 		}
 		return max;
@@ -246,9 +272,7 @@ public final class ProfileDiff {
 	private static boolean anyMoved(List<Ranked> before, List<Ranked> after) {
 		Map<String, Long> bc = counts(before);
 		Map<String, Long> ac = counts(after);
-		Set<String> names = new LinkedHashSet<>(bc.keySet());
-		names.addAll(ac.keySet());
-		for (String name : names) {
+		for (String name : candidates(before, after, CPU)) {
 			Long b = bc.get(name);
 			Long a = ac.get(name);
 			if (b == null || a == null) {
@@ -276,16 +300,68 @@ public final class ProfileDiff {
 			.append(")\n");
 	}
 
-	private static void section(StringBuilder md, String title, String unit, List<Ranked> before, List<Ranked> after,
-			RowNote note) {
+	/**
+	 * A {@code ## Totals per operation} block dividing each total by its side's ops
+	 * count, emitted only when both counts are positive (field-finding #157). Makes
+	 * cross-run totals comparable where the raw totals conflate per-op cost with
+	 * throughput; the per-row *shares* below are already throughput-invariant, so only
+	 * the totals need it.
+	 */
+	private static void perOpTotals(StringBuilder md, ProfileSummary before, ProfileSummary after, long opsBefore,
+			long opsAfter) {
+		if (opsBefore <= 0 || opsAfter <= 0) {
+			return;
+		}
+		md.append("## Totals per operation\n> Normalized by `--ops` (before ")
+			.append(opsBefore)
+			.append(", after ")
+			.append(opsAfter)
+			.append(") — per-op figures are comparable across runs of different throughput; the raw totals above "
+					+ "are not (a faster run does more ops in a fixed-duration capture).\n");
+		perOpScalar(md, "Allocation/op", before.allocBytes(), opsBefore, after.allocBytes(), opsAfter, "bytes");
+		perOpScalar(md, "Exec samples/op", before.execSamples(), opsBefore, after.execSamples(), opsAfter, "");
+		perOpScalar(md, "GC pause/op", before.gcPauseMillis(), opsBefore, after.gcPauseMillis(), opsAfter, "ms-direct");
+		perOpScalar(md, "Old-object samples/op", before.oldObjects(), opsBefore, after.oldObjects(), opsAfter, "");
+		md.append('\n');
+	}
+
+	private static void perOpScalar(StringBuilder md, String label, long before, long opsBefore, long after,
+			long opsAfter, String unit) {
+		double perBefore = (double) before / opsBefore;
+		double perAfter = (double) after / opsAfter;
+		String delta = (perBefore > 0)
+				? String.format(Locale.ROOT, "%+.0f%%", 100.0 * (perAfter - perBefore) / perBefore) : "n/a";
+		md.append("- ")
+			.append(label)
+			.append(": ")
+			.append(formatPerOp(perBefore, unit))
+			.append(" → ")
+			.append(formatPerOp(perAfter, unit))
+			.append(" (")
+			.append(delta)
+			.append(")\n");
+	}
+
+	/**
+	 * Format a per-op value: bytes rounded to human units, others to 4 significant
+	 * figures.
+	 */
+	private static String formatPerOp(double perOp, String unit) {
+		if ("bytes".equals(unit)) {
+			return humanBytes(Math.round(perOp));
+		}
+		String num = String.format(Locale.ROOT, "%.4g", perOp);
+		return "ms-direct".equals(unit) ? num + " ms" : num;
+	}
+
+	private static void section(StringBuilder md, String title, String unit, String category, List<Ranked> before,
+			List<Ranked> after, RowNote note) {
 		Map<String, Long> bc = counts(before);
 		Map<String, Long> ac = counts(after);
 		Map<String, Double> bs = shares(before);
 		Map<String, Double> as = shares(after);
-		Set<String> names = new LinkedHashSet<>(bc.keySet());
-		names.addAll(ac.keySet());
 		List<String[]> lines = new ArrayList<>();
-		for (String name : names) {
+		for (String name : candidates(before, after, category)) {
 			lines.add(line(name, bc.get(name), ac.get(name), share(bs, name), share(as, name), unit, note));
 		}
 		lines.removeIf((row) -> row == null);
@@ -367,10 +443,7 @@ public final class ProfileDiff {
 		Map<String, Long> bc = counts(before);
 		Map<String, Long> ac = counts(after);
 		Map<String, Set<String>> methodsByType = new LinkedHashMap<>();
-		for (String m : bc.keySet()) {
-			methodsByType.computeIfAbsent(declaringType(m), (k) -> new LinkedHashSet<>()).add(m);
-		}
-		for (String m : ac.keySet()) {
+		for (String m : candidates(before, after, MEMORY)) {
 			methodsByType.computeIfAbsent(declaringType(m), (k) -> new LinkedHashSet<>()).add(m);
 		}
 		Map<String, Long> bt = sumByType(bc);
@@ -414,6 +487,21 @@ public final class ProfileDiff {
 	private static String declaringType(String method) {
 		int dot = method.lastIndexOf('.');
 		return (dot > 0) ? method.substring(0, dot) : method;
+	}
+
+	/**
+	 * The rows a section compares: each side's top-N by its {@link RankLimits} category.
+	 * Their before/after values are then looked up in the <em>whole</em> list, so when a
+	 * summary carries its full distribution ({@link RankLimits#full}) a row that only
+	 * crossed the top-N cutoff shows its real change instead of NEW/GONE (#165). A
+	 * summary already cut to top-N compares exactly as before.
+	 */
+	private static Set<String> candidates(List<Ranked> before, List<Ranked> after, String category) {
+		int head = RankLimits.limit(category);
+		Set<String> names = new LinkedHashSet<>();
+		before.stream().limit(head).forEach((r) -> names.add(r.name()));
+		after.stream().limit(head).forEach((r) -> names.add(r.name()));
+		return names;
 	}
 
 	private static Map<String, Long> counts(List<Ranked> rows) {

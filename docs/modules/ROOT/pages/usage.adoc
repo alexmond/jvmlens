@@ -34,9 +34,11 @@ a library out of the application (`-a`, or a default-excluded framework).
 `⚠ Only N allocation samples` caveat means the per-site **byte shares** are noisy (the
 **total** bytes stay reliable).
 * **Escape-analysis caveat** — an allocation site dominated by a boxed primitive or a captured
-lambda is tagged `⚠ … may be scalar-replaced (escape analysis)`: JFR samples the allocation, but
-C2 can eliminate a non-escaping one in steady state, so the sampled bytes may be a *false lever*.
-Verify any candidate fix with JMH `-prof gc` (exact bytes/op) before acting.
+lambda is tagged `⚠ … may be scalar-replaced (escape analysis) — this est-bytes share is an
+upper bound on removable allocation`: JFR samples the allocation, but C2 can eliminate a
+non-escaping one in steady state, and sampling over-weights small frequent allocations — so the
+share is a *ceiling* on the win, not the win. It can overstate the actually-removable fraction
+several-fold; verify with JMH `-prof gc` (exact bytes/op) before acting.
 
 === Differential analysis (before → after)
 
@@ -75,6 +77,33 @@ falls, a `NEW` callee appears) — which can read like a regression at a glance.
 line (e.g. `GoFmt.* — 7.6 GB → 5.8 GB (▼ 24%) [2 methods]`); it shows only types with ≥2
 contributing methods and a real net change.
 
+==== Cross-run / cross-JDK diffs (`--ops`)
+
+Diffing two recordings from **different JVMs** (or any two runs of different throughput) makes
+the raw **totals** misleading: in a fixed-duration JMH capture a faster JVM runs *more ops* per
+iteration, so unchanged per-op work accrues *more* total allocation and *more* samples. A per-op
+allocation that fell 47% can show a flat `+1%` total. jvmlens already **hedges** this (the
+throughput-redistribution ⚠ notes), but `--ops <before,after>` makes the totals **usable**: pass
+the operations executed in each capture (e.g. from JMH's `ops/s` × the measured seconds) and the
+diff adds a `## Totals per operation` block dividing allocation / samples / GC / old-objects by
+that count — directly comparable across runs:
+
+[source,bash]
+----
+java -jar jvmlens.jar analyze -b jdk17.jfr jdk25.jfr --ops 4200000,5100000
+----
+
+[source]
+----
+## Totals per operation
+> Normalized by `--ops` (before 4200000, after 5100000) — per-op figures are comparable across
+  runs of different throughput; the raw totals above are not.
+- Allocation/op: 56.6 KB → 30.3 KB (-47%)
+----
+
+Per-**row** figures already carry throughput-invariant `share %`, so only the totals need it.
+Without JMH numbers, the exec-sample total is a rough ops proxy — but a real ops count is exact.
+
 ==== CI perf-gate (`--assert`)
 
 Add `--assert "<rules>"` (with `--baseline`) and jvmlens **exits non-zero on regression** —
@@ -89,12 +118,17 @@ pull request). Rules are comma-separated `metric < threshold`:
 | `gc-pct` | GC pause increased by more than the limit (%)
 | `alloc-pct` | **total** allocation bytes increased by more than the limit (%) — the absolute memory gate
 | `oldobj-delta` | retained (old-object) samples grew by more than the limit
-| `regression-pp` | a hot path's share rose by more than the limit (percentage points)
-| `new-hotpath-pp` | a *new* hot path appears at/above the limit (% share)
+| `regression-pp` | a hot path's share rose by more than the limit (percentage points) *and* its absolute samples back that rise
+| `new-hotpath-pp` | a *new* hot path appears at/above the limit — the smaller of its share and its samples as a % of the baseline total
 |===
 
-Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC; the
-`*-pp` ones are share-based and can shuffle when the leader shrinks in an optimize loop.
+Prefer the **absolute** gates (`gc-*`, `alloc-pct`, `oldobj-delta`) for memory/GC. The `*-pp`
+gates are share-based, so they are checked against absolute samples too: optimizing shrinks
+the total, and a path whose samples fell can still show a *rising* share. A share move only
+counts as far as the sample count backs it (the smaller of the two, measured against the
+baseline total). **New** means absent from the whole baseline, not merely below its top-N —
+a diff reads both recordings un-truncated, so a path that only crossed the top-N cutoff shows
+its real before→after instead of `NEW`/`GONE`.
 
 [source,bash]
 ----
@@ -358,9 +392,17 @@ java -jar jvmlens.jar bench --main com.example.RenderDriver --cp target/classes:
 Each `main` invocation is one iteration. `-w` / `--warmup` iterations run **before** the
 recording starts (so JIT/classload churn stays out of the steady-state signal); `-i` /
 `--iters` are timed. `--cp` / `--classpath` loads the workload through a separate class
-loader; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
+loader that is **isolated from jvmlens's own dependencies** — the workload sees only the JDK
+plus the entries you pass, so it runs on *its* Spring/Jackson/SLF4J versions, not the ones
+bundled in `jvmlens.jar`. Pass the workload's full classpath; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
 the next run; `--no-analyze` captures without printing. A one-line timing summary (iters,
-ms/iter) goes to stderr; the report to stdout, so it stays pipeable.
+ms/iter) goes to stderr; the report to stdout, so it stays pipeable. The workload shares that
+stdout, so if it logs there use `-o` / `--output <file>` to write the report to a file instead.
+
+If a large share of the CPU samples or allocation ran inside a mock framework (Mockito,
+EasyMock, PowerMock, jMock, MockK), the suspected cause adds `⚠ Looks test-harness dominated`
+— the numbers then describe the harness more than the code under test, and a plain driver
+gives representative ones. This applies to every capture path, not only `bench`.
 
 == Remote servers (run on the host)
 
@@ -469,7 +511,8 @@ ActiveMQ via JMS), `cache` (time Spring `Cache` get/put/evict, with a hit-rate f
 commands — see *Redis* below), `micrometer` (summarize an existing Micrometer registry —
 no extra instrumentation; degrades to nothing if Micrometer is absent), `history` (see
 *Long-running monitor* below), `paused` (launch without emitting — `start` it after warm-up;
-see *Runtime control* below), `control` (a file the agent watches for in-flight
+see *Runtime control* below), `on-gc-ms` / `on-cpu-pct` / `on-old-objects` (dump-on-breach
+thresholds — see *Dump-on-trigger* below), `control` (a file the agent watches for in-flight
 commands), and `scope` (pin the application scope at launch — see below). The `messaging` and `cache` dimensions aggregate by `Class.method` operation and
 render top operations by total time. The agent jar is the separate
 `jvmlens-agent.jar` artifact (engine + agent + a relocated ByteBuddy); it can also be
@@ -515,13 +558,38 @@ java -jar jvmlens.jar control /agent/jvmlens.control status         # read curre
 Commands: `start` / `stop`, `clear` (reset the window + stores), `dump` (emit now),
 `enable <dim>` / `disable <dim>` (db/web/messaging/cache/mongo/redis/micrometer/snapshot/deadlock),
 `settings <profile|default>` (sampling density), `interval <seconds>`, `scope app|exclude
-<prefix>` / `scope reset` (filtering), `topn [<category>] <n>` / `topn reset` (rows per
-section — `category` is cpu/perf, memory/mem, locks, io, pinning, or a plugin like db/web),
-and `status`. Each command makes the agent publish its state to `<control-file>.status`,
+<prefix>` / `scope reset` (filtering), `trigger gc-ms|cpu-pct|old-objects <n>` /
+`trigger reset` (dump-on-breach thresholds — see below), `topn [<category>] <n>` /
+`topn reset` (rows per section — `category` is cpu/perf, memory/mem, locks, io, pinning, or
+a plugin like db/web), and `status`. Each command makes the agent publish its state to `<control-file>.status`,
 which the CLI reads back and prints — so `topn db 5` returns the resulting limits to you.
 
 **Launching `paused` and then `start` after warm-up is the clean fix for short cold runs
 profiling startup** rather than the workload — no more guessing a `--warmup` duration.
+
+=== Dump-on-trigger (breach-only summaries)
+
+The in-process agent is the container-native analog of `watch --on-*`: by default it writes
+a summary every interval, but arm any threshold and it stays **quiet**, writing `out` only
+when a rolling window breaches — so a coding agent (or an alert) sees a report *only* when
+something is actually wrong. Arm it at launch or in-flight; both reuse the same evaluation
+as `watch`:
+
+[source,bash]
+----
+# arm at launch: only emit when a window's GC pause ≥ 200ms OR the top hot path ≥ 80%
+java -javaagent:jvmlens-agent.jar=out=/agent/x.md,on-gc-ms=200,on-cpu-pct=80 -jar app.jar
+
+# or arm/adjust in-flight over the control file
+java -jar jvmlens.jar control /agent/jvmlens.control trigger old-objects 100   # add a retention threshold
+java -jar jvmlens.jar control /agent/jvmlens.control trigger reset             # back to every-interval
+----
+
+Thresholds (each `0`/absent disables that dimension): `on-gc-ms=<ms>` (window GC pause),
+`on-cpu-pct=<0-100>` (top hot-path sample share), `on-old-objects=<count>` (retained
+samples). When it does emit, the summary is prefixed with a `> **triggered**: …` line naming
+the breached threshold(s). A `history=<file.jsonl>` sample **still appends every interval**
+regardless, so long-run `trend` data stays continuous even while markdown is breach-only.
 
 === Long-running monitor (history + trend)
 

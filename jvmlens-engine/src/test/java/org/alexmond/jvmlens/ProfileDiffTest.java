@@ -44,6 +44,36 @@ class ProfileDiffTest {
 	}
 
 	@Test
+	void perOpNormalizationMakesCrossRunTotalsComparable() {
+		// #157: across two JVMs the raw alloc total is ~flat (a faster JVM does more ops
+		// in
+		// a fixed-duration capture) even though per-op allocation fell sharply — dividing
+		// by
+		// an ops count exposes the real per-op reduction the totals hide.
+		ProfileSummary before = summary(100, 12_000_000_000L, List.of(), List.of());
+		ProfileSummary after = summary(120, 12_100_000_000L, List.of(), List.of());
+
+		// no ops → no per-op block (unchanged behavior for the ordinary same-JVM diff)
+		assertThat(ProfileDiff.diff(before, after)).doesNotContain("Totals per operation");
+
+		String d = ProfileDiff.diff(before, after, 1000, 2000);
+		// the raw total still reads ~flat (+1%) — the confound the finding describes
+		assertThat(d).contains("- Allocation: 11.2 GB → 11.3 GB").contains("+1%");
+		// the per-op block appears and shows the real reduction: 12MB/op → ~6MB/op
+		// (~-50%)
+		assertThat(d).contains("## Totals per operation");
+		assertThat(d).contains("Normalized by `--ops` (before 1000, after 2000)");
+		assertThat(line(d, "Allocation/op")).contains("-50%");
+		// exec samples/op (1000/1000 → 1000/2000) also halve; GC ms/op renders with a
+		// unit
+		assertThat(line(d, "Exec samples/op")).contains("-50%");
+		assertThat(line(d, "GC pause/op")).contains("ms").contains("-40%");
+		// a zero-baseline metric can't take a percentage — reported n/a, not a divide
+		// error
+		assertThat(line(d, "Old-object samples/op")).contains("n/a");
+	}
+
+	@Test
 	void diffsHotPathsByAbsoluteWithNewAndGone() {
 		ProfileSummary before = summary(0, 0,
 				List.of(new Ranked("com.acme.A.run", 0.50, 500, null), new Ranked("com.acme.B.iter", 0.16, 160, null)),
@@ -249,6 +279,27 @@ class ProfileDiffTest {
 		ProfileSummary after = summary(0, 600_000, List.of(),
 				List.of(new Ranked("com.acme.Svc.alloc", 1.0, 600_000, null)));
 		assertThat(ProfileDiff.diff(before, after)).doesNotContain("Low allocation samples");
+	}
+
+	@Test
+	void aRowBelowTheOtherSidesTopNIsNotNewOrGone() {
+		// #165: with the full distribution on hand, a path that merely crossed the top-N
+		// cutoff shows its real before→after — NEW/GONE mean truly absent
+		List<Ranked> before = new java.util.ArrayList<>();
+		List<Ranked> after = new java.util.ArrayList<>();
+		for (int i = 0; i < RankLimits.DEFAULT; i++) {
+			before.add(new Ranked("a.Top" + i + ".run", 0.15, 300, null));
+			after.add(new Ranked("a.Top" + i + ".run", 0.15, 300, null));
+		}
+		before.add(new Ranked("a.Attributes.write", 0.025, 50, null));
+		before.add(new Ranked("a.Tail.noise", 0.001, 2, null));
+		after.add(0, new Ranked("a.Attributes.write", 0.20, 400, null));
+		after.add(new Ranked("a.Tail.noise", 0.002, 4, null));
+		String d = ProfileDiff.diff(withSamples(2000, before), withSamples(2000, after));
+
+		assertThat(line(d, "a.Attributes.write")).contains("50 → 400").doesNotContain("NEW");
+		// a tail row on both sides is not a diff candidate — only each side's top-N is
+		assertThat(d).doesNotContain("a.Tail.noise");
 	}
 
 }

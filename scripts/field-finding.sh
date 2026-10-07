@@ -7,13 +7,15 @@
 #   field-finding.sh --pid <pid> [-d <seconds>] --project "<name + workload>"
 #   field-finding.sh --jfr <file.jfr>           --project "<name + workload>"
 #
-# Requires: a built jvmlens jar (JVMLENS_JAR, default ./target/jvmlens.jar or
-# ~/IdeaProjects/jvmlens/target/jvmlens.jar) and `gh` authenticated.
+# Requires: a built jvmlens jar (JVMLENS_JAR, default the CLI module's
+# jvmlens-cli/target/jvmlens.jar next to this script, else under the current
+# directory) and `gh` authenticated.
 set -euo pipefail
 
 JVMLENS_JAR="${JVMLENS_JAR:-}"
 if [[ -z "$JVMLENS_JAR" ]]; then
-  for c in ./target/jvmlens.jar "$HOME/IdeaProjects/jvmlens/target/jvmlens.jar"; do
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  for c in "$HERE/../jvmlens-cli/target/jvmlens.jar" ./jvmlens-cli/target/jvmlens.jar ./jvmlens.jar; do
     [[ -f "$c" ]] && JVMLENS_JAR="$c" && break
   done
 fi
@@ -30,7 +32,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -f "$JVMLENS_JAR" ]] || { echo "jvmlens jar not found; set JVMLENS_JAR" >&2; exit 2; }
+[[ -f "$JVMLENS_JAR" ]] || { echo "jvmlens jar not found — build it (./mvnw -q -pl jvmlens-cli -am package) or set JVMLENS_JAR" >&2; exit 2; }
 [[ -n "$PROJECT" ]] || { echo "--project is required" >&2; exit 2; }
 
 if [[ -n "$PID" ]]; then

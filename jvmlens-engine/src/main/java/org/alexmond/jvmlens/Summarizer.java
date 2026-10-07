@@ -232,7 +232,7 @@ public final class Summarizer {
 			try (RecordingFile rf = new RecordingFile(file)) {
 				while (rf.hasMoreEvents()) {
 					RecordedEvent event = rf.readEvent();
-					if (cutoff == null || !event.getStartTime().isBefore(cutoff)) {
+					if ((cutoff == null || !event.getStartTime().isBefore(cutoff)) && !Recordings.isRecorder(event)) {
 						agg.add(event);
 						if (fileAgg != null) {
 							fileAgg.add(event);
@@ -296,7 +296,7 @@ public final class Summarizer {
 			.stream()
 			.filter((f) -> f.isJavaFrame() && f.getMethod() != null)
 			.filter((f) -> ownerMatches.test(f.getMethod().getType().getName()))
-			.map((f) -> new Frame(f.getMethod().getType().getName() + "." + f.getMethod().getName(), f.getLineNumber()))
+			.map((f) -> new Frame(Teasers.frameKey(f), f.getLineNumber()))
 			.findFirst()
 			.orElse(null);
 	}
@@ -477,6 +477,8 @@ public final class Summarizer {
 
 		private final ViaFrames via = new ViaFrames();
 
+		private final HarnessShare harness = new HarnessShare();
+
 		/** Per leaf/alloc-site method: source-line → weight, for line anchoring (#87). */
 		private final Map<String, Map<Integer, Long>> leafLine = new HashMap<>();
 
@@ -521,6 +523,7 @@ public final class Summarizer {
 		}
 
 		private void add(RecordedEvent e) {
+			this.harness.add(e);
 			switch (e.getEventType().getName()) {
 				case "jdk.ExecutionSample" -> addExecution(e);
 				case "jdk.ObjectAllocationSample" -> addAllocation(e);
@@ -602,7 +605,7 @@ public final class Summarizer {
 			long w = e.hasField("weight") ? e.getLong("weight") : 0;
 			this.allocBytes += w;
 			String type = (e.hasField("objectClass") && e.getClass("objectClass") != null)
-					? e.getClass("objectClass").getName() : null;
+					? Teasers.stableName(e.getClass("objectClass").getName()) : null;
 			if (type != null) {
 				this.allocByType.merge(type, w, Long::sum);
 			}
@@ -624,7 +627,7 @@ public final class Summarizer {
 				this.lockByMethod.merge(m, d, Long::sum);
 			}
 			if (e.hasField("monitorClass") && e.getClass("monitorClass") != null) {
-				this.lockByMonitor.merge(e.getClass("monitorClass").getName(), d, Long::sum);
+				this.lockByMonitor.merge(Teasers.stableName(e.getClass("monitorClass").getName()), d, Long::sum);
 			}
 		}
 
@@ -722,17 +725,16 @@ public final class Summarizer {
 						teasers.put(site.getKey(), prefix + typeBreakdown(byType));
 					}
 				});
-			// #103: flag any site dominated by an escape-analysis-prone type (boxed
-			// primitive /
-			// captured lambda) — C2 may scalar-replace non-escaping instances, so the
-			// sampled
-			// bytes can overstate steady-state allocation. Hedged; verify with `-prof
-			// gc`.
+			// #103/#157: flag a site dominated by an escape-prone type (boxed primitive
+			// / captured lambda). C2 may scalar-replace it, and sampling over-weights
+			// small frequent allocs, so the est-bytes share is an *upper bound* on
+			// removable allocation (verify with -prof gc) — no fabricated %.
 			this.allocBySiteType.forEach((site, byType) -> {
 				String dom = dominantType(byType);
 				if (Teasers.escapeProneType(dom)) {
 					String caveat = "⚠ " + Teasers.simpleType(dom)
-							+ " may be scalar-replaced (escape analysis) — verify " + "steady-state with -prof gc";
+							+ " may be scalar-replaced (escape analysis) — this est-bytes share is an upper bound "
+							+ "on removable allocation; confirm the actual win with -prof gc";
 					teasers.merge(site, caveat, (have, add) -> have + " " + add);
 				}
 			});
@@ -763,10 +765,7 @@ public final class Summarizer {
 			return teasers;
 		}
 
-		/**
-		 * App frames to detect the package from: CPU samples, or allocation sites if no
-		 * CPU.
-		 */
+		/** Frames to detect the app package from: CPU samples, else alloc sites. */
 		private Map<String, Long> detectionWeights() {
 			return this.cpuByApp.isEmpty() ? this.allocBySite : this.cpuByApp;
 		}
@@ -779,7 +778,7 @@ public final class Summarizer {
 					this.allocBytes / (1024L * 1024L), this.execSamples * 10L, sum(this.pinnedBySite) / 1_000_000L,
 					this.oldObjects, topApp, topShare, top(this.allocBySite), top(this.lockByMethod),
 					top(this.lockByMonitor), top(this.ioByEndpoint), top(this.pinnedBySite));
-			return suspectedCause(signals);
+			return suspectedCause(signals) + this.harness.note(this.execSamples, this.allocBytes);
 		}
 
 	}
