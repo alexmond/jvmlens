@@ -55,12 +55,21 @@ You are *not* building a profiler — capture (`jdk.jfr.Recording`) and parsing
       retention indicator. The "let it run for days, then check" loop.
 - [x] Deadlock detection — wait-for-graph cycles / `ThreadMXBean.findDeadlockedThreads`
       surfaced as a first-class `[measured]` signal (issue #23). Shipped in 0.1.0.
+- [x] Agent dump-on-trigger — the in-process agent now stays quiet and writes a summary
+      only when a rolling window breaches a threshold: launch args `on-gc-ms` /
+      `on-cpu-pct` / `on-old-objects` (and in-flight `trigger …` commands), reusing the
+      same `WatchTrigger` as `watch`; the `history`/`trend` sample still appends every
+      interval so long-run trends stay continuous.
 - [ ] Optional: MCP-over-HTTP for multi-client/long-lived sidecars; agent embedding the
-      MCP endpoint; agent dump-on-trigger (latency/error/OOM).
+      MCP endpoint.
 - [x] async-profiler fidelity via ap-loader — `profile --engine async` captures with
       async-profiler to JFR (native frames included; native frames excluded from the app
       view via `Scope`), consumed by the same summarizer. Local pid only.
-- [ ] Emit-local / user-chosen-model so egress-restricted (prod) shops can use it.
+- [x] ~~Emit-local / user-chosen-model so egress-restricted (prod) shops can use it.~~
+      **Moot — already satisfied by construction.** jvmlens never calls an LLM: every
+      front-end (CLI, agent, `mcp`) only *emits* the LLM-ready summary as text for a
+      human/agent to consume. Recordings never leave the host, so there is no egress to
+      gate and no model to choose. Nothing to build.
 
 ## Later — v2 (separate validation; see DESIGN.md)
 
