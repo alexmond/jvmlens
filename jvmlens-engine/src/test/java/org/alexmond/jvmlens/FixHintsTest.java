@@ -54,6 +54,57 @@ class FixHintsTest {
 		assertThat(FixHints.render(s)).contains("reflective dispatch").doesNotContain("reflective member lookup");
 	}
 
+	private static ProfileSummary hotPath(String name, String teaser) {
+		return new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0, List.of(new Ranked(name, 0.5, 500, teaser)), List.of(),
+				List.of(), List.of(), List.of(), List.of(), "cause", "com.acme");
+	}
+
+	@Test
+	void namesLoggingInAHotPath() {
+		String md = FixHints.render(hotPath("com.acme.OrderService.price",
+				"ch.qos.logback.classic.Logger.buildLoggingEventAndAppend:426 210/500 · java.lang.String.format 90/500"));
+		assertThat(md).contains("[structural] logging in a hot path").contains("`com.acme.OrderService.price`");
+		// log4j2 and java.util.logging read the same way
+		assertThat(FixHints.render(hotPath("com.acme.A.a", "org.apache.logging.log4j.core.Logger.log 200/500")))
+			.contains("logging in a hot path");
+		assertThat(FixHints.render(hotPath("com.acme.A.a", "java.util.logging.Logger.doLog 200/500")))
+			.contains("logging in a hot path");
+	}
+
+	@Test
+	void aUserClassThatOnlyMentionsLoggingIsNotALoggingHint() {
+		assertThat(FixHints.render(hotPath("com.acme.logging.AuditTrail.record", "java.util.HashMap.put 300/500")))
+			.doesNotContain("logging in a hot path");
+		// SLF4J's API alone is a thin facade — the cost shows in the backend's frames
+		assertThat(FixHints.render(hotPath("com.acme.A.a", "org.slf4j.LoggerFactory.getLogger 5/500")))
+			.doesNotContain("logging in a hot path");
+	}
+
+	@Test
+	void namesAJacksonMapperBuiltPerCall() {
+		// serializer/deserializer construction in the hot path = a mapper that is not
+		// reused
+		String md = FixHints.render(hotPath("com.acme.Api.toJson",
+				"com.fasterxml.jackson.databind.ser.BeanSerializerFactory.constructBeanOrAddOnSerializer 180/500"));
+		assertThat(md).contains("[structural] Jackson is building (de)serializers").contains("ObjectMapper");
+		// Jackson 3 moved to the tools.jackson package
+		assertThat(FixHints.render(hotPath("com.acme.Api.fromJson",
+				"tools.jackson.databind.deser.DeserializerCache._createAndCache2 140/500")))
+			.contains("Jackson is building (de)serializers");
+		assertThat(FixHints
+			.render(hotPath("com.acme.Api.toJson", "com.fasterxml.jackson.databind.ObjectMapper.<init> 120/500")))
+			.contains("Jackson is building (de)serializers");
+	}
+
+	@Test
+	void ordinaryJacksonSerializationIsNotAMapperHint() {
+		// a reused mapper doing its job: writing fields is inherent work, not a misuse
+		assertThat(FixHints.render(hotPath("com.acme.Api.toJson",
+				"com.fasterxml.jackson.databind.ser.BeanSerializer.serialize 300/500 · "
+						+ "com.fasterxml.jackson.core.json.UTF8JsonGenerator.writeString 90/500")))
+			.doesNotContain("Jackson is building");
+	}
+
 	@Test
 	void namesACapturedLambdaInAHotPathAsStructural() {
 		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0,

@@ -34,6 +34,10 @@ mkdir -p tools && cp /tmp/jvmlens/jvmlens-cli/target/jvmlens.jar tools/        #
 cp /tmp/jvmlens/jvmlens-agent/target/jvmlens-agent.jar tools/                  # the -javaagent jar
 ```
 
+> **Newer than 0.3.0:** the agent's dump-on-trigger thresholds (`on-gc-ms` …), `--ops` and the
+> `· mostly via` teaser landed after the 0.3.0 release. Until 0.3.1 is out, use **(b)** the
+> rolling `latest` build (or **(c)** build from source) to get them.
+
 Nothing becomes a build dependency of the project. If `tools/jvmlens.jar` already exists,
 skip this step.
 
@@ -102,6 +106,20 @@ running agent with `jvmlens control <file> <cmd>` (on the host): `start`/`stop`,
 `paused` and `start` after warm-up** — the clean fix for short cold runs that profile startup
 instead of the workload.
 
+**Stay quiet until something is wrong (dump-on-trigger).** By default the agent rewrites the
+summary every interval. Give it thresholds and it writes the summary **only when a window
+breaches one**, while `history=` keeps appending every interval so `trend` stays continuous:
+
+```bash
+java -javaagent:tools/jvmlens-agent.jar=out=/var/log/myapp.md,history=/var/log/myapp.jsonl,on-gc-ms=200,on-cpu-pct=80 \
+     -jar build/libs/myapp.jar
+```
+
+`on-gc-ms=<ms>` (GC pause in the window), `on-cpu-pct=<0-100>` (top hot path's sample share),
+`on-old-objects=<count>` (retained samples). Change them in flight with
+`jvmlens control <file> trigger gc-ms|cpu-pct|old-objects <n>`, or `trigger reset` to go back to
+every-interval output.
+
 ## B. One-shot live profile
 
 ```bash
@@ -124,9 +142,12 @@ Flags worth knowing: `--hints` (hedged fix directions, structural-vs-inherent ta
 paths reflect steady state), `--source <roots>` (echo the source-line text at each `file:line`
 anchor inline — `Bar.baz:88 ⟶ <code>` — comma/path-sep roots, off by default), and
 `-b <before.jfr>` to **diff** two recordings (absolute-anchored, NEW/GONE, with an
-extracted-helper alloc-by-type rollup). Reading the output: hot-path teasers show the **top leaves
+extracted-helper alloc-by-type rollup; add `--ops <before,after>` for per-op totals when the two
+runs differ in throughput, e.g. across JDK versions). Reading the output: hot-path teasers show the **top leaves
 with counts** and the **source line** (`Bar.baz:88`), `⚠ diffuse` when no leaf dominates, and
 `⚠ Only N allocation samples` when per-site byte shares are noisy (the **total** stays reliable).
+A teaser ending `· mostly via <frame> n/total` names the library frame between your code and the
+leaves that owns most of that path — usually the thing to change or work around.
 
 For a **dev one-shot** of a workload you can drive from a `main` (no JMH, no pre-recorded `.jfr`),
 the sibling **jvmlens-perf** skill's `bench --main <class>` runs a warmup→timed loop and

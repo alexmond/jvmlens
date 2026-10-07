@@ -192,6 +192,40 @@ class SummarizerTest {
 	}
 
 	@Test
+	void stableNameDropsGeneratedClassSuffixesThatChangePerRun() {
+		// measured on JDK 25 + Mockito 5: the mock's suffix differed between two runs
+		assertThat(Teasers.stableName("org.mockito.internal.creation.bytebuddy.codegen.List$MockitoMock$sbmBzdih"))
+			.isEqualTo(Teasers.stableName("org.mockito.internal.creation.bytebuddy.codegen.List$MockitoMock$kz6wm1LE"))
+			.isEqualTo("org.mockito.internal.creation.bytebuddy.codegen.List$MockitoMock");
+		// JDK proxies are numbered by creation order — module and class counter both
+		assertThat(Teasers.stableName("jdk.proxy1.$Proxy0")).isEqualTo("jdk.proxy.$Proxy");
+		assertThat(Teasers.stableName("jdk.proxy3.$Proxy47")).isEqualTo("jdk.proxy.$Proxy");
+		assertThat(Teasers.stableName("com.sun.proxy.$Proxy12")).isEqualTo("com.sun.proxy.$Proxy");
+		assertThat(Teasers.stableName("$Proxy1")).isEqualTo("$Proxy");
+		// ByteBuddy-generated subclasses carry a random suffix (Hibernate proxies too)
+		assertThat(Teasers.stableName("com.acme.Order$HibernateProxy$Ab12Cd34"))
+			.isEqualTo("com.acme.Order$HibernateProxy");
+		assertThat(Teasers.stableName("com.acme.Svc$ByteBuddy$x9Yz")).isEqualTo("com.acme.Svc$ByteBuddy");
+		// reflection accessors (JDK 17 and older) are numbered as they are spun up
+		assertThat(Teasers.stableName("jdk.internal.reflect.GeneratedMethodAccessor12"))
+			.isEqualTo("jdk.internal.reflect.GeneratedMethodAccessor");
+		assertThat(Teasers.stableName("jdk.internal.reflect.GeneratedConstructorAccessor3"))
+			.isEqualTo("jdk.internal.reflect.GeneratedConstructorAccessor");
+	}
+
+	@Test
+	void stableNameKeepsLookAlikeUserClasses() {
+		// a user's own numbered or similarly-named classes are real, stable names
+		assertThat(Teasers.stableName("com.acme.Proxy2")).isEqualTo("com.acme.Proxy2");
+		assertThat(Teasers.stableName("com.acme.MyProxy$Handler7")).isEqualTo("com.acme.MyProxy$Handler7");
+		assertThat(Teasers.stableName("com.acme.MethodAccessor12")).isEqualTo("com.acme.MethodAccessor12");
+		assertThat(Teasers.stableName("com.acme.Outer$Proxy3")).isEqualTo("com.acme.Outer$Proxy3");
+		assertThat(Teasers.stableName("com.acme.jdk.proxy1.Thing")).isEqualTo("com.acme.jdk.proxy1.Thing");
+		// Spring 6 CGLIB names are index-stable and left as they are
+		assertThat(Teasers.stableName("com.acme.Svc$$SpringCGLIB$$0")).isEqualTo("com.acme.Svc$$SpringCGLIB$$0");
+	}
+
+	@Test
 	void stableNameLeavesOrdinaryNamesAlone() {
 		assertThat(Teasers.stableName("com.example.OrderService")).isEqualTo("com.example.OrderService");
 		assertThat(Teasers.stableName("com.example.Outer$Inner$1")).isEqualTo("com.example.Outer$Inner$1");
