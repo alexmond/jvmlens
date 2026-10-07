@@ -46,6 +46,41 @@ class ScopeTest {
 	}
 
 	@Test
+	void defaultScopeSkipsWidelyUsedThirdPartyLibraries() {
+		Scope s = Scope.defaults();
+		for (String library : List.of("kotlin.collections.CollectionsKt", "kotlinx.coroutines.BuildersKt",
+				"scala.collection.immutable.List", "com.google.common.collect.ImmutableList", "com.google.gson.Gson",
+				"com.google.protobuf.CodedInputStream", "io.grpc.internal.ServerImpl",
+				"org.eclipse.jetty.server.Server", "io.undertow.server.Connectors", "io.quarkus.runtime.Quarkus",
+				"io.micronaut.http.server.netty.RoutingInBoundHandler", "io.vertx.core.impl.ContextImpl",
+				"com.mongodb.client.internal.MongoCollectionImpl", "org.bson.BsonDocument",
+				"io.lettuce.core.RedisChannelHandler", "redis.clients.jedis.Jedis", "com.mysql.cj.jdbc.ConnectionImpl",
+				"org.mariadb.jdbc.Connection", "oracle.jdbc.driver.OracleDriver", "org.jooq.impl.DSL",
+				"okhttp3.OkHttpClient", "okio.Buffer", "com.github.benmanes.caffeine.cache.BoundedLocalCache",
+				"org.aspectj.runtime.reflect.Factory", "org.objectweb.asm.ClassWriter", "ognl.OgnlRuntime",
+				"freemarker.core.Environment", "io.opentelemetry.api.trace.Span", "lombok.Lombok")) {
+			assertThat(s.isApplication(library)).as(library).isFalse();
+		}
+	}
+
+	@Test
+	void defaultScopeKeepsUserPackagesThatOnlyLookLikeALibrary() {
+		Scope s = Scope.defaults();
+		for (String user : List.of("com.googlecode.myapp.Main", "scalable.app.Server", "kotlinapp.Main",
+				"oracle.internalapp.Billing", "com.google.myteam.Service", "okhttpclient.Wrapper", "io.grpcdemo.Client",
+				"redis.myapp.Cache")) {
+			assertThat(s.isApplication(user)).as(user).isTrue();
+		}
+	}
+
+	@Test
+	void jdkOwnedXmlPackagesAreRuntime() {
+		assertThat(Scope.isRuntime("org.xml.sax.helpers.DefaultHandler")).isTrue();
+		assertThat(Scope.isRuntime("org.w3c.dom.Node")).isTrue();
+		assertThat(Scope.isRuntime("org.xmlunit.Diff")).isFalse();
+	}
+
+	@Test
 	void includeModeKeepsOnlyListedPrefixes() {
 		Scope s = Scope.of(List.of("org.alexmond.jhelm."), List.of());
 		assertThat(s.isApplication("org.alexmond.jhelm.Render")).isTrue();

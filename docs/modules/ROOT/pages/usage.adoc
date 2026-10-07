@@ -419,6 +419,17 @@ AssertJ, Hamcrest, Testcontainers, WireMock, JMH, …) are **never application c
 default scope, so a mock-heavy run attributes its cost to *your* calling method instead of
 naming a Mockito internal as the hot path. Name one with `-a` to profile the library itself.
 
+The default scope also leaves out widely used third-party libraries: the Kotlin and Scala
+runtimes, Guava / Gson / Protobuf, gRPC, Jetty / Undertow / Quarkus / Micronaut / Vert.x,
+OkHttp, the MongoDB / Redis / MySQL / MariaDB / Oracle drivers, jOOQ, Caffeine, AspectJ, ASM,
+OGNL, FreeMarker and OpenTelemetry. Their cost rolls up to *your* calling method, and the
+`· mostly via` teaser still names the library frame.
+
+If the scope hides most of a profile — you are profiling one of those libraries, or `-a` is
+mistyped — the suspected cause says so instead of printing empty hot paths: `⚠ 78% of CPU
+samples have no application frame under this scope … most of them run in `ognl.*` … pass
+`-a ognl``.
+
 == Remote servers (run on the host)
 
 For a JVM deployed elsewhere, run jvmlens *on that host* through the access channel you
