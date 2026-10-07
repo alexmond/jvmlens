@@ -109,10 +109,11 @@ final class Teasers {
 	/**
 	 * A string read from a recording, made safe to print. A recording is untrusted input
 	 * and its names land in text a model reads, usually inside a code span: a backtick
-	 * would close the span, a line break would start a new markdown line, a bidirectional
-	 * override would reorder what a human sees. Each of those becomes {@code ?}, and a
-	 * name longer than {@value #MAX_NAME} characters is cut with an ellipsis. Spaces and
-	 * non-ASCII letters stay — Kotlin test names and localized identifiers are
+	 * would close the span, a line break would start a new markdown line, an invisible or
+	 * bidirectional character would hide or reorder what a human sees. Each of those
+	 * becomes {@code ?} (see {@link #printable}), and a name longer than
+	 * {@value #MAX_NAME} characters is cut — on a code-point boundary — with an ellipsis.
+	 * Spaces and non-ASCII letters stay — Kotlin test names and localized identifiers are
 	 * legitimate. Returns the same instance when nothing needs changing.
 	 */
 	static String safe(String raw) {
@@ -121,21 +122,41 @@ final class Teasers {
 		}
 		boolean clean = raw.length() <= MAX_NAME;
 		for (int i = 0; clean && i < raw.length(); i++) {
-			clean = !unsafe(raw.charAt(i));
+			clean = printable(raw.charAt(i));
 		}
 		if (clean) {
 			return raw;
 		}
 		StringBuilder out = new StringBuilder(Math.min(raw.length(), MAX_NAME) + 1);
-		for (int i = 0; i < raw.length() && i < MAX_NAME; i++) {
-			out.append(unsafe(raw.charAt(i)) ? '?' : raw.charAt(i));
+		int i = 0;
+		while (i < raw.length() && out.length() < MAX_NAME) {
+			int cp = raw.codePointAt(i);
+			i += Character.charCount(cp);
+			if (printable(cp) && out.length() + Character.charCount(cp) <= MAX_NAME) {
+				out.appendCodePoint(cp);
+			}
+			else {
+				out.append('?');
+			}
 		}
-		return (raw.length() > MAX_NAME) ? out.append('…').toString() : out.toString();
+		return (i < raw.length()) ? out.append('…').toString() : out.toString();
 	}
 
-	private static boolean unsafe(char c) {
-		return c == '`' || Character.isISOControl(c) || c == '\u2028' || c == '\u2029'
-				|| (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069');
+	/**
+	 * Whether a code point may be printed as it is. Decided by Unicode <em>category</em>,
+	 * not a list of known-bad characters, so every invisible or layout-changing character
+	 * is covered at once: controls, format characters (zero-width, bidirectional, BOM,
+	 * soft hyphen), line and paragraph separators, lone surrogates, private-use and
+	 * unassigned code points. The backtick is the one visible character refused — it
+	 * would close a code span. A lone surrogate {@code char} lands here as SURROGATE.
+	 */
+	private static boolean printable(int cp) {
+		return switch (Character.getType(cp)) {
+			case Character.CONTROL, Character.FORMAT, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR,
+					Character.SURROGATE, Character.PRIVATE_USE, Character.UNASSIGNED ->
+				false;
+			default -> cp != '`';
+		};
 	}
 
 	/** The {@code Type.method} row key for a frame, on a {@link #stableName}. */

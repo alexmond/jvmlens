@@ -237,6 +237,20 @@ class SummarizerTest {
 		// an over-long name is cut, visibly
 		String longName = "x".repeat(500);
 		assertThat(Teasers.safe(longName)).hasSize(Teasers.MAX_NAME + 1).endsWith("…");
+		// invisible characters are refused as a class, not from a list: zero-width space
+		// and joiner, word joiner, BOM, soft hyphen, Arabic letter mark, a private-use
+		// code point
+		assertThat(Teasers.safe("a\u200Bb\u200Dc\u2060d\uFEFFe\u00ADf\u061Cg\uE000h")).isEqualTo("a?b?c?d?e?f?g?h");
+		// C1 controls (NEL is a line break to some renderers)
+		assertThat(Teasers.safe("a\u0085b\u009Bc")).isEqualTo("a?b?c");
+		// a lone surrogate is refused; a real supplementary letter survives whole
+		assertThat(Teasers.safe("a\uD83Db")).isEqualTo("a?b");
+		assertThat(Teasers.safe("a\uD835\uDC9C`")).isEqualTo("a\uD835\uDC9C?");
+		// the cut never splits a surrogate pair
+		String pairs = "\uD835\uDC9C".repeat(Teasers.MAX_NAME);
+		String cut = Teasers.safe(pairs);
+		assertThat(cut).endsWith("…");
+		assertThat(Character.isHighSurrogate(cut.charAt(cut.length() - 2))).isFalse();
 		// the type and method halves of a row key both go through it
 		assertThat(Teasers.stableName("com.acme.Evil`\nX")).isEqualTo("com.acme.Evil??X");
 	}
