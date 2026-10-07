@@ -51,17 +51,6 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 			"org.awaitility.", "org.testcontainers.", "org.wiremock.", "com.github.tomakehurst.wiremock.",
 			"org.openjdk.jmh.", "org.alexmond.jvmlens.BenchCommand");
 
-	/**
-	 * Test, mock, assertion and benchmark-harness libraries, plus jvmlens's own bench
-	 * driver — never the user's code. Left out, a Mockito-heavy run reported
-	 * {@code org.mockito.internal…} as the application hot path.
-	 */
-	private static final List<String> TEST_LIBRARIES = List.of("org.junit.", "junit.", "org.testng.",
-			"org.spockframework.", "io.kotest.", "org.mockito.", "org.easymock.", "org.powermock.", "org.jmock.",
-			"io.mockk.", "net.bytebuddy.", "org.objenesis.", "org.assertj.", "org.hamcrest.", "org.opentest4j.",
-			"org.awaitility.", "org.testcontainers.", "org.wiremock.", "com.github.tomakehurst.wiremock.",
-			"org.openjdk.jmh.", "org.alexmond.jvmlens.BenchCommand");
-
 	/** The default scope: skip JDK + common frameworks, with no explicit includes. */
 	public static Scope defaults() {
 		return new Scope(List.of(), List.of());
