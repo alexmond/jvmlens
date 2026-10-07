@@ -707,7 +707,8 @@ send* (batch or send async).
 Add `mongo` and the agent instruments the sync driver's `com.mongodb.client.MongoCollection`
 operations (`find`/`aggregate`/`insert*`/`update*`/`delete*`/…, matched by name, no Mongo
 dependency) into a `MongoDB operations (by total time)` section, each anchored to its app
-call-site. The document analogues of the SQL N+1 levers: a repeated `find`/`aggregate` reads
+call-site. Rows are labelled `<collection>.<op>` (`users.find`, `orders.insertOne`), so the
+summary says which collection is the offender. The document analogues of the SQL N+1 levers: a repeated `find`/`aggregate` reads
 as a *possible N+1 document fetch* (batch with `Filters.in(…)` / an aggregation), a repeated
 single-document `insertOne`/`updateOne`/`deleteOne` as *un-batched* (use `insertMany`/
 `bulkWrite`). Note `find`/`aggregate` return lazy iterables, so their *count* is the N+1

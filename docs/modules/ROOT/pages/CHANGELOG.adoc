@@ -1,5 +1,55 @@
 = Changelog
 
+== 0.3.1
+
+Field findings from profiling real projects: diffs and gates that hold up across runs, summaries
+that say when the recording or the scope cannot be trusted, and a fix for a crash.
+
+=== Fixes
+
+* **`profile --engine async` no longer kills a JDK 25 target** — async-profiler 3.0 crashed the
+  profiled JVM at thread start on JDK 25. Bundled async-profiler is now 4.5 (`#186`).
+* **`bench --cp` runs the workload on its own classpath** — the workload loader no longer
+  inherits jvmlens's bundled libraries, so a Spring 6 app is not silently benchmarked on
+  Spring 7. `--cp` must now be the workload's *full* classpath (`#164`).
+* **Stable row names across runs** — the per-run part of lambda, JDK-proxy, ByteBuddy
+  (Mockito / Hibernate) and reflection-accessor class names is stripped, so one method no
+  longer diffs as a GONE + NEW pair or trips `new-hotpath-pp` (`#161`, `#176`).
+* **Gates judge against the whole baseline** — `NEW` / `GONE` mean truly absent, not "below
+  the top-N cutoff", and `*-pp` assertions are backed by absolute samples, so an
+  improvement-only diff no longer fails the gate (`#165`).
+* **Recorder self-noise is dropped** — samples taken inside JFR's own start-up machinery
+  (JDK 24+) no longer read as the workload generating bytecode (`#160`).
+* **Redis instrumentation now fires against real Lettuce**, and the Mongo collection label
+  survives the real driver — both caught by new Testcontainers integration tests (`#146`).
+* **Names read from a recording are made safe to print** — control, invisible and
+  formatting characters become `?`, and over-long names are cut (`#185`).
+
+=== Features
+
+* **Notes block** — trust warnings now sit as `> ⚠` lines under the header (JSON: a `notes`
+  array) instead of being glued onto the suspected cause (`#184`). The notes are:
+** *recorded from a test run* (Surefire / Gradle / IDE / console launcher / TestNG) (`#175`);
+** *looks test-harness dominated* when mock-library frames own a large share (`#163`);
+** *the scope hides the profile*, naming the package and the `-a` to pass (`#179`).
+* **Wider default scope** — test, mock and benchmark libraries are never application code,
+  and many more third-party libraries (Kotlin/Scala, Guava, gRPC, Jetty, Quarkus, Micronaut,
+  Vert.x, OkHttp, common drivers, …) are skipped by default. `-a` still overrides (`#175`,
+  `#179`).
+* **`· mostly via <frame>`** on a hot path — names the library frame between the app entry and
+  the JDK leaf, which is often the real lever (`#162`).
+* **New `--hints` rules** — uncached reflective lookup (`#162`), logging in a hot path, and a
+  Jackson mapper built per call (`#180`).
+* **`analyze --baseline … --ops <before,after>`** — a *Totals per operation* block, so
+  cross-JDK or cross-throughput diffs compare per-op cost (`#157`).
+* **`analyze --per-recording`** — for a merged JMH `-prof jfr` directory, one row per source
+  recording with its share and dominant hot paths (`#153`).
+* **Agent dump-on-trigger** — `on-gc-ms` / `on-cpu-pct` / `on-old-objects` launch args and
+  in-flight `trigger …` commands write a summary only when a window breaches (`#173`).
+* **MongoDB rows are per collection** — `users.find`, not just `find` (`#147`).
+* **`bench -o <file>`** — write the summary to a file, apart from a workload that logs to
+  stdout (`#163`).
+
 == 0.3.0
 
 The semantic dimensions grow up: every agent dimension is now **source-anchored** and feeds
