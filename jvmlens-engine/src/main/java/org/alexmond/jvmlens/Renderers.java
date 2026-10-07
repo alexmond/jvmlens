@@ -359,24 +359,10 @@ final class Renderers {
 	 */
 	private static String formatCount(long count, String unit) {
 		return switch (unit) {
-			case "bytes" -> humanBytes(count);
+			case "bytes" -> Teasers.humanBytes(count);
 			case "ms" -> (count / 1_000_000) + " ms";
 			default -> count + " " + unit;
 		};
-	}
-
-	private static String humanBytes(long bytes) {
-		if (bytes < 1024) {
-			return bytes + " B";
-		}
-		String[] units = { "KB", "MB", "GB", "TB", "PB" };
-		double value = bytes / 1024.0;
-		int i = 0;
-		while (value >= 1024 && i < units.length - 1) {
-			value /= 1024;
-			i++;
-		}
-		return String.format(Locale.ROOT, "%.1f %s", value, units[i]);
 	}
 
 	/** A scoped JSON object carrying the same ranked signal as the markdown. */
