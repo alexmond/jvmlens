@@ -18,13 +18,27 @@ import java.util.List;
 public record Scope(List<String> includePackages, List<String> excludePackages) {
 
 	/** JDK / runtime packages — never application code. */
-	private static final List<String> RUNTIME = List.of("java.", "jdk.", "sun.", "com.sun.", "javax.", "jakarta.");
+	private static final List<String> RUNTIME = List.of("java.", "jdk.", "sun.", "com.sun.", "javax.", "jakarta.",
+			"org.xml.", "org.w3c.", "org.ietf.");
 
 	/** Common third-party frameworks — not the user's code by default. */
 	private static final List<String> FRAMEWORKS = List.of("org.springframework.", "org.apache.", "org.bouncycastle.",
 			"com.fasterxml.", "org.slf4j.", "ch.qos.logback.", "org.yaml.", "io.micrometer.", "io.netty.", "reactor.",
 			"org.hibernate.", "jakarta.", "org.thymeleaf.", "org.unbescape.", "org.flywaydb.", "com.zaxxer.",
-			"org.postgresql.", "org.h2.", "groovy.", "org.codehaus.groovy.");
+			"org.postgresql.", "org.h2.", "groovy.", "org.codehaus.groovy.",
+			// languages and their runtimes
+			"kotlin.", "kotlinx.", "scala.",
+			// general-purpose libraries
+			"com.google.common.", "com.google.gson.", "com.google.protobuf.", "com.github.benmanes.caffeine.",
+			"org.aspectj.", "org.objectweb.asm.", "lombok.", "io.opentelemetry.",
+			// servers, stacks and RPC
+			"org.eclipse.jetty.", "io.undertow.", "io.quarkus.", "io.micronaut.", "io.vertx.", "org.jboss.", "io.grpc.",
+			"okhttp3.", "okio.",
+			// data drivers and mappers
+			"com.mongodb.", "org.bson.", "io.lettuce.", "redis.clients.", "com.mysql.", "org.mariadb.", "oracle.jdbc.",
+			"org.jooq.",
+			// expression and template engines
+			"ognl.", "freemarker.");
 
 	/**
 	 * Test, mock, assertion and benchmark-harness libraries, plus jvmlens's own bench

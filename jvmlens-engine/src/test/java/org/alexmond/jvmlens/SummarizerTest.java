@@ -513,6 +513,23 @@ class SummarizerTest {
 	}
 
 	@Test
+	void notesWhenTheScopeHidesMostOfTheProfile() throws Exception {
+		// a scope that matches nothing: every sample is unattributed, and the note names
+		// the package that actually holds them
+		Path file = cpuRecording();
+		try {
+			Scope scope = Scope.of(List.of("com.nowhere"), List.of());
+			String md = Renderers.markdown(Summarizer.analyze(List.of(file), scope, "x", 0L));
+			assertThat(md).contains("have no application frame").contains("`-a org.alexmond`");
+			// the default scope attributes this recording, so it stays quiet
+			assertThat(Summarizer.summarize(file)).doesNotContain("have no application frame");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
 	void anOrdinaryProfileCarriesNoHarnessNote() throws Exception {
 		Path file = cpuRecording();
 		try {
