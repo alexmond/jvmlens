@@ -74,6 +74,20 @@ public final class FixHints {
 					"reflective member lookup per call — Class.getMethods()/getDeclaredMethods() copy the whole "
 							+ "member table every time; memoize the resolved Method per (Class, name), e.g. in a "
 							+ "ClassValue or ConcurrentHashMap"),
+			rule("ch\\.qos\\.logback\\.|org\\.apache\\.logging\\.log4j\\.|org\\.apache\\.log4j\\.|org\\.jboss\\.logmanager\\."
+					+ "|java\\.util\\.logging\\.(Logger|Handler|StreamHandler|FileHandler|Formatter|LogRecord)\\b",
+					Lever.STRUCTURAL,
+					"logging in a hot path — check the level actually enabled, use parameterised messages "
+							+ "(`log.debug(\"x={}\", x)`, no eager string building) and an async appender; a "
+							+ "synchronous appender serialises every caller"),
+			rule("(com\\.fasterxml|tools)\\.jackson\\.databind\\.(ObjectMapper\\.<init>|json\\.JsonMapper\\.<init>"
+					+ "|ser\\.(Bean|Basic)SerializerFactory|deser\\.(Bean|Basic)DeserializerFactory"
+					+ "|deser\\.DeserializerCache\\._create"
+					+ "|introspect\\.(BasicClassIntrospector|POJOPropertiesCollector|AnnotatedClassResolver))",
+					Lever.STRUCTURAL,
+					"Jackson is building (de)serializers in the hot path — an `ObjectMapper` is probably created "
+							+ "per call; reuse one shared mapper (thread-safe once configured), so its "
+							+ "serializer cache survives between calls"),
 			rule("String\\.format|Formatter\\b", Lever.STRUCTURAL,
 					"String.format in a hot path — prefer concatenation / StringBuilder"),
 			// Section-scoped rules — matched only against their own extended section's
