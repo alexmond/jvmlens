@@ -64,6 +64,9 @@ final class Teasers {
 	private static final Pattern REFLECT_ACCESSOR = Pattern
 		.compile("^((?:jdk\\.internal|sun)\\.reflect\\.Generated\\w+?Accessor)\\d+$");
 
+	/** The longest recording-supplied name printed in full. */
+	static final int MAX_NAME = 240;
+
 	/** How many hot paths to name in a per-recording breakdown teaser (#153). */
 	private static final int PER_RECORDING_TEASER_PATHS = 3;
 
@@ -79,7 +82,8 @@ final class Teasers {
 	 * way a reader could use.
 	 */
 	static String stableName(String type) {
-		String name = (type.indexOf("0x") < 0) ? type : HIDDEN_CLASS_ID.matcher(type).replaceAll("");
+		String safe = safe(type);
+		String name = (safe.indexOf("0x") < 0) ? safe : HIDDEN_CLASS_ID.matcher(safe).replaceAll("");
 		return (name.indexOf('$') < 0 && !name.contains(".reflect.Generated")) ? name : stableGenerated(name);
 	}
 
@@ -102,9 +106,41 @@ final class Teasers {
 		return out.contains(".reflect.Generated") ? REFLECT_ACCESSOR.matcher(out).replaceFirst("$1") : out;
 	}
 
+	/**
+	 * A string read from a recording, made safe to print. A recording is untrusted input
+	 * and its names land in text a model reads, usually inside a code span: a backtick
+	 * would close the span, a line break would start a new markdown line, a bidirectional
+	 * override would reorder what a human sees. Each of those becomes {@code ?}, and a
+	 * name longer than {@value #MAX_NAME} characters is cut with an ellipsis. Spaces and
+	 * non-ASCII letters stay — Kotlin test names and localized identifiers are
+	 * legitimate. Returns the same instance when nothing needs changing.
+	 */
+	static String safe(String raw) {
+		if (raw == null) {
+			return null;
+		}
+		boolean clean = raw.length() <= MAX_NAME;
+		for (int i = 0; clean && i < raw.length(); i++) {
+			clean = !unsafe(raw.charAt(i));
+		}
+		if (clean) {
+			return raw;
+		}
+		StringBuilder out = new StringBuilder(Math.min(raw.length(), MAX_NAME) + 1);
+		for (int i = 0; i < raw.length() && i < MAX_NAME; i++) {
+			out.append(unsafe(raw.charAt(i)) ? '?' : raw.charAt(i));
+		}
+		return (raw.length() > MAX_NAME) ? out.append('…').toString() : out.toString();
+	}
+
+	private static boolean unsafe(char c) {
+		return c == '`' || Character.isISOControl(c) || c == '\u2028' || c == '\u2029'
+				|| (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069');
+	}
+
 	/** The {@code Type.method} row key for a frame, on a {@link #stableName}. */
 	static String frameKey(RecordedFrame frame) {
-		return stableName(frame.getMethod().getType().getName()) + "." + frame.getMethod().getName();
+		return stableName(frame.getMethod().getType().getName()) + "." + safe(frame.getMethod().getName());
 	}
 
 	/**

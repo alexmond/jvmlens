@@ -490,8 +490,8 @@ public final class Summarizer {
 		}
 
 		private void addSocketIo(RecordedEvent e) {
-			String host = e.hasField("host") ? e.getString("host") : null;
-			String addr = e.hasField("address") ? e.getString("address") : null;
+			String host = e.hasField("host") ? Teasers.safe(e.getString("host")) : null;
+			String addr = e.hasField("address") ? Teasers.safe(e.getString("address")) : null;
 			String where = (host != null && !host.isBlank()) ? host : addr;
 			long port = e.hasField("port") ? e.getLong("port") : -1;
 			String endpoint = (where != null) ? (where + ((port >= 0) ? (":" + port) : "")) : "unknown";
@@ -499,7 +499,7 @@ public final class Summarizer {
 		}
 
 		private void addFileIo(RecordedEvent e) {
-			String path = e.hasField("path") ? e.getString("path") : "unknown";
+			String path = e.hasField("path") ? Teasers.safe(e.getString("path")) : "unknown";
 			addIo("file " + path, e, "bytesRead", "bytesWritten");
 		}
 
@@ -526,7 +526,7 @@ public final class Summarizer {
 			if (e.hasField("pinnedReason")) {
 				Object reason = e.getValue("pinnedReason");
 				if (reason != null) {
-					this.pinnedReason.putIfAbsent(site, reason.toString());
+					this.pinnedReason.putIfAbsent(site, Teasers.safe(reason.toString()));
 				}
 			}
 		}

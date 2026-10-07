@@ -154,6 +154,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-10-07 — **safe-recording-names** — every string read from a recording passes `Teasers.safe` on the way in (type + method via `stableName`/`frameKey`, I/O host/address/path, pinned reason): backtick, control characters, line/paragraph separators and bidi overrides → `?`; cut at 240 chars. Why: a recording is untrusted and its names land in LLM-facing text inside code spans. Structural break-out only — spaces and non-ASCII letters stay (Kotlin test names are legitimate), so a name can still *say* anything; it just cannot leave its span or line.
+
 - 2026-10-07 — **summary-notes** — `ProfileSummary` gains `notes` (`withNotes`); the harness, test-run and scope-coverage notes render as `> ⚠` lines under the header and as a JSON `notes` array, no longer appended to `cause`. Why: `cause` is also written to the agent's `history=` file every interval, so the notes were polluting the trend data; and three sentences glued onto one line buried the cause. Additive JSON key; the 17-arg constructor stays as a back-compat overload.
 
 - 2026-10-07 — **summarizer-headroom** — `Summarizer` 800 → 736 lines, behaviour-neutral: the pure suspected-cause heuristic moved to `Cause` (`Cause.suspected(Cause.Signals)`), and three identical `humanBytes` copies (Summarizer, Renderers, ProfileDiff) became one `Teasers.humanBytes`. Why: every change this week needed a helper moved out first to stay under the checkstyle cap.
