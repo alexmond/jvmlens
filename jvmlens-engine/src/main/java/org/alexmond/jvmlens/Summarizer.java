@@ -311,14 +311,6 @@ public final class Summarizer {
 		}
 	}
 
-	/** The most-weighted source line in a histogram, or 0 if none was recorded (#87). */
-	private static int dominantLine(Map<Integer, Long> hist) {
-		if (hist == null || hist.isEmpty()) {
-			return 0;
-		}
-		return hist.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(0);
-	}
-
 	private static long sum(Map<String, Long> m) {
 		return m.values().stream().mapToLong(Long::longValue).sum();
 	}
@@ -483,6 +475,8 @@ public final class Summarizer {
 
 		private final Map<String, Map<String, Long>> leafByApp = new HashMap<>();
 
+		private final ViaFrames via = new ViaFrames();
+
 		private final HarnessShare harness = new HarnessShare();
 
 		/** Per leaf/alloc-site method: source-line → weight, for line anchoring (#87). */
@@ -599,6 +593,7 @@ public final class Summarizer {
 			String app = appFrame(e.getStackTrace(), this.scope);
 			if (app != null) {
 				this.cpuByApp.merge(app, 1L, Long::sum);
+				this.via.add(app, e.getStackTrace(), this.scope);
 				if (leaf != null) {
 					this.leafByApp.computeIfAbsent(app, (k) -> new HashMap<>()).merge(leaf, 1L, Long::sum);
 				}
@@ -682,7 +677,8 @@ public final class Summarizer {
 				.forEach((path) -> {
 					Map<String, Long> byLeaf = this.leafByApp.get(path.getKey());
 					if (byLeaf != null && !byLeaf.isEmpty()) {
-						teasers.put(path.getKey(), Teasers.leafBreakdown(withLines(byLeaf), path.getValue()));
+						teasers.put(path.getKey(), Teasers.leafBreakdown(withLines(byLeaf), path.getValue())
+								+ this.via.teaser(path.getKey(), path.getValue(), byLeaf));
 					}
 				});
 			return teasers;
@@ -695,7 +691,7 @@ public final class Summarizer {
 		private Map<String, Long> withLines(Map<String, Long> byLeaf) {
 			Map<String, Long> out = new HashMap<>();
 			byLeaf.forEach((leaf, count) -> {
-				int line = dominantLine(this.leafLine.get(leaf));
+				int line = Teasers.dominantLine(this.leafLine.get(leaf));
 				out.put((line > 0) ? leaf + ":" + line : leaf, count);
 			});
 			return out;
@@ -707,7 +703,7 @@ public final class Summarizer {
 		private Map<String, String> leafLineTeasers() {
 			Map<String, String> teasers = new HashMap<>();
 			this.leafLine.forEach((leaf, hist) -> {
-				int line = dominantLine(hist);
+				int line = Teasers.dominantLine(hist);
 				if (line > 0) {
 					teasers.put(leaf, "line " + line);
 				}
@@ -724,7 +720,7 @@ public final class Summarizer {
 				.forEach((site) -> {
 					Map<String, Long> byType = this.allocBySiteType.get(site.getKey());
 					if (byType != null && !byType.isEmpty()) {
-						int line = dominantLine(this.allocSiteLine.get(site.getKey()));
+						int line = Teasers.dominantLine(this.allocSiteLine.get(site.getKey()));
 						String prefix = (line > 0) ? ":" + line + " · " : "";
 						teasers.put(site.getKey(), prefix + typeBreakdown(byType));
 					}
