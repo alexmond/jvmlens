@@ -479,6 +479,8 @@ public final class Summarizer {
 
 		private final HarnessShare harness = new HarnessShare();
 
+		private final ScopeCoverage coverage;
+
 		/** Per leaf/alloc-site method: source-line → weight, for line anchoring (#87). */
 		private final Map<String, Map<Integer, Long>> leafLine = new HashMap<>();
 
@@ -520,10 +522,12 @@ public final class Summarizer {
 
 		private Aggregates(Scope scope) {
 			this.scope = scope;
+			this.coverage = new ScopeCoverage(scope);
 		}
 
 		private void add(RecordedEvent e) {
 			this.harness.add(e);
+			this.coverage.add(e);
 			switch (e.getEventType().getName()) {
 				case "jdk.ExecutionSample" -> addExecution(e);
 				case "jdk.ObjectAllocationSample" -> addAllocation(e);
@@ -778,7 +782,8 @@ public final class Summarizer {
 					this.allocBytes / (1024L * 1024L), this.execSamples * 10L, sum(this.pinnedBySite) / 1_000_000L,
 					this.oldObjects, topApp, topShare, top(this.allocBySite), top(this.lockByMethod),
 					top(this.lockByMonitor), top(this.ioByEndpoint), top(this.pinnedBySite));
-			return suspectedCause(signals) + this.harness.note(this.execSamples, this.allocBytes);
+			return suspectedCause(signals) + this.harness.note(this.execSamples, this.allocBytes)
+					+ this.coverage.note(this.execSamples);
 		}
 
 	}
