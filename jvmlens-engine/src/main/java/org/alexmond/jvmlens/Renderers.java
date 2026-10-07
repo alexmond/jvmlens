@@ -37,6 +37,7 @@ final class Renderers {
 	/** A concern-focused markdown report: full, or just CPU / memory / locks / GC. */
 	static String report(ProfileSummary s, Summarizer.Report report) {
 		StringBuilder md = new StringBuilder(baseHeader(s));
+		appendNotes(md, s.notes());
 		boolean cpu = report == Summarizer.Report.FULL || report == Summarizer.Report.CPU;
 		boolean mem = report == Summarizer.Report.FULL || report == Summarizer.Report.MEMORY
 				|| report == Summarizer.Report.GC;
@@ -274,6 +275,18 @@ final class Renderers {
 			.orElse(null);
 	}
 
+	/**
+	 * The trust notes, one {@code > ⚠} line each, ahead of the ranked sections — they say
+	 * how far the rows below can be trusted, so they are read first.
+	 */
+	private static void appendNotes(StringBuilder md, List<String> notes) {
+		if (notes.isEmpty()) {
+			return;
+		}
+		notes.forEach((note) -> md.append("> ⚠ ").append(note).append('\n'));
+		md.append('\n');
+	}
+
 	private static String baseHeader(ProfileSummary s) {
 		StringBuilder md = new StringBuilder();
 		md.append("# JVM profile summary (")
@@ -389,7 +402,11 @@ final class Renderers {
 		jsonArray(j, "locks", s.locks());
 		jsonArray(j, "monitors", s.monitors());
 		jsonSections(j, s.sections());
-		j.append("  \"appPackage\": ").append(jsonString(s.appPackage()));
+		j.append("  \"notes\": [");
+		for (int i = 0; i < s.notes().size(); i++) {
+			j.append((i > 0) ? ", " : "").append(jsonString(s.notes().get(i)));
+		}
+		j.append("],\n  \"appPackage\": ").append(jsonString(s.appPackage()));
 		j.append(",\n  \"cause\": ").append(jsonString(s.cause())).append("\n}\n");
 		return j.toString();
 	}

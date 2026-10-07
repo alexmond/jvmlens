@@ -519,6 +519,8 @@ class SummarizerTest {
 			}
 		});
 		assertThat(md).contains("test-harness dominated").contains("org.mockito");
+		// the note is its own line, not part of the suspected cause
+		assertThat(md.substring(md.indexOf("## Suspected cause"))).doesNotContain("test-harness");
 	}
 
 	@Test

@@ -35,11 +35,26 @@ import java.util.List;
  * per-site byte splits: the total is reliable, but on a short trial the per-site shares
  * are statistically noisy (field-finding #50 item 3), so the renderer hedges when this is
  * low
+ * @param notes trust notes about the recording as a whole (a test run, a mock-dominated
+ * harness, a scope that hides most samples) — rendered as their own block, not folded
+ * into {@code cause}
  */
 public record ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
 		long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
 		List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage,
-		List<Section> sections, long allocBytes, long allocSamples) {
+		List<Section> sections, long allocBytes, long allocSamples, List<String> notes) {
+
+	/**
+	 * Back-compatible constructor for callers (and tests) predating {@code notes};
+	 * defaults them to empty.
+	 */
+	public ProfileSummary(String source, long execSamples, int allocTypes, long oldObjects, long gcPauses,
+			long gcPauseMillis, List<Ranked> hotPaths, List<Ranked> hotLeaves, List<Ranked> allocSites,
+			List<Ranked> allocatedTypes, List<Ranked> locks, List<Ranked> monitors, String cause, String appPackage,
+			List<Section> sections, long allocBytes, long allocSamples) {
+		this(source, execSamples, allocTypes, oldObjects, gcPauses, gcPauseMillis, hotPaths, hotLeaves, allocSites,
+				allocatedTypes, locks, monitors, cause, appPackage, sections, allocBytes, allocSamples, List.of());
+	}
 
 	/**
 	 * Back-compatible constructor for callers (and tests) predating the extended
@@ -92,7 +107,28 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 		merged.addAll(extra);
 		return new ProfileSummary(this.source, this.execSamples, this.allocTypes, this.oldObjects, this.gcPauses,
 				this.gcPauseMillis, this.hotPaths, this.hotLeaves, this.allocSites, this.allocatedTypes, this.locks,
-				this.monitors, this.cause, this.appPackage, List.copyOf(merged), this.allocBytes, this.allocSamples);
+				this.monitors, this.cause, this.appPackage, List.copyOf(merged), this.allocBytes, this.allocSamples,
+				this.notes);
+	}
+
+	/**
+	 * A copy of this summary with {@code extra} trust notes appended. A note says
+	 * something about how far the numbers can be trusted (recorded from a test run, the
+	 * scope hides most samples) — separate from {@code cause}, which names what the
+	 * recording shows.
+	 * @param extra notes to append (ignored if empty/null)
+	 * @return this if {@code extra} is empty, else a copy with the notes merged
+	 */
+	public ProfileSummary withNotes(List<String> extra) {
+		if (extra == null || extra.isEmpty()) {
+			return this;
+		}
+		List<String> merged = new ArrayList<>(this.notes);
+		merged.addAll(extra);
+		return new ProfileSummary(this.source, this.execSamples, this.allocTypes, this.oldObjects, this.gcPauses,
+				this.gcPauseMillis, this.hotPaths, this.hotLeaves, this.allocSites, this.allocatedTypes, this.locks,
+				this.monitors, this.cause, this.appPackage, this.sections, this.allocBytes, this.allocSamples,
+				List.copyOf(merged));
 	}
 
 	/**

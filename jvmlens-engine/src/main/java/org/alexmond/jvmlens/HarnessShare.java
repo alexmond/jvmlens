@@ -144,12 +144,23 @@ final class HarnessShare {
 	}
 
 	/**
-	 * Hedged notes for the suspected cause, or empty. A recording taken from a test JVM
-	 * says so; and when at least {@value #DOMINATES} of the CPU samples or allocation ran
-	 * under a mock framework, it adds that the harness dominates.
+	 * Hedged trust notes, or empty. A recording taken from a test JVM says so; and when
+	 * at least {@value #DOMINATES} of the CPU samples or allocation ran under a mock
+	 * framework, it adds that the harness dominates.
 	 */
+	List<String> notes(long execTotal, long allocTotal) {
+		List<String> notes = new ArrayList<>();
+		for (String note : List.of(testRunNote(execTotal), mockNote(execTotal, allocTotal))) {
+			if (!note.isEmpty()) {
+				notes.add(note);
+			}
+		}
+		return notes;
+	}
+
+	/** {@link #notes} joined into one string (empty when there are none). */
 	String note(long execTotal, long allocTotal) {
-		return testRunNote(execTotal) + mockNote(execTotal, allocTotal);
+		return String.join(" ", notes(execTotal, allocTotal));
 	}
 
 	private String testRunNote(long execTotal) {
@@ -158,7 +169,7 @@ final class HarnessShare {
 			return "";
 		}
 		String by = (this.launcher != null) ? this.launcher : name(this.runner);
-		return " ⚠ Recorded from a test run (" + by + ") — fixture setup, test data and assertions are part of "
+		return "Recorded from a test run (" + by + ") — fixture setup, test data and assertions are part of "
 				+ "these numbers.";
 	}
 
@@ -173,7 +184,7 @@ final class HarnessShare {
 		if (parts.isEmpty()) {
 			return "";
 		}
-		return " ⚠ Looks test-harness dominated — " + String.join(" and ", parts) + " ran inside a mock framework ("
+		return "Looks test-harness dominated — " + String.join(" and ", parts) + " ran inside a mock framework ("
 				+ name(this.library) + "), so these numbers describe the harness more than the code under test; "
 				+ "a plain driver (`bench --main`) gives representative ones.";
 	}

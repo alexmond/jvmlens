@@ -163,13 +163,14 @@ Useful flags:
   a non-escaping box/lambda that C2 *eliminates* at steady state, so it can be a **false lever**.
   Its est-bytes share is an **upper bound** on what you can remove (a real site measured 28%
   sampled vs 10% actual) — confirm the win with `-prof gc` before optimizing it.
-- **Empty hot paths?** Look at the suspected cause: `⚠ N% of CPU samples have no application
-  frame under this scope … pass `-a <package>`` means the scope hides the profile (a mistyped
-  `-a`, or you are profiling a default-excluded library). Use the package it names.
-- `⚠ Recorded from a test run (Maven Surefire)` — the recording came from a test JVM, so
+- **Empty hot paths?** Read the `> ⚠` notes at the top of the report: `N% of CPU samples have
+  no application frame under this scope … pass `-a <package>`` means the scope hides the
+  profile (a mistyped `-a`, or you are profiling a default-excluded library). Use the package
+  it names.
+- `> ⚠ Recorded from a test run (Maven Surefire)` — the recording came from a test JVM, so
   fixture setup, test data and assertions are in the numbers. Fine for finding a hot spot;
   for numbers you will quote, drive the code with `bench --main` or JMH.
-- The suspected cause may add `⚠ Looks test-harness dominated` — a large share of CPU samples
+- A `> ⚠` note at the top may say `Looks test-harness dominated` — a large share of CPU samples
   or allocation ran inside a mock framework (Mockito, EasyMock, …). The numbers then describe
   the harness, not the code under test: profile a plain driver (`bench --main`) instead.
 
