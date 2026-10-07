@@ -74,10 +74,12 @@ public class AnalyzeCommand implements Callable<Integer> {
 				System.err.println("jvmlens: no readable baseline .jfr at: " + baseline);
 				return 2;
 			}
-			ProfileSummary before = Summarizer.analyze(beforeFiles, output.scope(),
-					labeled(Recordings.label(baseline, file)), warmupMs());
-			ProfileSummary after = Summarizer.analyze(afterFiles, output.scope(),
-					labeled(Recordings.label(file, baseline)), warmupMs());
+			// un-truncated, so the diff and the gate judge NEW/GONE against the whole
+			// distribution, not each side's top-N (#165)
+			ProfileSummary before = RankLimits.full(() -> Summarizer.analyze(beforeFiles, output.scope(),
+					labeled(Recordings.label(baseline, file)), warmupMs()));
+			ProfileSummary after = RankLimits.full(() -> Summarizer.analyze(afterFiles, output.scope(),
+					labeled(Recordings.label(file, baseline)), warmupMs()));
 			String delta = ProfileDiff.diff(before, after);
 			if (assertSpec != null) {
 				PerfGate.Result gate = PerfGate.evaluate(before, after, assertSpec);
