@@ -127,6 +127,24 @@ final class Teasers {
 		return diffuse ? leaves + " ⚠ diffuse — no leaf >" + (int) (LEAF_CONFIDENCE * 100) + "% of path" : leaves;
 	}
 
+	/**
+	 * Human-readable bytes (e.g. {@code 2.1 MB}) — the one formatter every renderer
+	 * shares.
+	 */
+	static String humanBytes(long bytes) {
+		if (bytes < 1024) {
+			return bytes + " B";
+		}
+		String[] units = { "KB", "MB", "GB", "TB", "PB" };
+		double value = bytes / 1024.0;
+		int i = 0;
+		while (value >= 1024 && i < units.length - 1) {
+			value /= 1024;
+			i++;
+		}
+		return String.format(Locale.ROOT, "%.1f %s", value, units[i]);
+	}
+
 	/** The most-weighted source line in a histogram, or 0 if none was recorded (#87). */
 	static int dominantLine(Map<Integer, Long> hist) {
 		if (hist == null || hist.isEmpty()) {

@@ -348,7 +348,7 @@ public final class ProfileDiff {
 	 */
 	private static String formatPerOp(double perOp, String unit) {
 		if ("bytes".equals(unit)) {
-			return humanBytes(Math.round(perOp));
+			return Teasers.humanBytes(Math.round(perOp));
 		}
 		String num = String.format(Locale.ROOT, "%.4g", perOp);
 		return "ms-direct".equals(unit) ? num + " ms" : num;
@@ -408,7 +408,7 @@ public final class ProfileDiff {
 	 */
 	private static String formatVal(long count, String unit) {
 		return switch (unit) {
-			case "bytes" -> humanBytes(count);
+			case "bytes" -> Teasers.humanBytes(count);
 			case "ms" -> (count / 1_000_000) + " ms";
 			case "ms-direct" -> count + " ms";
 			default -> String.valueOf(count);
@@ -417,20 +417,6 @@ public final class ProfileDiff {
 
 	private static String signed(long delta, String unit) {
 		return ((delta >= 0) ? "+" : "-") + formatVal(Math.abs(delta), unit);
-	}
-
-	private static String humanBytes(long bytes) {
-		if (bytes < 1024) {
-			return bytes + " B";
-		}
-		String[] units = { "KB", "MB", "GB", "TB", "PB" };
-		double value = bytes / 1024.0;
-		int i = 0;
-		while (value >= 1024 && i < units.length - 1) {
-			value /= 1024;
-			i++;
-		}
-		return String.format(Locale.ROOT, "%.1f %s", value, units[i]);
 	}
 
 	/**

@@ -422,9 +422,8 @@ class SummarizerTest {
 		// allocation
 		// (estCpuMs = 1182 samples × 10 ≫ 62ms). Lead with the real lever, hedge the
 		// lock.
-		String cause = Summarizer.suspectedCause(new Summarizer.CauseSignals(62, 10, 200, 11_820, 0, 0,
-				"com.acme.BranchService.summarize", 7.0, "com.acme.ReportingService.recentRuns",
-				"com.acme.TestRegressionService.diff", "[I", null, null));
+		String cause = Cause.suspected(new Cause.Signals(62, 10, 200, 11_820, 0, 0, "com.acme.BranchService.summarize",
+				7.0, "com.acme.ReportingService.recentRuns", "com.acme.TestRegressionService.diff", "[I", null, null));
 		assertThat(cause).doesNotStartWith("Lock contention")
 			.contains("Hot path is `com.acme.BranchService.summarize`")
 			.contains("top allocation at `com.acme.ReportingService.recentRuns`")
@@ -435,15 +434,15 @@ class SummarizerTest {
 	void suspectedCauseStillLeadsWithAGenuinelyDominantLock() {
 		// a large lock that exceeds the estimated CPU work IS the headline (no hedge
 		// note).
-		String cause = Summarizer.suspectedCause(new Summarizer.CauseSignals(5_000, 0, 10, 2_000, 0, 0,
-				"com.acme.Svc.run", 10.0, "com.acme.Svc.run", "com.acme.Svc.lock", "com.acme.Mutex", null, null));
+		String cause = Cause.suspected(new Cause.Signals(5_000, 0, 10, 2_000, 0, 0, "com.acme.Svc.run", 10.0,
+				"com.acme.Svc.run", "com.acme.Svc.lock", "com.acme.Mutex", null, null));
 		assertThat(cause).startsWith("Lock contention").contains("`com.acme.Svc.lock`").doesNotContain("Minor lock");
 	}
 
 	@Test
 	void suspectedCauseNamesCpuWhenItIsTheMajority() {
-		String cause = Summarizer.suspectedCause(new Summarizer.CauseSignals(0, 0, 0, 5_000, 0, 0, "com.acme.Svc.run",
-				80.0, null, null, null, null, null));
+		String cause = Cause
+			.suspected(new Cause.Signals(0, 0, 0, 5_000, 0, 0, "com.acme.Svc.run", 80.0, null, null, null, null, null));
 		assertThat(cause).isEqualTo("CPU-bound — `com.acme.Svc.run` accounts for the majority of samples.");
 	}
 

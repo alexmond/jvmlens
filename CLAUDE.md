@@ -191,6 +191,7 @@ run `/evolving-claude-md:compact` to graduate stable lessons and move old entrie
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-10-07 — **summarizer-headroom** — `Summarizer` 800 → 736 lines, behaviour-neutral: the pure suspected-cause heuristic moved to `Cause` (`Cause.suspected(Cause.Signals)`), and three identical `humanBytes` copies (Summarizer, Renderers, ProfileDiff) became one `Teasers.humanBytes`. Why: every change this week needed a helper moved out first to stay under the checkstyle cap.
 - 2026-10-07 — **async-profiler-jdk25** — `ap-loader-all` 3.0-9 → 4.5-13. With async-profiler 3.0, `profile --engine async` **killed the target JVM** on JDK 25 (SIGSEGV in `Profiler::updateThreadName` at thread start). The test hid it: a failed attach is an `Assumptions.abort`, so it showed as skipped. The test now asserts the target is still alive before skipping. Why: a profiler must never take down the process it observes; a skip must not mean a crash.
 
 - 2026-10-07 — **default-library-scope** — `Scope` default not-application list widened (Kotlin/Scala, Guava/Gson/Protobuf, gRPC, Jetty/Undertow/Quarkus/Micronaut/Vert.x, OkHttp, Mongo/Redis/MySQL/MariaDB/Oracle drivers, jOOQ, Caffeine, AspectJ, ASM, OGNL, FreeMarker, OTel); `org.xml`/`org.w3c`/`org.ietf` are RUNTIME. Paired with `ScopeCoverage`: when ≥50% of CPU samples have no app frame it names the package holding them + the `-a` to pass. Why: a wider list makes "scope hides everything → silent empty hot paths" likelier. `Summarizer` is at 800 lines again.
