@@ -50,6 +50,20 @@ final class Teasers {
 	/** A hidden class's per-JVM suffix: an optional linkage counter, then its address. */
 	private static final Pattern HIDDEN_CLASS_ID = Pattern.compile("(?:\\$\\d+)?[/.]0x[0-9a-fA-F]+");
 
+	/**
+	 * A JDK dynamic proxy: an optional numbered module package, then {@code $Proxy<n>}.
+	 */
+	private static final Pattern JDK_PROXY = Pattern
+		.compile("^(?:(jdk\\.proxy)\\d+(?=\\.\\$))?((?:.*\\.)?\\$Proxy)\\d+$");
+
+	/** A ByteBuddy-generated subclass: a known marker, then a random suffix. */
+	private static final Pattern BYTEBUDDY_SUFFIX = Pattern
+		.compile("(\\$(?:MockitoMock|HibernateProxy|ByteBuddy))\\$\\w+$");
+
+	/** A generated reflection accessor (JDK 17 and older): a per-JVM counter. */
+	private static final Pattern REFLECT_ACCESSOR = Pattern
+		.compile("^((?:jdk\\.internal|sun)\\.reflect\\.Generated\\w+?Accessor)\\d+$");
+
 	/** How many hot paths to name in a per-recording breakdown teaser (#153). */
 	private static final int PER_RECORDING_TEASER_PATHS = 3;
 
@@ -65,7 +79,27 @@ final class Teasers {
 	 * way a reader could use.
 	 */
 	static String stableName(String type) {
-		return (type.indexOf("0x") < 0) ? type : HIDDEN_CLASS_ID.matcher(type).replaceAll("");
+		String name = (type.indexOf("0x") < 0) ? type : HIDDEN_CLASS_ID.matcher(type).replaceAll("");
+		return (name.indexOf('$') < 0 && !name.contains(".reflect.Generated")) ? name : stableGenerated(name);
+	}
+
+	/**
+	 * Strip the per-run part of a generated class's name — the same GONE + NEW diff split
+	 * as a lambda address, from other generators: a JDK proxy is numbered by creation
+	 * order ({@code jdk.proxy1.$Proxy0}), a ByteBuddy subclass (Mockito mock, Hibernate
+	 * proxy) carries a random suffix, a reflection accessor a counter. Each pattern is
+	 * anchored to the generator's own shape, so a user class that merely looks similar
+	 * ({@code com.acme.Proxy2}) is left alone.
+	 */
+	private static String stableGenerated(String name) {
+		String out = name;
+		if (out.contains("$Proxy")) {
+			out = JDK_PROXY.matcher(out).replaceFirst("$1$2");
+		}
+		if (out.contains("Mock$") || out.contains("Proxy$") || out.contains("Buddy$")) {
+			out = BYTEBUDDY_SUFFIX.matcher(out).replaceFirst("$1");
+		}
+		return out.contains(".reflect.Generated") ? REFLECT_ACCESSOR.matcher(out).replaceFirst("$1") : out;
 	}
 
 	/** The {@code Type.method} row key for a frame, on a {@link #stableName}. */
