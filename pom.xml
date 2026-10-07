@@ -63,7 +63,7 @@
 
         <picocli.version>4.7.7</picocli.version>
         <mcp.version>0.10.0</mcp.version>
-        <ap-loader.version>3.0-9</ap-loader.version>
+        <ap-loader.version>4.5-13</ap-loader.version>
         <jmh.version>1.37</jmh.version>
         <testcontainers.version>1.20.6</testcontainers.version>
 
