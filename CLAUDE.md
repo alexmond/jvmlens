@@ -14,7 +14,7 @@ are JDK-provided (`jdk.jfr`). See `DESIGN.md` (the "why") and `ROADMAP.md` (the 
 
 Use the Maven wrapper (`./mvnw`); `mvn` works if installed. Java 17 bytecode; the build
 runs on 17/21/25. This is a **Maven reactor** — `jvmlens-engine` / `-cli` / `-agent` /
-`-jmh` modules under a parent pom. Run from the repo root (builds all modules in order).
+`-jmh` / `-it` modules under a parent pom. Run from the repo root (builds all modules in order).
 
 ```bash
 scripts/dev-verify.sh                         # ⭐ format + full-reactor verify (what to run before a PR)
@@ -83,6 +83,11 @@ path produces JFR consumed by the same engine*.
 - **Deploy** — `deploy/helm/jvmlens` (standalone chart) + `scripts/deploy-agent.sh` attach the
   agent to any JVM image without touching the app's own chart.
 
+- **Integration tests** — `jvmlens-it` runs a real Spring Boot + JPA host app under the built
+  agent jar (Testcontainers: Postgres, Mongo, Redis) to catch agent-vs-framework breaks end to
+  end.
+- **Demo** — `assets/demo/` holds the committed sample behind the README and `ai-agent.adoc`: a
+  seed recording, `seed.sh`, and the real with/without-jvmlens Claude transcripts.
 - **Skills** — `plugins/` is a Claude Code plugin marketplace (`jvmlens-perf`, `jvmlens-monitor`;
   manifest in `.claude-plugin/marketplace.json`). Update the skills when a user-facing flag or
   output changes.
@@ -139,9 +144,9 @@ keep analysis logic in the engine, not the command.
 - **PMD bans `synchronized`** (method and statement) → use `ReentrantLock`. It also bans
   `setAccessible`, and an increment as a switch-arrow body (`case X -> this.n++;` → keep the
   braces).
-- **`Summarizer.java` sits at the 800-line checkstyle cap** (methods cap at 80 lines). Put new
-  logic in a helper (`Teasers`, `ViaFrames`, `HarnessShare`, `ScopeCoverage`) and wire it in
-  with one to three lines.
+- **`Summarizer.java` is close to the 800-line checkstyle cap** (746 now; methods cap at 80
+  lines). Put new logic in a helper (`Teasers`, `ViaFrames`, `HarnessShare`, `ScopeCoverage`,
+  `Cause`) and wire it in with one to three lines.
 - **`central-publishing-maven-plugin` ignores `maven.deploy.skip`** (that flag only governs
   `maven-deploy-plugin`). To keep a module off Central use `<excludeArtifacts>` on the
   aggregator config; a per-module skip on the last reactor module can skip the whole upload.
@@ -199,14 +204,14 @@ run `/evolving-claude-md:compact` to graduate stable lessons and move old entrie
 
 - 2026-10-07 — **async-profiler-jdk25** — `ap-loader-all` 3.0-9 → 4.5-13. With async-profiler 3.0, `profile --engine async` **killed the target JVM** on JDK 25 (SIGSEGV in `Profiler::updateThreadName` at thread start). The test hid it: a failed attach is an `Assumptions.abort`, so it showed as skipped. The test now asserts the target is still alive before skipping. Why: a profiler must never take down the process it observes; a skip must not mean a crash.
 
-- 2026-10-07 — **default-library-scope** — `Scope` default not-application list widened (Kotlin/Scala, Guava/Gson/Protobuf, gRPC, Jetty/Undertow/Quarkus/Micronaut/Vert.x, OkHttp, Mongo/Redis/MySQL/MariaDB/Oracle drivers, jOOQ, Caffeine, AspectJ, ASM, OGNL, FreeMarker, OTel); `org.xml`/`org.w3c`/`org.ietf` are RUNTIME. Paired with `ScopeCoverage`: when ≥50% of CPU samples have no app frame it names the package holding them + the `-a` to pass. Why: a wider list makes "scope hides everything → silent empty hot paths" likelier. `Summarizer` is at 800 lines again.
+- 2026-10-07 — **default-library-scope** — `Scope` default not-application list widened (Kotlin/Scala, Guava/Gson/Protobuf, gRPC, Jetty/Undertow/Quarkus/Micronaut/Vert.x, OkHttp, Mongo/Redis/MySQL/MariaDB/Oracle drivers, jOOQ, Caffeine, AspectJ, ASM, OGNL, FreeMarker, OTel); `org.xml`/`org.w3c`/`org.ietf` are RUNTIME. Paired with `ScopeCoverage`: when ≥50% of CPU samples have no app frame it names the package holding them + the `-a` to pass. Why: a wider list makes "scope hides everything → silent empty hot paths" likelier. ~~`Summarizer` at 800 lines~~ → summarizer-headroom.
 
 - 2026-10-07 — **test-run-detection** — `HarnessShare` now also notes `⚠ Recorded from a test run (<launcher>)`, read from `jdk.JVMInformation.javaArguments` (Surefire / Gradle test worker / IDE runner / console launcher / TestNG), frames only as fallback. Why: runner frames sit at the stack bottom, the first thing JFR's depth-64 limit cuts. `Scope` defaults gain `TEST_LIBRARIES` (JUnit, Mockito, ByteBuddy, AssertJ, JMH, … + `BenchCommand`) as never-application: a Mockito run named `org.mockito.internal…` the app hot path. `-a` still overrides.
 - 2026-10-07 — **logging-json-hints** — two `--hints` rules: logging-backend frames (Logback/Log4j/JUL — not the SLF4J facade) → level / parameterised messages / async appender; Jackson *construction* frames (`ObjectMapper.<init>`, `*SerializerFactory`, `DeserializerCache._create`, 2.x + 3.x `tools.jackson`) → reuse one mapper. Ordinary `BeanSerializer.serialize` stays quiet (inherent work). **Rejected:** a "recorded from a JMH fork" note — it would add a line to every JMH summary, the tool's main use, and say nothing new.
 - 2026-10-07 — **stable-generated-names** — `Teasers.stableName` also strips the per-run part of generated classes: JDK proxies (`jdk.proxy1.$Proxy0`, numbered by creation order), ByteBuddy subclasses (`$MockitoMock$…`, `$HibernateProxy$…`, `$ByteBuddy$…`, random suffix) and reflection accessors (counter). Same GONE + NEW diff split as #161. Each rule is anchored to the generator's shape so `com.acme.Proxy2` survives. Left alone: Spring 6 `$$SpringCGLIB$$0` (index-stable). Mockito + JDK proxy formats measured; Hibernate/ByteBuddy from their naming rules, not measured here.
 
 - 2026-10-06 — **via-frame** — a hot-path teaser appends `· mostly via <frame> n/total`: the non-runtime frame below the app frame that owns ≥50% of the path (inclusive, counted once per sample), nearest the leaves (`ViaFrames`). Why: app entry + JDK leaf were both right but the lever was the library frame between (OGNL `getReadMethod`). One inclusive rule instead of a per-leaf "nearest caller" — it also names the lever of a `⚠ diffuse` path. New `--hints` rule: uncached reflective lookup → memoize. #162.
-- 2026-10-06 — **harness-note** — the suspected cause appends `⚠ Looks test-harness dominated` when ≥20% of CPU samples (≥50 samples) or allocation has a mock-library frame anywhere in its stack (`HarnessShare`: Mockito/EasyMock/PowerMock/jMock/MockK). Mock libraries only: JUnit frames sit under every test sample, and ByteBuddy alone also serves Hibernate/agents in production. Appended to `cause` to avoid a `ProfileSummary` schema change. Also `bench -o <file>`. Gotcha: PMD bans `case X -> this.n++;` (AssignmentInOperand) — keep the braces. #163.
+- 2026-10-06 — **harness-note** — the suspected cause appends `⚠ Looks test-harness dominated` when ≥20% of CPU samples (≥50 samples) or allocation has a mock-library frame anywhere in its stack (`HarnessShare`: Mockito/EasyMock/PowerMock/jMock/MockK). Mock libraries only: JUnit frames sit under every test sample, and ByteBuddy alone also serves Hibernate/agents in production. ~~Appended to `cause`~~ → own `notes` field, see summary-notes. Also `bench -o <file>`. Gotcha: PMD bans `case X -> this.n++;` (AssignmentInOperand) — keep the braces. #163.
 - 2026-10-06 — **gate-absolute-backed** — diffs analyze both sides un-truncated (`RankLimits.full`); `ProfileDiff` still lists each side's top-N but looks values up in the whole list, so NEW/GONE mean truly absent. `PerfGate` `*-pp` = min(share move, sample move as % of **baseline** total). Why: a top-N baseline made below-cutoff paths "NEW", and share of a shrunken total failed 3/3 improvement-only diffs. min, not baseline-only: a longer after-capture must not read as a regression. #165.
 - 2026-10-06 — **stable-lambda-names** — row keys strip a hidden class's per-JVM identity at ingestion (`Teasers.stableName`/`frameKey`): `Foo$$Lambda.0x…` and `Foo$$Lambda$14/0x…` → `Foo$$Lambda`, for frames, allocated types and monitor classes. Why: the address differs every run, so one lambda diffed as a GONE + NEW pair and could trip `--assert new-hotpath-pp`. Done at ingestion, not in `ProfileDiff`, so summaries lose the noise too; lambdas of one class now share a row. #161.
 - 2026-10-06 — **recorder-self-filter** — the engine drops any event whose stack holds a recorder-machinery frame (`jdk.jfr.internal.PlatformRecorder`/`EventInstrumentation`/`JVMUpcalls`; `Recordings.isRecorder`), silently, like the `file null` I/O sink. Why: on JDK 24+ `Recording.start()` retransforms event classes via the classfile API and one alloc sample carried GBs — it read as the workload generating bytecode. Narrow list on purpose: `jdk.jfr.internal.event` (app-triggered commits) stays. #160.
