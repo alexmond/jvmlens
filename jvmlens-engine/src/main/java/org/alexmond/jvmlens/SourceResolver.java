@@ -83,7 +83,8 @@ final class SourceResolver {
 		return new ProfileSummary(s.source(), s.execSamples(), s.allocTypes(), s.oldObjects(), s.gcPauses(),
 				s.gcPauseMillis(), s.hotPaths(), (leaves != null) ? leaves : s.hotLeaves(),
 				(alloc != null) ? alloc : s.allocSites(), s.allocatedTypes(), s.locks(), s.monitors(), s.cause(),
-				s.appPackage(), (sections != null) ? sections : s.sections(), s.allocBytes(), s.allocSamples());
+				s.appPackage(), (sections != null) ? sections : s.sections(), s.allocBytes(), s.allocSamples(),
+				s.notes());
 	}
 
 	/**

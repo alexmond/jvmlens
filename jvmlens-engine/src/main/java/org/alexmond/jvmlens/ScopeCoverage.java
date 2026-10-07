@@ -104,7 +104,7 @@ final class ScopeCoverage {
 			return "";
 		}
 		return String.format(Locale.ROOT,
-				" ⚠ %.0f%% of CPU samples have no application frame under this scope, so they appear in no hot "
+				"%.0f%% of CPU samples have no application frame under this scope, so they appear in no hot "
 						+ "path — most of them run in `%s.*` (%d samples). To attribute them, pass `-a %s`.",
 				100.0 * this.unattributed / execTotal, top.getKey(), top.getValue(), top.getKey());
 	}

@@ -404,9 +404,13 @@ ms/iter) goes to stderr; the report to stdout, so it stays pipeable. The workloa
 stdout, so if it logs there use `-o` / `--output <file>` to write the report to a file instead.
 
 If a large share of the CPU samples or allocation ran inside a mock framework (Mockito,
-EasyMock, PowerMock, jMock, MockK), the suspected cause adds `⚠ Looks test-harness dominated`
+EasyMock, PowerMock, jMock, MockK), a note at the top of the report says `⚠ Looks test-harness dominated`
 — the numbers then describe the harness more than the code under test, and a plain driver
 gives representative ones. This applies to every capture path, not only `bench`.
+
+These **trust notes** render as `> ⚠` lines right under the header, ahead of the ranked rows,
+and as a `notes` array in JSON — separate from the suspected cause, which only names what the
+recording shows.
 
 A recording taken **from a test JVM** is called out too: `⚠ Recorded from a test run (Maven
 Surefire)` — fixture setup, test data and assertions are part of the numbers. jvmlens reads
@@ -426,7 +430,7 @@ OGNL, FreeMarker and OpenTelemetry. Their cost rolls up to *your* calling method
 `· mostly via` teaser still names the library frame.
 
 If the scope hides most of a profile — you are profiling one of those libraries, or `-a` is
-mistyped — the suspected cause says so instead of printing empty hot paths: `⚠ 78% of CPU
+mistyped — a note at the top says so instead of printing empty hot paths: `⚠ 78% of CPU
 samples have no application frame under this scope … most of them run in `ognl.*` … pass
 `-a ognl``.
 

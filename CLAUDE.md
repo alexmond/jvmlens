@@ -154,6 +154,8 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-10-07 — **summary-notes** — `ProfileSummary` gains `notes` (`withNotes`); the harness, test-run and scope-coverage notes render as `> ⚠` lines under the header and as a JSON `notes` array, no longer appended to `cause`. Why: `cause` is also written to the agent's `history=` file every interval, so the notes were polluting the trend data; and three sentences glued onto one line buried the cause. Additive JSON key; the 17-arg constructor stays as a back-compat overload.
+
 - 2026-10-07 — **summarizer-headroom** — `Summarizer` 800 → 736 lines, behaviour-neutral: the pure suspected-cause heuristic moved to `Cause` (`Cause.suspected(Cause.Signals)`), and three identical `humanBytes` copies (Summarizer, Renderers, ProfileDiff) became one `Teasers.humanBytes`. Why: every change this week needed a helper moved out first to stay under the checkstyle cap.
 
 - 2026-10-07 — **default-library-scope** — `Scope` default not-application list widened (Kotlin/Scala, Guava/Gson/Protobuf, gRPC, Jetty/Undertow/Quarkus/Micronaut/Vert.x, OkHttp, Mongo/Redis/MySQL/MariaDB/Oracle drivers, jOOQ, Caffeine, AspectJ, ASM, OGNL, FreeMarker, OTel); `org.xml`/`org.w3c`/`org.ietf` are RUNTIME. Paired with `ScopeCoverage`: when ≥50% of CPU samples have no app frame it names the package holding them + the `-a` to pass. Why: a wider list makes "scope hides everything → silent empty hot paths" likelier. `Summarizer` is at 800 lines again.
