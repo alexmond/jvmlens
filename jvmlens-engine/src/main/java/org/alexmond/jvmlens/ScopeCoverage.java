@@ -3,6 +3,7 @@ package org.alexmond.jvmlens;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedFrame;
@@ -24,6 +25,10 @@ final class ScopeCoverage {
 
 	/** Below this many execution samples the shares are too noisy to judge. */
 	static final long MIN_EXEC_SAMPLES = 50;
+
+	/** One or two plain ASCII identifier segments, bounded in length. */
+	private static final Pattern PLAIN_PACKAGE = Pattern
+		.compile("(?=.{1,80}$)[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)?");
 
 	private final Scope scope;
 
@@ -69,6 +74,12 @@ final class ScopeCoverage {
 	/**
 	 * The package prefix to suggest for {@code -a}: the first two segments of the type's
 	 * package (one, for a single-segment package), or null for the default package.
+	 *
+	 * <p>
+	 * The name comes from the recording, which is untrusted input, and it is echoed into
+	 * a command the reader is invited to run. So only a plain ASCII package name is ever
+	 * suggested; anything else (shell metacharacters, backticks, spaces, an over-long
+	 * string) yields no suggestion.
 	 */
 	static String suggestion(String owner) {
 		int lastDot = owner.lastIndexOf('.');
@@ -77,7 +88,8 @@ final class ScopeCoverage {
 		}
 		String pkg = owner.substring(0, lastDot);
 		int second = pkg.indexOf('.', pkg.indexOf('.') + 1);
-		return (pkg.indexOf('.') < 0 || second < 0) ? pkg : pkg.substring(0, second);
+		String prefix = (pkg.indexOf('.') < 0 || second < 0) ? pkg : pkg.substring(0, second);
+		return PLAIN_PACKAGE.matcher(prefix).matches() ? prefix : null;
 	}
 
 	/**

