@@ -45,6 +45,10 @@ class ProfileCommandTest {
 				recording = LiveCapture.captureAsync(String.valueOf(target.pid()), 3, 0, "itimer");
 			}
 			catch (IOException ex) {
+				// "unavailable" must never mean "we killed the process we attached to":
+				// with async-profiler 3.0 the JDK 25 target died of a SIGSEGV here and
+				// the skip hid it
+				assertThat(target.isAlive()).as("the profiled JVM must survive a failed attach").isTrue();
 				Assumptions.abort("async-profiler unavailable in this environment: " + ex.getMessage());
 			}
 			ProfileSummary s = Summarizer.analyze(recording);

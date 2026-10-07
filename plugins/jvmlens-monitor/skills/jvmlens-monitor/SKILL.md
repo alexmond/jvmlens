@@ -34,8 +34,9 @@ mkdir -p tools && cp /tmp/jvmlens/jvmlens-cli/target/jvmlens.jar tools/        #
 cp /tmp/jvmlens/jvmlens-agent/target/jvmlens-agent.jar tools/                  # the -javaagent jar
 ```
 
-> **Newer than 0.3.0:** the agent's dump-on-trigger thresholds (`on-gc-ms` …), `--ops` and the
-> `· mostly via` teaser landed after the 0.3.0 release. Until 0.3.1 is out, use **(b)** the
+> **Newer than 0.3.0:** the agent's dump-on-trigger thresholds (`on-gc-ms` …), `--ops`, the
+> `· mostly via` teaser, the wider default scope and the scope / test-run notes landed after
+> the 0.3.0 release. Until 0.3.1 is out, use **(b)** the
 > rolling `latest` build (or **(c)** build from source) to get them.
 
 Nothing becomes a build dependency of the project. If `tools/jvmlens.jar` already exists,
@@ -174,7 +175,10 @@ mutates shared state, so treat it like any other infra change (confirm before ap
 
 Pass `-a com.example.myapp` (CLI) or `scope=app:com.example.myapp` (agent) so framework
 frames don't bury the app's own code. A `⚠` adequacy caveat means too few samples — record
-longer or under load.
+longer or under load. If the hot paths come out empty, read the `> ⚠` notes at the top of the
+report: `N% of CPU samples have no application frame under this scope … pass `-a <package>``
+names the package to use. `Recorded from a test run` means the capture came from a test JVM,
+not production load.
 
 ## Leave the project self-serving
 
