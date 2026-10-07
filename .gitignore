@@ -38,3 +38,6 @@ hs_err_pid*.log
 replay_pid*.log
 .attach_pid*
 core.[0-9]*
+
+# evolving-claude-md plugin runtime log (session ids, local paths)
+.claude/evolving-claude-md/
