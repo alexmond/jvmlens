@@ -594,7 +594,18 @@ public final class Summarizer {
 							null, "memory"),
 					ranked(this.lockByMethod, sum(this.lockByMethod), null, "locks"),
 					ranked(this.lockByMonitor, sum(this.lockByMonitor), null, "locks"), heuristic(),
-					detectAppPackage(detectionWeights()), extendedSections(), this.allocBytes, this.allocSamples);
+					detectAppPackage(detectionWeights()), extendedSections(), this.allocBytes, this.allocSamples,
+					trustNotes());
+		}
+
+		/** Notes on how far this recording's numbers can be trusted. */
+		private List<String> trustNotes() {
+			List<String> notes = new ArrayList<>(this.harness.notes(this.execSamples, this.allocBytes));
+			String hidden = this.coverage.note(this.execSamples);
+			if (!hidden.isEmpty()) {
+				notes.add(hidden);
+			}
+			return List.copyOf(notes);
 		}
 
 		/** The beyond-CPU/memory/wait dimensions, only those with any signal. */
@@ -727,8 +738,7 @@ public final class Summarizer {
 					this.gcPauseNanos / 1_000_000L, this.allocBytes / (1024L * 1024L), this.execSamples * 10L,
 					sum(this.pinnedBySite) / 1_000_000L, this.oldObjects, topApp, topShare, top(this.allocBySite),
 					top(this.lockByMethod), top(this.lockByMonitor), top(this.ioByEndpoint), top(this.pinnedBySite));
-			return Cause.suspected(signals) + this.harness.note(this.execSamples, this.allocBytes)
-					+ this.coverage.note(this.execSamples);
+			return Cause.suspected(signals);
 		}
 
 	}

@@ -13,13 +13,19 @@ final class ProfileTools {
 	private ProfileTools() {
 	}
 
+	private static String notes(ProfileSummary s) {
+		StringBuilder b = new StringBuilder();
+		s.notes().forEach((note) -> b.append("> ⚠ ").append(note).append('\n'));
+		return b.isEmpty() ? "" : b.append('\n').toString();
+	}
+
 	/** Orientation: event counts, the heuristic cause, and where to drill next. */
 	static String overview(ProfileSummary s) {
 		String appLine = (s.appPackage() != null) ? "Application code under `" + s.appPackage() + ".*`.\n\n" : "";
 		return "# JVM profile overview (" + s.source() + ")\n\n" + "Events: " + s.execSamples() + " exec samples, "
 				+ s.allocTypes() + " alloc types, " + s.oldObjects() + " old-object samples, " + s.gcPauses()
 				+ " GC pauses (" + s.gcPauseMillis() + " ms).\n\n" + appLine + "Suspected cause: " + s.cause() + "\n\n"
-				+ "Drill in with the hot_paths, hot_leaves, allocations, and lock_contention tools.\n";
+				+ notes(s) + "Drill in with the hot_paths, hot_leaves, allocations, and lock_contention tools.\n";
 	}
 
 	/** Application-attributed hot call paths, by sample share. */

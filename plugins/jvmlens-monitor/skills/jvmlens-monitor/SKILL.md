@@ -175,10 +175,10 @@ mutates shared state, so treat it like any other infra change (confirm before ap
 
 Pass `-a com.example.myapp` (CLI) or `scope=app:com.example.myapp` (agent) so framework
 frames don't bury the app's own code. A `⚠` adequacy caveat means too few samples — record
-longer or under load. If the hot paths come out empty, read the suspected cause: `⚠ N% of CPU
-samples have no application frame under this scope … pass `-a <package>`` names the package
-to use. `⚠ Recorded from a test run` means the capture came from a test JVM, not production
-load.
+longer or under load. If the hot paths come out empty, read the `> ⚠` notes at the top of the
+report: `N% of CPU samples have no application frame under this scope … pass `-a <package>``
+names the package to use. `Recorded from a test run` means the capture came from a test JVM,
+not production load.
 
 ## Leave the project self-serving
 

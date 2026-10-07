@@ -191,6 +191,9 @@ run `/evolving-claude-md:compact` to graduate stable lessons and move old entrie
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-10-07 — **summary-notes** — `ProfileSummary` gains `notes` (`withNotes`); the harness, test-run and scope-coverage notes render as `> ⚠` lines under the header and as a JSON `notes` array, no longer appended to `cause`. Why: `cause` is also written to the agent's `history=` file every interval, so the notes were polluting the trend data; and three sentences glued onto one line buried the cause. Additive JSON key; the 17-arg constructor stays as a back-compat overload.
+
+- 2026-10-07 — **summarizer-headroom** — `Summarizer` 800 → 736 lines, behaviour-neutral: the pure suspected-cause heuristic moved to `Cause` (`Cause.suspected(Cause.Signals)`), and three identical `humanBytes` copies (Summarizer, Renderers, ProfileDiff) became one `Teasers.humanBytes`. Why: every change this week needed a helper moved out first to stay under the checkstyle cap.
 - 2026-10-07 — **summarizer-headroom** — `Summarizer` 800 → 736 lines, behaviour-neutral: the pure suspected-cause heuristic moved to `Cause` (`Cause.suspected(Cause.Signals)`), and three identical `humanBytes` copies (Summarizer, Renderers, ProfileDiff) became one `Teasers.humanBytes`. Why: every change this week needed a helper moved out first to stay under the checkstyle cap.
 - 2026-10-07 — **async-profiler-jdk25** — `ap-loader-all` 3.0-9 → 4.5-13. With async-profiler 3.0, `profile --engine async` **killed the target JVM** on JDK 25 (SIGSEGV in `Profiler::updateThreadName` at thread start). The test hid it: a failed attach is an `Assumptions.abort`, so it showed as skipped. The test now asserts the target is still alive before skipping. Why: a profiler must never take down the process it observes; a skip must not mean a crash.
 

@@ -234,4 +234,44 @@ class RenderersTest {
 		assertThat(prompt).contains("---\n\n# JVM profile summary");
 	}
 
+	@Test
+	void notesRenderAsTheirOwnBlockUnderTheHeader() {
+		ProfileSummary s = sample().withNotes(List.of("Recorded from a test run (Maven Surefire) — fixtures count.",
+				"Looks test-harness dominated — 40% of CPU samples ran inside a mock framework."));
+		String md = Renderers.markdown(s);
+		assertThat(md).contains("> ⚠ Recorded from a test run (Maven Surefire) — fixtures count.\n")
+			.contains("> ⚠ Looks test-harness dominated");
+		// the notes come before the ranked sections: read them before trusting the rows
+		assertThat(md.indexOf("> ⚠ Recorded")).isLessThan(md.indexOf("## "));
+		// and they are no longer glued onto the suspected-cause line
+		assertThat(md.substring(md.indexOf("## Suspected cause"))).doesNotContain("⚠");
+		// a focused report keeps them too
+		assertThat(Renderers.report(s, Summarizer.Report.MEMORY)).contains("> ⚠ Recorded from a test run");
+	}
+
+	@Test
+	void aSummaryWithoutNotesRendersNoNotesBlock() {
+		// no empty block, no stray blank lines: the report is exactly what it was
+		String plain = Renderers.markdown(sample());
+		String noted = Renderers.markdown(sample().withNotes(List.of("only this note")));
+		assertThat(plain).doesNotContain("\n\n\n");
+		assertThat(noted.replace("> ⚠ only this note\n\n", "")).isEqualTo(plain);
+	}
+
+	@Test
+	void jsonCarriesNotesAsAnArray() {
+		assertThat(Renderers.json(sample())).contains("\"notes\": []");
+		String json = Renderers.json(sample().withNotes(List.of("Recorded from a \"test\" run.")));
+		assertThat(json).contains("\"notes\": [\"Recorded from a \\\"test\\\" run.\"]");
+	}
+
+	@Test
+	void notesSurviveCopies() {
+		ProfileSummary s = sample().withNotes(List.of("a note"));
+		assertThat(s.withSections(List.of(new ProfileSummary.Section("io", "I/O", "ms", true, List.of()))).notes())
+			.containsExactly("a note");
+		assertThat(s.withNotes(List.of("another")).notes()).containsExactly("a note", "another");
+		assertThat(s.withNotes(List.of())).isSameAs(s);
+	}
+
 }
