@@ -24,7 +24,7 @@ grab the rolling pre-release, or build it (Java 17+). Skip if you already have a
 
 ```bash
 # (a) Maven Central — pinned release (set VER to the latest release)
-VER=0.3.0
+VER=0.3.1
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-cli/$VER/jvmlens-cli-$VER.jar" -o /tmp/jvmlens.jar && JVMLENS=/tmp/jvmlens.jar
 # (b) or the rolling `latest` GitHub pre-release (CLI fat jar)
 gh release download latest -R alexmond/jvmlens -p 'jvmlens.jar' -O /tmp/jvmlens.jar && JVMLENS=/tmp/jvmlens.jar
@@ -32,12 +32,6 @@ gh release download latest -R alexmond/jvmlens -p 'jvmlens.jar' -O /tmp/jvmlens.
 git clone https://github.com/alexmond/jvmlens /tmp/jvmlens-src && ( cd /tmp/jvmlens-src && ./mvnw -q clean package -DskipTests )
 JVMLENS=/tmp/jvmlens-src/jvmlens-cli/target/jvmlens.jar
 ```
-
-> **Newer than 0.3.0:** `bench -o` and its isolated `--cp`, `--ops`, the `· mostly via` teaser,
-> the test-run / test-harness / scope notes, the wider default scope, the logging and Jackson
-> hints and the absolute-backed `*-pp` gates landed after the 0.3.0 release.
-> Until 0.3.1 is out, use **(b)** the rolling `latest` build (or **(c)** build from source) to
-> get them.
 
 ## 1. Capture a JFR of the hot workload
 

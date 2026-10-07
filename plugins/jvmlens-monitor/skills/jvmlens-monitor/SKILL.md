@@ -21,7 +21,7 @@ trend jar; `jvmlens-agent` is the `-javaagent`). Pull a pinned release, or grab 
 
 ```bash
 # (a) Maven Central — pinned release (set VER to the latest release)
-VER=0.3.0; mkdir -p tools
+VER=0.3.1; mkdir -p tools
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-cli/$VER/jvmlens-cli-$VER.jar"     -o tools/jvmlens.jar
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-agent/$VER/jvmlens-agent-$VER.jar" -o tools/jvmlens-agent.jar
 # (b) or download the rolling pre-release jars
@@ -33,11 +33,6 @@ git clone https://github.com/alexmond/jvmlens /tmp/jvmlens && ( cd /tmp/jvmlens 
 mkdir -p tools && cp /tmp/jvmlens/jvmlens-cli/target/jvmlens.jar tools/        # CLI + MCP + trend
 cp /tmp/jvmlens/jvmlens-agent/target/jvmlens-agent.jar tools/                  # the -javaagent jar
 ```
-
-> **Newer than 0.3.0:** the agent's dump-on-trigger thresholds (`on-gc-ms` …), `--ops`, the
-> `· mostly via` teaser, the wider default scope and the scope / test-run notes landed after
-> the 0.3.0 release. Until 0.3.1 is out, use **(b)** the
-> rolling `latest` build (or **(c)** build from source) to get them.
 
 Nothing becomes a build dependency of the project. If `tools/jvmlens.jar` already exists,
 skip this step.

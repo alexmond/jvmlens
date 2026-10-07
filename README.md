@@ -119,7 +119,7 @@ per-method −52%. Full receipts — profile → fix → prove → guard — in
 <dependency>
   <groupId>org.alexmond</groupId>
   <artifactId>jvmlens-engine</artifactId>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
@@ -129,7 +129,7 @@ assets — grab whichever is handier. Java 17+ to run:
 
 ```bash
 # the latest tagged release
-gh release download 0.3.0 -R alexmond/jvmlens -p 'jvmlens.jar'
+gh release download 0.3.1 -R alexmond/jvmlens -p 'jvmlens.jar'
 # …or the rolling pre-release (every green build on main), no build required:
 curl -L -o jvmlens.jar https://github.com/alexmond/jvmlens/releases/download/latest/jvmlens.jar
 java -jar jvmlens.jar analyze recording.jfr

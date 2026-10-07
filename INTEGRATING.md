@@ -30,7 +30,7 @@ no build required. Java 17+.
 ```bash
 mkdir -p tools
 # a tagged release (set VER to the latest 0.x — tags have no `v` prefix):
-VER=0.2.0
+VER=0.3.1
 curl -L -o tools/jvmlens.jar       https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens.jar
 curl -L -o tools/jvmlens-agent.jar https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-agent.jar
 curl -L -o tools/jvmlens-jmh.jar   https://github.com/alexmond/jvmlens/releases/download/$VER/jvmlens-jmh.jar
