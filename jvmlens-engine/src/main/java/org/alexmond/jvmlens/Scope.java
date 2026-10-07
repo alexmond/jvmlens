@@ -62,6 +62,16 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 	}
 
 	/**
+	 * Whether a frame owner is JDK/runtime or native code — never something the user (or
+	 * a library author) can change, under any scope.
+	 * @param owner the fully-qualified declaring type name
+	 * @return {@code true} for a runtime or native frame
+	 */
+	public static boolean isRuntime(String owner) {
+		return isNative(owner) || startsWithAny(owner, RUNTIME);
+	}
+
+	/**
 	 * Native frames from async-profiler (e.g. {@code libjvm.so}, C++
 	 * {@code Class::method}).
 	 */

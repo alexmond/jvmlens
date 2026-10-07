@@ -36,6 +36,25 @@ class FixHintsTest {
 	}
 
 	@Test
+	void namesAnUncachedReflectiveLookupFromItsLeaves() {
+		// #162: OGNL resolved a record accessor with Class.getMethods() on every read —
+		// the lever is the lookup (memoize it), not the invoke
+		ProfileSummary s = new ProfileSummary("r.jfr", 2075, 1, 0, 0, 0,
+				List.of(new Ranked("org.thymeleaf.OGNLVariableExpressionEvaluator.executeExpression", 0.46, 963,
+						"java.lang.StringLatin1.toLowerCase:423 416/963 · java.lang.Class.copyMethods 114/963")),
+				List.of(), List.of(), List.of(), List.of(), List.of(), "cause", "org.thymeleaf");
+		assertThat(FixHints.render(s)).contains("[structural] reflective member lookup per call").contains("memoize");
+	}
+
+	@Test
+	void aReflectiveInvokeAloneIsNotALookupHint() {
+		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0,
+				List.of(new Ranked("com.acme.Svc.call", 0.6, 600, "java.lang.reflect.Method.invoke 500/600")),
+				List.of(), List.of(), List.of(), List.of(), List.of(), "cause", "com.acme");
+		assertThat(FixHints.render(s)).contains("reflective dispatch").doesNotContain("reflective member lookup");
+	}
+
+	@Test
 	void namesACapturedLambdaInAHotPathAsStructural() {
 		ProfileSummary s = new ProfileSummary("r.jfr", 1000, 1, 0, 0, 0,
 				List.of(new Ranked("com.acme.Svc.dispatch", 0.6, 510,
