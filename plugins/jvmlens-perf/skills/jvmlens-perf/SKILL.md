@@ -34,7 +34,8 @@ JVMLENS=/tmp/jvmlens-src/jvmlens-cli/target/jvmlens.jar
 ```
 
 > **Newer than 0.3.0:** `bench -o` and its isolated `--cp`, `--ops`, the `· mostly via` teaser,
-> the test-harness note and the absolute-backed `*-pp` gates landed after the 0.3.0 release.
+> the test-run / test-harness / scope notes, the wider default scope, the logging and Jackson
+> hints and the absolute-backed `*-pp` gates landed after the 0.3.0 release.
 > Until 0.3.1 is out, use **(b)** the rolling `latest` build (or **(c)** build from source) to
 > get them.
 
@@ -116,7 +117,10 @@ java -jar "$JVMLENS" analyze "$jfr" -a com.example.app --hints     # + hedged fi
 ```
 
 `-a` (repeatable) scopes "application code" to your package(s) so the hot paths are *your*
-methods, not JDK leaves. `-x` excludes a package prefix (from hot paths, allocation sites, **and**
+methods, not JDK leaves. Without `-a`, the default scope already leaves out the JDK, common
+frameworks and third-party libraries (Spring, Jackson, Guava, gRPC, Kotlin, DB drivers, …) and
+test libraries (JUnit, Mockito, JMH, …), so their cost rolls up to your calling method. **To
+profile one of those libraries itself, name it with `-a`.** `-x` excludes a package prefix (from hot paths, allocation sites, **and**
 the allocated-types rollup — e.g. `-x org.h2` folds an embedded DB's types into one line). The
 output ranks hot paths (by sample share), self-time leaves, allocation sites + types, lock
 contention, and a hedged cause. **Act on the top 1–2 lines.**
@@ -126,6 +130,8 @@ Useful flags:
   (mechanical/safe, e.g. iterator+lambda alloc, presize, reflect, **per-call regex compile →
   hoist the `Pattern` to `static final`**, **uncached reflective lookup
   (`Class.getMethods`/`getDeclaredMethods`) → memoize the `Method` per (Class, name)**) vs
+  **Jackson building (de)serializers → an `ObjectMapper` is created per call, reuse one**,
+  **logging-backend frames in a hot path → check the level, parameterise, async appender**) vs
   **inherent** (parity-sensitive, e.g. number→string
   formatting) — pull the structural lever first.
 - `--max-tokens <n>` (or `--top-k <n>`) — budget the output: shrinks rows until it fits ~`<n>`
@@ -157,6 +163,12 @@ Useful flags:
   a non-escaping box/lambda that C2 *eliminates* at steady state, so it can be a **false lever**.
   Its est-bytes share is an **upper bound** on what you can remove (a real site measured 28%
   sampled vs 10% actual) — confirm the win with `-prof gc` before optimizing it.
+- **Empty hot paths?** Look at the suspected cause: `⚠ N% of CPU samples have no application
+  frame under this scope … pass `-a <package>`` means the scope hides the profile (a mistyped
+  `-a`, or you are profiling a default-excluded library). Use the package it names.
+- `⚠ Recorded from a test run (Maven Surefire)` — the recording came from a test JVM, so
+  fixture setup, test data and assertions are in the numbers. Fine for finding a hot spot;
+  for numbers you will quote, drive the code with `bench --main` or JMH.
 - The suspected cause may add `⚠ Looks test-harness dominated` — a large share of CPU samples
   or allocation ran inside a mock framework (Mockito, EasyMock, …). The numbers then describe
   the harness, not the code under test: profile a plain driver (`bench --main`) instead.
@@ -238,7 +250,8 @@ and jvmlens to find *what* to fix.
   JFR's own start-up instrumentation are dropped too (on JDK 24+ they showed as gigabytes of
   phantom `jdk.internal.classfile` allocation).
 - **Lambda rows read `Foo$$Lambda`** — the per-JVM address is stripped so the same lambda
-  matches across two runs. Several lambdas of one class share that row; use the line anchor and
+  matches across two runs. The same goes for other generated classes: Mockito mocks
+  (`List$MockitoMock`), JDK proxies (`jdk.proxy.$Proxy`), Hibernate proxies. Several lambdas of one class share that row; use the line anchor and
   the leaf teaser to tell them apart.
 
 ## Leave the project self-serving
