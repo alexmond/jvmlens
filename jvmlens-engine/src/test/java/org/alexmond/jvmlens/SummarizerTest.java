@@ -174,6 +174,44 @@ class SummarizerTest {
 	}
 
 	@Test
+	void stableNameDropsThePerJvmLambdaIdentity() {
+		// #161: the hidden-class address differs per JVM, so one lambda diffed as
+		// GONE+NEW
+		assertThat(Teasers.stableName("org.thymeleaf.util.ExpressionUtils$$Lambda.0x00000000963fbcc0"))
+			.isEqualTo("org.thymeleaf.util.ExpressionUtils$$Lambda");
+		assertThat(Teasers.stableName("org.thymeleaf.util.ExpressionUtils$$Lambda.0x000000001d3fb538"))
+			.isEqualTo("org.thymeleaf.util.ExpressionUtils$$Lambda");
+		// older JDKs: a linkage counter, then the address
+		assertThat(Teasers.stableName("com.example.Foo$$Lambda$14/0x0000000800c03000"))
+			.isEqualTo("com.example.Foo$$Lambda");
+		assertThat(Teasers.stableName("com.example.Foo$$Lambda/0x0000000800c03000"))
+			.isEqualTo("com.example.Foo$$Lambda");
+		// any other hidden class carries the same per-JVM suffix
+		assertThat(Teasers.stableName("java.lang.invoke.LambdaForm$MH.0x0000000012345678"))
+			.isEqualTo("java.lang.invoke.LambdaForm$MH");
+	}
+
+	@Test
+	void stableNameLeavesOrdinaryNamesAlone() {
+		assertThat(Teasers.stableName("com.example.OrderService")).isEqualTo("com.example.OrderService");
+		assertThat(Teasers.stableName("com.example.Outer$Inner$1")).isEqualTo("com.example.Outer$Inner$1");
+		assertThat(Teasers.stableName("[Lcom.example.Box0x10;")).isEqualTo("[Lcom.example.Box0x10;");
+	}
+
+	@Test
+	void lambdaTypesInARealRecordingCarryNoAddress() throws Exception {
+		Object[] sink = new Object[1024];
+		String md = record(() -> {
+			for (int i = 0; i < 30_000_000; i++) {
+				int captured = i;
+				java.util.function.IntSupplier escaping = () -> captured;
+				sink[i & 1023] = escaping;
+			}
+		});
+		assertThat(md).contains("$$Lambda").doesNotContain("$$Lambda.0x").doesNotContain("$$Lambda/0x");
+	}
+
+	@Test
 	void foldsExcludedTypesIntoOneRolledUpRow() {
 		// #128: on an in-process H2 capture the "Top allocated types" block is dominated
 		// by
