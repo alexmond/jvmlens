@@ -241,6 +241,12 @@ class SummarizerTest {
 		// and joiner, word joiner, BOM, soft hyphen, Arabic letter mark, a private-use
 		// code point
 		assertThat(Teasers.safe("a\u200Bb\u200Dc\u2060d\uFEFFe\u00ADf\u061Cg\uE000h")).isEqualTo("a?b?c?d?e?f?g?h");
+		// invisible characters outside the format category: variation selectors and the
+		// combining grapheme joiner (marks), Hangul fillers (letters), the Braille blank
+		// (a symbol), no-break and ideographic spaces
+		assertThat(Teasers.safe("a\uFE0Fb\u034Fc\u3164d\u115Fe\u2800f\u00A0g\u3000h")).isEqualTo("a?b?c?d?e?f?g?h");
+		// a supplementary-plane variation selector and a tag character
+		assertThat(Teasers.safe("a\uDB40\uDD00b\uDB40\uDC41c")).isEqualTo("a?b?c");
 		// C1 controls (NEL is a line break to some renderers)
 		assertThat(Teasers.safe("a\u0085b\u009Bc")).isEqualTo("a?b?c");
 		// a lone surrogate is refused; a real supplementary letter survives whole
@@ -259,7 +265,8 @@ class SummarizerTest {
 	void ordinaryNamesPassThroughUntouched() {
 		for (String name : List.of("com.acme.OrderService", "lambda$render$0", "<init>", "<clinit>",
 				"com.acme.Outer$Inner$1", "[Ljava.lang.String;", "should return 404 when the order is missing",
-				"com.acme.Größe", "java.util.Map$Entry", "access$000")) {
+				"com.acme.Größe", "java.util.Map$Entry", "access$000", "日本語.クラス", "com.acme.Ünïcödé_42",
+				"a-b+c=d (e) {f} |g| ~h #i @j %k &l *m ^n ?o !p 'q' \"r\" \\s /t:u;v,w")) {
 			assertThat(Teasers.safe(name)).isSameAs(name);
 		}
 		// a socket event may carry no host

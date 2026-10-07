@@ -154,7 +154,7 @@ to move old entries to `docs/decisions/`. Hooks (audit/lint) live in `.claude/`.
 
 ### Decisions & Learnings (Recent — last 14 days)
 
-- 2026-10-07 — **safe-recording-names** — every string read from a recording passes `Teasers.safe` on the way in (type + method via `stableName`/`frameKey`, I/O host/address/path, pinned reason): backtick, control characters, line/paragraph separators and bidi overrides → `?`; cut at 240 chars. Why: a recording is untrusted and its names land in LLM-facing text inside code spans. Structural break-out only — spaces and non-ASCII letters stay (Kotlin test names are legitimate), so a name can still *say* anything; it just cannot leave its span or line.
+- 2026-10-07 — **safe-recording-names** — every string read from a recording passes `Teasers.safe` on the way in (type + method via `stableName`/`frameKey`, I/O host/address/path, pinned reason). **Allowlist**: printable ASCII minus the backtick, plus letters/digits of any script; everything else → `?`; cut at 240 chars on a code-point boundary. Why: names land in LLM-facing text, and two denylists (characters, then Unicode categories) each missed invisible characters — they hide in mark, symbol and space categories. Stops break-out and smuggling, not persuasion.
 
 - 2026-10-07 — **summary-notes** — `ProfileSummary` gains `notes` (`withNotes`); the harness, test-run and scope-coverage notes render as `> ⚠` lines under the header and as a JSON `notes` array, no longer appended to `cause`. Why: `cause` is also written to the agent's `history=` file every interval, so the notes were polluting the trend data; and three sentences glued onto one line buried the cause. Additive JSON key; the 17-arg constructor stays as a back-compat overload.
 

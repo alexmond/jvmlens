@@ -113,8 +113,10 @@ final class Teasers {
 	 * bidirectional character would hide or reorder what a human sees. Each of those
 	 * becomes {@code ?} (see {@link #printable}), and a name longer than
 	 * {@value #MAX_NAME} characters is cut — on a code-point boundary — with an ellipsis.
-	 * Spaces and non-ASCII letters stay — Kotlin test names and localized identifiers are
-	 * legitimate. Returns the same instance when nothing needs changing.
+	 * ASCII spaces and letters or digits of any script stay — Kotlin test names and
+	 * localized identifiers are legitimate; a non-ASCII symbol or combining mark does
+	 * not. Returns the same instance when nothing needs changing, and null for null (a
+	 * socket event may carry no host).
 	 */
 	static String safe(String raw) {
 		if (raw == null) {
@@ -143,20 +145,20 @@ final class Teasers {
 	}
 
 	/**
-	 * Whether a code point may be printed as it is. Decided by Unicode <em>category</em>,
-	 * not a list of known-bad characters, so every invisible or layout-changing character
-	 * is covered at once: controls, format characters (zero-width, bidirectional, BOM,
-	 * soft hyphen), line and paragraph separators, lone surrogates, private-use and
-	 * unassigned code points. The backtick is the one visible character refused — it
-	 * would close a code span. A lone surrogate {@code char} lands here as SURROGATE.
+	 * Whether a code point may be printed as it is. An <em>allowlist</em>: printable
+	 * ASCII (except the backtick, which would close a code span), plus letters and digits
+	 * of any script. Everything else is refused — controls, format characters, separators
+	 * and non-ASCII spaces, combining marks and variation selectors, symbols, private-use
+	 * and unassigned code points, lone surrogates. A denylist of invisible characters
+	 * keeps missing some (they hide in the mark, symbol and space categories too), so
+	 * nothing is allowed that was not asked for. The four invisible "filler" letters are
+	 * refused by name, since their category is a plain letter.
 	 */
 	private static boolean printable(int cp) {
-		return switch (Character.getType(cp)) {
-			case Character.CONTROL, Character.FORMAT, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR,
-					Character.SURROGATE, Character.PRIVATE_USE, Character.UNASSIGNED ->
-				false;
-			default -> cp != '`';
-		};
+		if (cp < 0x7F) {
+			return cp >= ' ' && cp != '`';
+		}
+		return Character.isLetterOrDigit(cp) && cp != 0x115F && cp != 0x1160 && cp != 0x3164 && cp != 0xFFA0;
 	}
 
 	/** The {@code Type.method} row key for a frame, on a {@link #stableName}. */
