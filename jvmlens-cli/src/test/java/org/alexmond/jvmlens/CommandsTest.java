@@ -81,6 +81,46 @@ class CommandsTest {
 	}
 
 	@Test
+	void analyzeOpsAddsPerOpTotalsBlock() throws Exception {
+		Path before = tinyRecording();
+		Path after = tinyRecording();
+		java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream original = System.out;
+		try {
+			System.setOut(new java.io.PrintStream(captured, true, java.nio.charset.StandardCharsets.UTF_8));
+			int rc = new CommandLine(new AnalyzeCommand()).execute("--baseline", before.toString(), "--ops",
+					"1000,2000", after.toString());
+			assertThat(rc).isZero();
+		}
+		finally {
+			System.setOut(original);
+			Files.deleteIfExists(before);
+			Files.deleteIfExists(after);
+		}
+		assertThat(captured.toString(java.nio.charset.StandardCharsets.UTF_8)).contains("## Totals per operation")
+			.contains("Normalized by `--ops` (before 1000, after 2000)");
+	}
+
+	@Test
+	void opsNeedsBaseline() throws Exception {
+		Path file = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).execute("--ops", "1000,2000", file.toString());
+		Files.deleteIfExists(file);
+		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
+	void opsRejectsMalformedValue() throws Exception {
+		Path before = tinyRecording();
+		Path after = tinyRecording();
+		int rc = new CommandLine(new AnalyzeCommand()).execute("--baseline", before.toString(), "--ops", "nope",
+				after.toString());
+		Files.deleteIfExists(before);
+		Files.deleteIfExists(after);
+		assertThat(rc).isEqualTo(2);
+	}
+
+	@Test
 	void analyzeBaselineReturnsTwoForMissingBaseline() throws Exception {
 		Path file = tinyRecording();
 		int rc = new CommandLine(new AnalyzeCommand()).execute("--baseline", "/no/such/before.jfr", file.toString());

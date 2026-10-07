@@ -107,13 +107,42 @@ class AgentControlTest {
 	}
 
 	@Test
+	void triggerArmsPerDimensionConvertsCpuPctAndResets() {
+		AgentControl c = control();
+		assertThat(c.trigger().active()).isFalse(); // off by default
+		assertThat(c.apply("trigger")).contains("off");
+		c.apply("trigger gc-ms 250");
+		c.apply("trigger cpu-pct 80"); // percentage -> 0.80 share
+		c.apply("trigger old-objects 40");
+		assertThat(c.trigger().active()).isTrue();
+		assertThat(c.trigger().gcMillis()).isEqualTo(250);
+		assertThat(c.trigger().cpuShare()).isEqualTo(0.80);
+		assertThat(c.trigger().oldObjects()).isEqualTo(40);
+		// setting one dimension preserves the others (immutable record rebuilt)
+		c.apply("trigger gc-ms 500");
+		assertThat(c.trigger().gcMillis()).isEqualTo(500);
+		assertThat(c.trigger().cpuShare()).isEqualTo(0.80);
+		assertThat(c.apply("trigger reset")).isEqualTo("trigger reset");
+		assertThat(c.trigger().active()).isFalse();
+	}
+
+	@Test
+	void triggerRejectsBadUsage() {
+		AgentControl c = control();
+		assertThat(c.apply("trigger gc-ms")).startsWith("usage:"); // no value
+		assertThat(c.apply("trigger bogus 5")).startsWith("usage:"); // unknown dimension
+		assertThat(c.apply("trigger gc-ms nope")).startsWith("usage:"); // non-numeric
+		assertThat(c.trigger().active()).isFalse();
+	}
+
+	@Test
 	void statusReflectsStateAndIgnoresBlankAndUnknown() {
 		AgentControl c = control();
 		assertThat(c.apply("")).isEmpty();
 		assertThat(c.apply("# a comment")).isEmpty();
 		assertThat(c.apply("wat")).startsWith("unknown command");
 		String status = c.apply("status");
-		assertThat(status).contains("running=true").contains("settings=profile").contains("topn[");
+		assertThat(status).contains("running=true").contains("settings=profile").contains("trigger[").contains("topn[");
 	}
 
 }

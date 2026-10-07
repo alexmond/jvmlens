@@ -30,6 +30,12 @@ public class AnalyzeCommand implements Callable<Integer> {
 					+ "(gc-ms, gc-pct, alloc-pct, oldobj-delta, regression-pp, new-hotpath-pp). Non-zero exit on regression.")
 	String assertSpec;
 
+	@Option(names = { "--ops" }, paramLabel = "<before,after>",
+			description = "Divide diff totals by an operations count per side (needs --baseline) for per-op figures "
+					+ "comparable across runs of different throughput — e.g. a JMH cross-JDK sweep, where a faster "
+					+ "JVM does more ops per fixed-duration iteration. Two positive integers, e.g. `--ops 4200000,5100000`.")
+	String ops;
+
 	@Option(names = { "--hints" },
 			description = "Append a hedged `[possible]` fix-direction section (off by default — keeps output clean-data-only).")
 	boolean hints;
@@ -80,7 +86,15 @@ public class AnalyzeCommand implements Callable<Integer> {
 					labeled(Recordings.label(baseline, file)), warmupMs()));
 			ProfileSummary after = RankLimits.full(() -> Summarizer.analyze(afterFiles, output.scope(),
 					labeled(Recordings.label(file, baseline)), warmupMs()));
-			String delta = ProfileDiff.diff(before, after);
+			long[] opsPair = null;
+			if (ops != null) {
+				opsPair = parseOps(ops);
+				if (opsPair == null) {
+					return 2; // parseOps reported the error
+				}
+			}
+			String delta = (opsPair != null) ? ProfileDiff.diff(before, after, opsPair[0], opsPair[1])
+					: ProfileDiff.diff(before, after);
 			if (assertSpec != null) {
 				PerfGate.Result gate = PerfGate.evaluate(before, after, assertSpec);
 				System.out.print(delta + "\n" + gate.report());
@@ -91,6 +105,10 @@ public class AnalyzeCommand implements Callable<Integer> {
 		}
 		if (assertSpec != null) {
 			System.err.println("jvmlens: --assert needs --baseline (it gates a before→after diff)");
+			return 2;
+		}
+		if (ops != null) {
+			System.err.println("jvmlens: --ops needs --baseline (it normalizes a before→after diff)");
 			return 2;
 		}
 		if (topK != null && topK > 0) {
@@ -151,6 +169,31 @@ public class AnalyzeCommand implements Callable<Integer> {
 			return (output.format == Summarizer.Format.PROMPT) ? Renderers.promptOf(body) : body;
 		}
 		return Summarizer.render(summary, output.format, output.report);
+	}
+
+	/**
+	 * Parse {@code --ops <before,after>} into {@code [before, after]}, or {@code null}
+	 * (after printing the reason) when malformed or non-positive.
+	 */
+	private static long[] parseOps(String spec) {
+		String[] parts = spec.split(",");
+		if (parts.length != 2) {
+			System.err.println("jvmlens: --ops must be <before,after>, e.g. 4200000,5100000: " + spec);
+			return null;
+		}
+		try {
+			long before = Long.parseLong(parts[0].trim());
+			long after = Long.parseLong(parts[1].trim());
+			if (before <= 0 || after <= 0) {
+				System.err.println("jvmlens: --ops values must be positive: " + spec);
+				return null;
+			}
+			return new long[] { before, after };
+		}
+		catch (NumberFormatException ex) {
+			System.err.println("jvmlens: --ops must be two integers <before,after>: " + spec);
+			return null;
+		}
 	}
 
 	private static List<Path> readable(Path arg) throws java.io.IOException {

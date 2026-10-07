@@ -729,17 +729,16 @@ public final class Summarizer {
 						teasers.put(site.getKey(), prefix + typeBreakdown(byType));
 					}
 				});
-			// #103: flag any site dominated by an escape-analysis-prone type (boxed
-			// primitive /
-			// captured lambda) — C2 may scalar-replace non-escaping instances, so the
-			// sampled
-			// bytes can overstate steady-state allocation. Hedged; verify with `-prof
-			// gc`.
+			// #103/#157: flag a site dominated by an escape-prone type (boxed primitive
+			// / captured lambda). C2 may scalar-replace it, and sampling over-weights
+			// small frequent allocs, so the est-bytes share is an *upper bound* on
+			// removable allocation (verify with -prof gc) — no fabricated %.
 			this.allocBySiteType.forEach((site, byType) -> {
 				String dom = dominantType(byType);
 				if (Teasers.escapeProneType(dom)) {
 					String caveat = "⚠ " + Teasers.simpleType(dom)
-							+ " may be scalar-replaced (escape analysis) — verify " + "steady-state with -prof gc";
+							+ " may be scalar-replaced (escape analysis) — this est-bytes share is an upper bound "
+							+ "on removable allocation; confirm the actual win with -prof gc";
 					teasers.merge(site, caveat, (have, add) -> have + " " + add);
 				}
 			});
