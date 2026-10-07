@@ -350,7 +350,9 @@ java -jar jvmlens.jar bench --main com.example.RenderDriver --cp target/classes:
 Each `main` invocation is one iteration. `-w` / `--warmup` iterations run **before** the
 recording starts (so JIT/classload churn stays out of the steady-state signal); `-i` /
 `--iters` are timed. `--cp` / `--classpath` loads the workload through a separate class
-loader; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
+loader that is **isolated from jvmlens's own dependencies** — the workload sees only the JDK
+plus the entries you pass, so it runs on *its* Spring/Jackson/SLF4J versions, not the ones
+bundled in `jvmlens.jar`. Pass the workload's full classpath; `--jfr <file>` keeps the recording (else a temp file) so it can be a `--baseline` for
 the next run; `--no-analyze` captures without printing. A one-line timing summary (iters,
 ms/iter) goes to stderr; the report to stdout, so it stays pipeable.
 

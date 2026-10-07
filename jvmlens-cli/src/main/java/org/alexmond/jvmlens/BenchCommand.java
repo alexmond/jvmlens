@@ -46,7 +46,8 @@ public class BenchCommand implements Callable<Integer> {
 	String mainClass;
 
 	@Option(names = { "--classpath", "--cp" }, paramLabel = "<cp>",
-			description = "Extra classpath to load the workload from (entries separated by the platform path separator).")
+			description = "Classpath to load the workload from (entries separated by the platform path separator). "
+					+ "Isolated from jvmlens's own dependencies, so it must be the workload's full classpath.")
 	String classpath;
 
 	@Option(names = { "-w", "--warmup" }, paramLabel = "<n>",
@@ -152,9 +153,17 @@ public class BenchCommand implements Callable<Integer> {
 		return 0;
 	}
 
+	/**
+	 * A {@code --cp} workload gets a loader parented on the <em>platform</em> loader, so
+	 * it sees only the JDK plus its own classpath. Parenting it on jvmlens's loader
+	 * resolved every library jvmlens bundles (Spring, Jackson, SLF4J…) parent-first from
+	 * jvmlens's jar — the workload silently ran on the wrong versions (#164).
+	 */
 	private ClassLoader workloadLoader() throws MalformedURLException {
-		ClassLoader context = Thread.currentThread().getContextClassLoader();
-		return (classpath == null || classpath.isBlank()) ? context : new URLClassLoader(toUrls(classpath), context);
+		if (classpath == null || classpath.isBlank()) {
+			return Thread.currentThread().getContextClassLoader();
+		}
+		return new URLClassLoader(toUrls(classpath), ClassLoader.getPlatformClassLoader());
 	}
 
 	private static URL[] toUrls(String cp) throws MalformedURLException {
