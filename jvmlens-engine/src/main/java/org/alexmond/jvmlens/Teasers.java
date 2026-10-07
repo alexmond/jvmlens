@@ -64,6 +64,9 @@ final class Teasers {
 	private static final Pattern REFLECT_ACCESSOR = Pattern
 		.compile("^((?:jdk\\.internal|sun)\\.reflect\\.Generated\\w+?Accessor)\\d+$");
 
+	/** The longest recording-supplied name printed in full. */
+	static final int MAX_NAME = 240;
+
 	/** How many hot paths to name in a per-recording breakdown teaser (#153). */
 	private static final int PER_RECORDING_TEASER_PATHS = 3;
 
@@ -79,7 +82,8 @@ final class Teasers {
 	 * way a reader could use.
 	 */
 	static String stableName(String type) {
-		String name = (type.indexOf("0x") < 0) ? type : HIDDEN_CLASS_ID.matcher(type).replaceAll("");
+		String safe = safe(type);
+		String name = (safe.indexOf("0x") < 0) ? safe : HIDDEN_CLASS_ID.matcher(safe).replaceAll("");
 		return (name.indexOf('$') < 0 && !name.contains(".reflect.Generated")) ? name : stableGenerated(name);
 	}
 
@@ -102,9 +106,64 @@ final class Teasers {
 		return out.contains(".reflect.Generated") ? REFLECT_ACCESSOR.matcher(out).replaceFirst("$1") : out;
 	}
 
+	/**
+	 * A string read from a recording, made safe to print. A recording is untrusted input
+	 * and its names land in text a model reads, usually inside a code span: a backtick
+	 * would close the span, a line break would start a new markdown line, an invisible or
+	 * bidirectional character would hide or reorder what a human sees. Each of those
+	 * becomes {@code ?} (see {@link #printable}), and a name longer than
+	 * {@value #MAX_NAME} characters is cut — on a code-point boundary — with an ellipsis.
+	 * ASCII spaces and letters or digits of any script stay — Kotlin test names and
+	 * localized identifiers are legitimate; a non-ASCII symbol or combining mark does
+	 * not. Returns the same instance when nothing needs changing, and null for null (a
+	 * socket event may carry no host).
+	 */
+	static String safe(String raw) {
+		if (raw == null) {
+			return null;
+		}
+		boolean clean = raw.length() <= MAX_NAME;
+		for (int i = 0; clean && i < raw.length(); i++) {
+			clean = printable(raw.charAt(i));
+		}
+		if (clean) {
+			return raw;
+		}
+		StringBuilder out = new StringBuilder(Math.min(raw.length(), MAX_NAME) + 1);
+		int i = 0;
+		while (i < raw.length() && out.length() < MAX_NAME) {
+			int cp = raw.codePointAt(i);
+			i += Character.charCount(cp);
+			if (printable(cp) && out.length() + Character.charCount(cp) <= MAX_NAME) {
+				out.appendCodePoint(cp);
+			}
+			else {
+				out.append('?');
+			}
+		}
+		return (i < raw.length()) ? out.append('…').toString() : out.toString();
+	}
+
+	/**
+	 * Whether a code point may be printed as it is. An <em>allowlist</em>: printable
+	 * ASCII (except the backtick, which would close a code span), plus letters and digits
+	 * of any script. Everything else is refused — controls, format characters, separators
+	 * and non-ASCII spaces, combining marks and variation selectors, symbols, private-use
+	 * and unassigned code points, lone surrogates. A denylist of invisible characters
+	 * keeps missing some (they hide in the mark, symbol and space categories too), so
+	 * nothing is allowed that was not asked for. The four invisible "filler" letters are
+	 * refused by name, since their category is a plain letter.
+	 */
+	private static boolean printable(int cp) {
+		if (cp < 0x7F) {
+			return cp >= ' ' && cp != '`';
+		}
+		return Character.isLetterOrDigit(cp) && cp != 0x115F && cp != 0x1160 && cp != 0x3164 && cp != 0xFFA0;
+	}
+
 	/** The {@code Type.method} row key for a frame, on a {@link #stableName}. */
 	static String frameKey(RecordedFrame frame) {
-		return stableName(frame.getMethod().getType().getName()) + "." + frame.getMethod().getName();
+		return stableName(frame.getMethod().getType().getName()) + "." + safe(frame.getMethod().getName());
 	}
 
 	/**
