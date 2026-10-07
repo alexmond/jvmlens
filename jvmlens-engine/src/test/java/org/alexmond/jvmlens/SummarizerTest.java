@@ -523,6 +523,30 @@ class SummarizerTest {
 	}
 
 	@Test
+	void notesARecordingTakenFromThisTestJvm() throws Exception {
+		// this JVM *is* a test JVM (Surefire fork, or an IDE runner): with the JVM
+		// information event recorded, the summary says so
+		Recording recording = new Recording();
+		recording.enable("jdk.JVMInformation");
+		recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(10));
+		recording.start();
+		long end = System.nanoTime() + 500_000_000L;
+		while (System.nanoTime() < end) {
+			hotLoop();
+		}
+		recording.stop();
+		Path file = Files.createTempFile("jvmlens-test", ".jfr");
+		recording.dump(file);
+		recording.close();
+		try {
+			assertThat(Summarizer.summarize(file)).contains("Recorded from a test run");
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	@Test
 	void anOrdinaryProfileCarriesNoHarnessNote() throws Exception {
 		Path file = cpuRecording();
 		try {

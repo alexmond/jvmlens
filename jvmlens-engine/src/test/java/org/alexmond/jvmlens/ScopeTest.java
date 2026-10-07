@@ -22,6 +22,30 @@ class ScopeTest {
 	}
 
 	@Test
+	void defaultScopeNeverTreatsTestLibrariesAsApplicationCode() {
+		// a Mockito run used to report `org.mockito.internal…` as the application hot
+		// path
+		Scope s = Scope.defaults();
+		assertThat(s.isApplication("org.mockito.internal.handler.MockHandlerImpl")).isFalse();
+		assertThat(s.isApplication("org.junit.jupiter.engine.execution.InvocationInterceptorChain")).isFalse();
+		assertThat(s.isApplication("net.bytebuddy.implementation.bind.MethodDelegationBinder")).isFalse();
+		assertThat(s.isApplication("org.assertj.core.api.AbstractAssert")).isFalse();
+		assertThat(s.isApplication("org.openjdk.jmh.runner.BenchmarkHandler")).isFalse();
+		assertThat(s.isApplication("org.testcontainers.containers.GenericContainer")).isFalse();
+		// jvmlens's own bench driver is the harness, not the workload
+		assertThat(s.isApplication("org.alexmond.jvmlens.BenchCommand")).isFalse();
+		// …but the rest of that package still is (jvmlens profiles itself in its tests)
+		assertThat(s.isApplication("org.alexmond.jvmlens.testimpl.BenchWorkload")).isTrue();
+	}
+
+	@Test
+	void anExplicitIncludeStillWinsOverTheTestLibraryDefault() {
+		// someone profiling Mockito itself asks for it by name
+		Scope s = Scope.of(List.of("org.mockito."), List.of());
+		assertThat(s.isApplication("org.mockito.internal.handler.MockHandlerImpl")).isTrue();
+	}
+
+	@Test
 	void includeModeKeepsOnlyListedPrefixes() {
 		Scope s = Scope.of(List.of("org.alexmond.jhelm."), List.of());
 		assertThat(s.isApplication("org.alexmond.jhelm.Render")).isTrue();

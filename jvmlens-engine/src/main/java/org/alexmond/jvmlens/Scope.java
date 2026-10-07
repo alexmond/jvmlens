@@ -26,6 +26,17 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 			"org.hibernate.", "jakarta.", "org.thymeleaf.", "org.unbescape.", "org.flywaydb.", "com.zaxxer.",
 			"org.postgresql.", "org.h2.", "groovy.", "org.codehaus.groovy.");
 
+	/**
+	 * Test, mock, assertion and benchmark-harness libraries, plus jvmlens's own bench
+	 * driver — never the user's code. Left out, a Mockito-heavy run reported
+	 * {@code org.mockito.internal…} as the application hot path.
+	 */
+	private static final List<String> TEST_LIBRARIES = List.of("org.junit.", "junit.", "org.testng.",
+			"org.spockframework.", "io.kotest.", "org.mockito.", "org.easymock.", "org.powermock.", "org.jmock.",
+			"io.mockk.", "net.bytebuddy.", "org.objenesis.", "org.assertj.", "org.hamcrest.", "org.opentest4j.",
+			"org.awaitility.", "org.testcontainers.", "org.wiremock.", "com.github.tomakehurst.wiremock.",
+			"org.openjdk.jmh.", "org.alexmond.jvmlens.BenchCommand");
+
 	/** The default scope: skip JDK + common frameworks, with no explicit includes. */
 	public static Scope defaults() {
 		return new Scope(List.of(), List.of());
@@ -58,7 +69,8 @@ public record Scope(List<String> includePackages, List<String> excludePackages) 
 		if (!this.includePackages.isEmpty()) {
 			return startsWithAny(owner, this.includePackages);
 		}
-		return !startsWithAny(owner, RUNTIME) && !startsWithAny(owner, FRAMEWORKS);
+		return !startsWithAny(owner, RUNTIME) && !startsWithAny(owner, FRAMEWORKS)
+				&& !startsWithAny(owner, TEST_LIBRARIES);
 	}
 
 	/**
