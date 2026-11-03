@@ -1,11 +1,21 @@
 package org.alexmond.jvmlens;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.LongSupplier;
 
+import jdk.jfr.Recording;
 import org.junit.jupiter.api.Test;
 
+import org.alexmond.jvmlens.ProfileSummary.Lineage;
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
 import org.alexmond.jvmlens.ProfileSummary.Section;
+import org.alexmond.jvmlens.moveapp.Caller;
+import org.alexmond.jvmlens.moveapp.Scanner;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -300,6 +310,148 @@ class ProfileDiffTest {
 		assertThat(line(d, "a.Attributes.write")).contains("50 → 400").doesNotContain("NEW");
 		// a tail row on both sides is not a diff candidate — only each side's top-N is
 		assertThat(d).doesNotContain("a.Tail.noise");
+	}
+
+	private static final String CHM_GET = "java.util.concurrent.ConcurrentHashMap.get:958";
+
+	private static final String INVOKE = "ognl.OgnlRuntime.invokeMethod";
+
+	private static final String EXTRACTED = "ognl.OgnlCache.getMethodNeedsAccess";
+
+	private static Ranked path(String name, long count, long total, Map<String, Long> callers,
+			Map<String, Long> leaves) {
+		return new Ranked(name, (double) count / total, count, null, new Lineage(callers, leaves));
+	}
+
+	/** The #190 baseline: invokeMethod does its ConcurrentHashMap lookup inline. */
+	private static ProfileSummary ognlBefore() {
+		return withSamples(800, List.of(path(INVOKE, 235, 800, Map.of("ognl.Ognl.getValue", 235L),
+				Map.of(CHM_GET, 135L, INVOKE + ":120", 100L))));
+	}
+
+	@Test
+	void anExtractedCalleeWithItsCallersLeafReadsAsAMoveNotNewWork() {
+		// #190: the PR moved invokeMethod's lookup into a new getMethodNeedsAccess. The
+		// new frame is called from invokeMethod and carries the leaf invokeMethod lost.
+		ProfileSummary after = withSamples(790,
+				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L), Map.of(CHM_GET, 140L, EXTRACTED + ":40", 87L)),
+						path(INVOKE, 10, 790, Map.of("ognl.Ognl.getValue", 10L), Map.of(INVOKE + ":120", 10L))));
+		String d = ProfileDiff.diff(ognlBefore(), after);
+
+		// still anchored on absolute weight: the NEW row and its count stay
+		assertThat(line(d, "- `" + EXTRACTED + "` —")).contains("NEW 227 (29% share)")
+			.contains("moved from `" + INVOKE + "`")
+			.contains("same leaf `" + CHM_GET + "`")
+			.doesNotContain("possibly");
+		// the caller's drop is the other half of the move, not a win
+		assertThat(line(d, "- `" + INVOKE + "` —")).contains("▼").contains("moved into `" + EXTRACTED + "`");
+	}
+
+	@Test
+	void aNewPathWithTheSameJdkLeafButNoCallLinkIsNotAMove() {
+		// look-alike: a genuinely new path whose leaf is the same common JDK leaf, while
+		// an unrelated method lost exactly that leaf. Nothing links them — not a move.
+		ProfileSummary after = withSamples(790,
+				List.of(path("com.acme.NewFeature.scan", 227, 790, Map.of("com.acme.Main.run", 227L),
+						Map.of(CHM_GET, 140L, "com.acme.NewFeature.scan:9", 87L)),
+						path(INVOKE, 100, 790, Map.of("ognl.Ognl.getValue", 100L), Map.of(INVOKE + ":120", 100L))));
+		String d = ProfileDiff.diff(ognlBefore(), after);
+
+		assertThat(line(d, "com.acme.NewFeature.scan")).contains("NEW 227").doesNotContain("moved");
+		assertThat(line(d, "- `" + INVOKE + "` —")).doesNotContain("moved");
+	}
+
+	@Test
+	void aNewCalleeDoingDifferentWorkIsNotAMove() {
+		// look-alike: invokeMethod calls the new frame, but its leaves are new work —
+		// invokeMethod's lost lookup samples are not what the callee spends time in
+		ProfileSummary after = withSamples(790,
+				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L),
+						Map.of("java.lang.StringLatin1.hashCode:200", 227L)),
+						path(INVOKE, 100, 790, Map.of("ognl.Ognl.getValue", 100L), Map.of(INVOKE + ":120", 100L))));
+		String d = ProfileDiff.diff(ognlBefore(), after);
+
+		assertThat(line(d, "- `" + EXTRACTED + "` —")).contains("NEW 227").doesNotContain("moved");
+	}
+
+	@Test
+	void hedgesAMoveThatOnlyPartlyExplainsTheNewPath() {
+		// called from invokeMethod and shares its leaf, but the leaf samples invokeMethod
+		// lost cover only a third of the new path: hedge, don't assert a move
+		ProfileSummary after = withSamples(790,
+				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L),
+						Map.of(CHM_GET, 75L, "java.lang.Math.log:1", 152L)),
+						path(INVOKE, 160, 790, Map.of("ognl.Ognl.getValue", 160L),
+								Map.of(CHM_GET, 60L, INVOKE + ":120", 100L))));
+		String d = ProfileDiff.diff(ognlBefore(), after);
+
+		assertThat(line(d, "- `" + EXTRACTED + "` —")).contains("NEW 227")
+			.contains("possibly moved from `" + INVOKE + "`");
+	}
+
+	@Test
+	void rowsWithoutLineageDiffExactlyAsBefore() {
+		ProfileSummary before = withSamples(800, List.of(new Ranked(INVOKE, 0.29, 235, null)));
+		ProfileSummary after = withSamples(790,
+				List.of(new Ranked(EXTRACTED, 0.29, 227, null), new Ranked(INVOKE, 0.01, 10, null)));
+		assertThat(ProfileDiff.diff(before, after)).doesNotContain("moved");
+	}
+
+	@Test
+	void aRealExtractMethodRefactorReadsAsAMove() throws Exception {
+		// #190 end to end: the same Caller.invoke, recorded with its map lookups inline
+		// and then extracted into Caller.find
+		Map<Integer, Integer> map = bigMap();
+		ProfileSummary before = analyzeMoveApp(() -> Caller.invoke(map, 50_000, Caller.INLINE));
+		ProfileSummary after = analyzeMoveApp(() -> Caller.invoke(map, 50_000, Caller.EXTRACTED));
+		String d = ProfileDiff.diff(before, after);
+
+		assertThat(line(d, "- `org.alexmond.jvmlens.moveapp.Caller.find` —")).contains("NEW")
+			.contains("moved from `org.alexmond.jvmlens.moveapp.Caller.invoke`");
+	}
+
+	@Test
+	void realNewCodeWithTheSameLeafIsNotAMove() throws Exception {
+		// look-alike end to end: Caller.invoke stops doing lookups, and an unrelated
+		// Scanner.scan starts doing the same ones — same JDK leaves, no call link
+		Map<Integer, Integer> map = bigMap();
+		ProfileSummary before = analyzeMoveApp(() -> Caller.invoke(map, 50_000, Caller.INLINE));
+		ProfileSummary after = analyzeMoveApp(
+				() -> Caller.invoke(map, 50_000, Caller.NONE) + Scanner.scan(map, 50_000));
+		String d = ProfileDiff.diff(before, after);
+
+		assertThat(line(d, "- `org.alexmond.jvmlens.moveapp.Scanner.scan` —")).contains("NEW").doesNotContain("moved");
+	}
+
+	private static Map<Integer, Integer> bigMap() {
+		Map<Integer, Integer> map = new HashMap<>();
+		for (int i = 0; i < 1 << 20; i++) {
+			map.put(i, i);
+		}
+		return map;
+	}
+
+	private static ProfileSummary analyzeMoveApp(LongSupplier work) throws Exception {
+		Recording recording = new Recording();
+		recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(10));
+		recording.start();
+		long end = System.nanoTime() + 1_500_000_000L;
+		long sink = 0;
+		while (System.nanoTime() < end) {
+			sink += work.getAsLong();
+		}
+		recording.stop();
+		Path file = Files.createTempFile("jvmlens-move", ".jfr");
+		try {
+			recording.dump(file);
+			recording.close();
+			assertThat(sink).isNotEqualTo(Long.MIN_VALUE);
+			Scope scope = Scope.of(List.of("org.alexmond.jvmlens.moveapp"), List.of());
+			return RankLimits.full(() -> Summarizer.analyze(List.of(file), scope, "x", 0L));
+		}
+		finally {
+			Files.deleteIfExists(file);
+		}
 	}
 
 }

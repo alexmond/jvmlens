@@ -2,6 +2,7 @@ package org.alexmond.jvmlens;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Render-agnostic result of summarizing a JFR recording. The {@link Summarizer} produces
@@ -139,8 +140,48 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 	 * @param count absolute weight behind the share (samples / bytes / nanos) — the hit
 	 * rate that says whether the share is trustworthy or just one stray hit
 	 * @param stack optional call-stack teaser ({@code null} when not applicable)
+	 * @param lineage optional structured call context of a hot-path row ({@code null}
+	 * when not tracked) — read by {@link ProfileDiff} to tell a moved hot path from a new
+	 * one; not rendered
 	 */
-	public record Ranked(String name, double share, long count, String stack) {
+	public record Ranked(String name, double share, long count, String stack, Lineage lineage) {
+
+		/**
+		 * A row without {@code lineage} — every row except an engine-built hot path.
+		 * @param name the method or type name
+		 * @param share fraction (0..1) of the relevant total
+		 * @param count absolute weight behind the share
+		 * @param stack optional call-stack teaser
+		 */
+		public Ranked(String name, double share, long count, String stack) {
+			this(name, share, count, stack, null);
+		}
+
+	}
+
+	/**
+	 * Where a hot path's samples came from and where they went: the evidence a diff needs
+	 * to recognise an extract-method refactor (work moved from caller {@code A} into a
+	 * new callee {@code B}, same leaves) instead of reporting {@code B} as new work
+	 * (#190).
+	 *
+	 * @param callers the nearest application frame <em>calling</em> this one → samples
+	 * (once per sample; samples with no application caller are not counted)
+	 * @param leaves leaf frame ({@code Type.method:line}, the line being the leaf's
+	 * dominant one) → samples
+	 */
+	public record Lineage(Map<String, Long> callers, Map<String, Long> leaves) {
+
+		/**
+		 * Defensive copies, so a summary stays immutable.
+		 * @param callers caller → samples
+		 * @param leaves leaf → samples
+		 */
+		public Lineage {
+			callers = Map.copyOf(callers);
+			leaves = Map.copyOf(leaves);
+		}
+
 	}
 
 	/**
