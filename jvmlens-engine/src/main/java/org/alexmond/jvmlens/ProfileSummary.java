@@ -162,24 +162,26 @@ public record ProfileSummary(String source, long execSamples, int allocTypes, lo
 	/**
 	 * Where a hot path's samples came from and where they went: the evidence a diff needs
 	 * to recognise an extract-method refactor (work moved from caller {@code A} into a
-	 * new callee {@code B}, same leaves) instead of reporting {@code B} as new work
-	 * (#190).
+	 * new callee {@code B}, calling the same frames) instead of reporting {@code B} as
+	 * new work (#190).
 	 *
 	 * @param callers the nearest application frame <em>calling</em> this one → samples
 	 * (once per sample; samples with no application caller are not counted)
-	 * @param leaves leaf frame ({@code Type.method:line}, the line being the leaf's
-	 * dominant one) → samples
+	 * @param callees every frame this one calls into ({@code Type.method}, no line) →
+	 * samples, <em>inclusive</em> (each frame between the leaf and this one, once per
+	 * sample); samples where this frame is itself the leaf (its self time) are counted
+	 * under its own name
 	 */
-	public record Lineage(Map<String, Long> callers, Map<String, Long> leaves) {
+	public record Lineage(Map<String, Long> callers, Map<String, Long> callees) {
 
 		/**
 		 * Defensive copies, so a summary stays immutable.
 		 * @param callers caller → samples
-		 * @param leaves leaf → samples
+		 * @param callees callee (or own name, for self time) → samples
 		 */
 		public Lineage {
 			callers = Map.copyOf(callers);
-			leaves = Map.copyOf(leaves);
+			callees = Map.copyOf(callees);
 		}
 
 	}

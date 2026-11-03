@@ -17,16 +17,17 @@ import org.alexmond.jvmlens.ProfileSummary.Ranked;
  * A {@code NEW} hot path {@code B} is a move from {@code A} only when both hold:
  * <ul>
  * <li><strong>Call link</strong> — {@code A} is {@code B}'s nearest application caller in
- * at least {@value #LINKED} of {@code B}'s samples (a shared leaf alone links nothing:
- * {@code HashMap.get} is everyone's leaf).</li>
- * <li><strong>Same leaves</strong> — the leaf samples {@code A} lost cover {@code B}'s
- * leaf samples: per leaf, the smaller of {@code A}'s drop and {@code B}'s count.</li>
+ * at least {@value #LINKED} of {@code B}'s samples (a shared callee alone links nothing:
+ * {@code HashMap.get} is everyone's callee).</li>
+ * <li><strong>Same callee</strong> — one frame {@code B} calls into accounts for samples
+ * {@code A} lost under that same frame: the smaller of {@code A}'s drop and {@code B}'s
+ * count, both inclusive. Inclusive, not by leaf: the sampled leaf of an inlined chain
+ * changes with each JIT compile (#190 on JDK 21), the outer callee does not.</li>
  * </ul>
- * When the same-leaf overlap is at least {@value #MOVED} of {@code B} it is called a
- * move; at least {@value #POSSIBLY} (counting {@code B}'s own self time against
- * {@code A}'s lost self time, the extract-pure-computation case) it is hedged as
- * "possibly moved". Below that, nothing is said. Annotation only — the row and its rank
- * stay.
+ * When that overlap is at least {@value #MOVED} of {@code B} it is called a move; at
+ * least {@value #POSSIBLY} (counting {@code B}'s own self time against {@code A}'s lost
+ * self time, the extract-pure-computation case) it is hedged as "possibly moved". Below
+ * that, nothing is said. Annotation only — the row and its rank stay.
  */
 final class HotPathMoves {
 
@@ -35,7 +36,7 @@ final class HotPathMoves {
 	 */
 	static final double LINKED = 0.5;
 
-	/** Same-leaf overlap (share of {@code B}) for a confident "moved". */
+	/** Same-callee overlap (share of {@code B}) for a confident "moved". */
 	static final double MOVED = 0.5;
 
 	/** Any overlap (share of {@code B}) for a hedged "possibly moved". */
@@ -91,60 +92,48 @@ final class HotPathMoves {
 		if (now != null && now.count() >= was.count()) {
 			return null; // the caller did not shrink — nothing left it
 		}
-		Map<String, Long> lostByLeaf = lostByLeaf(was, now, from, target.name());
-		long same = 0;
-		long self = 0;
-		String leaf = null;
-		long leafOverlap = 0;
-		for (Map.Entry<String, Long> e : target.lineage().leaves().entrySet()) {
-			String key = leafKey(e.getKey());
-			long overlap = Math.min(e.getValue(), lostByLeaf.getOrDefault(key, 0L));
-			if (key.equals(target.name())) {
-				self += overlap;
+		Map<String, Long> lost = lost(was, now, from, target.name());
+		long self = Math.min(target.lineage().callees().getOrDefault(target.name(), 0L),
+				lost.getOrDefault(target.name(), 0L));
+		String callee = null;
+		long best = 0;
+		for (Map.Entry<String, Long> e : target.lineage().callees().entrySet()) {
+			if (e.getKey().equals(target.name())) {
+				continue;
 			}
-			else {
-				same += overlap;
-				if (overlap > leafOverlap) {
-					leafOverlap = overlap;
-					leaf = e.getKey();
-				}
+			long overlap = Math.min(e.getValue(), lost.getOrDefault(e.getKey(), 0L));
+			// inclusive counts nest (HashMap.get ⊇ getNode), so take the best one frame —
+			// summing would count a sample once per frame; ties go to the name, for a
+			// stable note
+			if (overlap > best || (overlap == best && overlap > 0 && e.getKey().compareTo(callee) < 0)) {
+				best = overlap;
+				callee = e.getKey();
 			}
 		}
-		boolean confident = same >= MOVED * target.count();
-		if (!confident && same + self < POSSIBLY * target.count()) {
+		boolean confident = best >= MOVED * target.count();
+		if (!confident && best + self < POSSIBLY * target.count()) {
 			return null;
 		}
-		long leafLost = (leaf != null) ? lostByLeaf.get(leafKey(leaf)) : 0;
-		return new Move(from, target.name(), leaf, leafLost, same + self, confident);
+		long calleeLost = (callee != null) ? lost.get(callee) : 0;
+		return new Move(from, target.name(), callee, calleeLost, best + self, confident);
 	}
 
 	/**
-	 * Samples the caller lost per leaf (without line). The caller's own self time is
+	 * Samples the caller lost per callee frame (inclusive). The caller's own self time is
 	 * keyed under the new path's name, so an extracted pure computation — {@code A}'s
 	 * self time becoming {@code B}'s — compares like with like.
 	 */
-	private static Map<String, Long> lostByLeaf(Ranked was, Ranked now, String from, String to) {
-		Map<String, Long> lost = new LinkedHashMap<>();
-		was.lineage().leaves().forEach((leaf, n) -> lost.merge(leafKey(leaf), n, Long::sum));
+	private static Map<String, Long> lost(Ranked was, Ranked now, String from, String to) {
+		Map<String, Long> lost = new LinkedHashMap<>(was.lineage().callees());
 		if (now != null && now.lineage() != null) {
-			now.lineage().leaves().forEach((leaf, n) -> lost.merge(leafKey(leaf), -n, Long::sum));
+			now.lineage().callees().forEach((frame, n) -> lost.merge(frame, -n, Long::sum));
 		}
 		Long selfLost = lost.remove(from);
 		if (selfLost != null) {
 			lost.merge(to, selfLost, Long::sum);
 		}
-		lost.replaceAll((leaf, n) -> Math.max(0, n));
+		lost.replaceAll((frame, n) -> Math.max(0, n));
 		return lost;
-	}
-
-	/** A leaf label without its {@code :line} suffix. */
-	static String leafKey(String label) {
-		int colon = label.lastIndexOf(':');
-		if (colon > 0 && colon < label.length() - 1
-				&& label.substring(colon + 1).chars().allMatch(Character::isDigit)) {
-			return label.substring(0, colon);
-		}
-		return label;
 	}
 
 	private static String dominant(Map<String, Long> counts) {
@@ -162,22 +151,22 @@ final class HotPathMoves {
 	 *
 	 * @param from the caller the work left
 	 * @param to the new path it landed in
-	 * @param leaf the leaf carrying most of the overlap ({@code null} if only self time
+	 * @param callee the callee frame carrying the overlap ({@code null} if only self time
 	 * matched)
-	 * @param leafLost how many samples of {@code leaf} the caller lost
+	 * @param calleeLost how many samples under {@code callee} the caller lost
 	 * @param overlap {@code B}'s samples explained by what the caller lost
-	 * @param confident a same-leaf move, not just a plausible one
+	 * @param confident a same-callee move, not just a plausible one
 	 */
-	record Move(String from, String to, String leaf, long leafLost, long overlap, boolean confident) {
+	record Move(String from, String to, String callee, long calleeLost, long overlap, boolean confident) {
 
 		/** The note for the new path's row. */
 		String toNote() {
 			if (this.confident) {
-				return "  (moved from `" + this.from + "`: same leaf `" + this.leaf + "`, −" + this.leafLost
+				return "  (moved from `" + this.from + "`: same callee `" + this.callee + "`, −" + this.calleeLost
 						+ " under the caller — frames shifted, not new work)";
 			}
 			return "  (possibly moved from `" + this.from + "` — it calls this and lost " + this.overlap
-					+ " matching leaf samples; could still be new work)";
+					+ " matching samples; could still be new work)";
 		}
 
 		/** The note for the caller's row. */

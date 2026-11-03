@@ -312,7 +312,7 @@ class ProfileDiffTest {
 		assertThat(d).doesNotContain("a.Tail.noise");
 	}
 
-	private static final String CHM_GET = "java.util.concurrent.ConcurrentHashMap.get:958";
+	private static final String CHM_GET = "java.util.concurrent.ConcurrentHashMap.get";
 
 	private static final String INVOKE = "ognl.OgnlRuntime.invokeMethod";
 
@@ -325,8 +325,8 @@ class ProfileDiffTest {
 
 	/** The #190 baseline: invokeMethod does its ConcurrentHashMap lookup inline. */
 	private static ProfileSummary ognlBefore() {
-		return withSamples(800, List.of(path(INVOKE, 235, 800, Map.of("ognl.Ognl.getValue", 235L),
-				Map.of(CHM_GET, 135L, INVOKE + ":120", 100L))));
+		return withSamples(800, List
+			.of(path(INVOKE, 235, 800, Map.of("ognl.Ognl.getValue", 235L), Map.of(CHM_GET, 135L, INVOKE, 100L))));
 	}
 
 	@Test
@@ -334,17 +334,38 @@ class ProfileDiffTest {
 		// #190: the PR moved invokeMethod's lookup into a new getMethodNeedsAccess. The
 		// new frame is called from invokeMethod and carries the leaf invokeMethod lost.
 		ProfileSummary after = withSamples(790,
-				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L), Map.of(CHM_GET, 140L, EXTRACTED + ":40", 87L)),
-						path(INVOKE, 10, 790, Map.of("ognl.Ognl.getValue", 10L), Map.of(INVOKE + ":120", 10L))));
+				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L), Map.of(CHM_GET, 140L, EXTRACTED, 87L)),
+						path(INVOKE, 10, 790, Map.of("ognl.Ognl.getValue", 10L), Map.of(INVOKE, 10L))));
 		String d = ProfileDiff.diff(ognlBefore(), after);
 
 		// still anchored on absolute weight: the NEW row and its count stay
 		assertThat(line(d, "- `" + EXTRACTED + "` —")).contains("NEW 227 (29% share)")
 			.contains("moved from `" + INVOKE + "`")
-			.contains("same leaf `" + CHM_GET + "`")
+			.contains("same callee `" + CHM_GET + "`")
 			.doesNotContain("possibly");
 		// the caller's drop is the other half of the move, not a win
 		assertThat(line(d, "- `" + INVOKE + "` —")).contains("▼").contains("moved into `" + EXTRACTED + "`");
+	}
+
+	@Test
+	void aMoveIsMatchedOnTheCalleeNotOnTheJitChosenLeaf() {
+		// #190 on JDK 21: the same inlined HashMap.get lookup was sampled with leaf
+		// Integer.equals before and HashMap.getNode after (a different compile). The
+		// leaves barely overlap; the callee both sides go through does.
+		ProfileSummary before = withSamples(140,
+				List.of(path("a.Caller.invoke", 130, 140, Map.of(), Map.of("java.util.HashMap.get", 126L,
+						"java.util.HashMap.getNode", 126L, "java.lang.Integer.equals", 122L, "a.Caller.invoke", 3L))));
+		ProfileSummary after = withSamples(140, List.of(
+				path("a.Caller.find", 117, 140, Map.of("a.Caller.invoke", 117L),
+						Map.of("java.util.HashMap.get", 116L, "java.util.HashMap.getNode", 116L,
+								"java.lang.Integer.equals", 3L, "a.Caller.find", 1L)),
+				path("a.Caller.invoke", 15, 140, Map.of(), Map.of("java.util.HashMap.get", 15L,
+						"java.util.HashMap.getNode", 15L, "a.Caller.invoke", 0L))));
+		String d = ProfileDiff.diff(before, after);
+
+		assertThat(line(d, "- `a.Caller.find` —")).contains("moved from `a.Caller.invoke`")
+			.contains("same callee `java.util.HashMap.get`")
+			.doesNotContain("possibly");
 	}
 
 	@Test
@@ -353,8 +374,8 @@ class ProfileDiffTest {
 		// an unrelated method lost exactly that leaf. Nothing links them — not a move.
 		ProfileSummary after = withSamples(790,
 				List.of(path("com.acme.NewFeature.scan", 227, 790, Map.of("com.acme.Main.run", 227L),
-						Map.of(CHM_GET, 140L, "com.acme.NewFeature.scan:9", 87L)),
-						path(INVOKE, 100, 790, Map.of("ognl.Ognl.getValue", 100L), Map.of(INVOKE + ":120", 100L))));
+						Map.of(CHM_GET, 140L, "com.acme.NewFeature.scan", 87L)),
+						path(INVOKE, 100, 790, Map.of("ognl.Ognl.getValue", 100L), Map.of(INVOKE, 100L))));
 		String d = ProfileDiff.diff(ognlBefore(), after);
 
 		assertThat(line(d, "com.acme.NewFeature.scan")).contains("NEW 227").doesNotContain("moved");
@@ -367,8 +388,8 @@ class ProfileDiffTest {
 		// invokeMethod's lost lookup samples are not what the callee spends time in
 		ProfileSummary after = withSamples(790,
 				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L),
-						Map.of("java.lang.StringLatin1.hashCode:200", 227L)),
-						path(INVOKE, 100, 790, Map.of("ognl.Ognl.getValue", 100L), Map.of(INVOKE + ":120", 100L))));
+						Map.of("java.lang.StringLatin1.hashCode", 227L)),
+						path(INVOKE, 100, 790, Map.of("ognl.Ognl.getValue", 100L), Map.of(INVOKE, 100L))));
 		String d = ProfileDiff.diff(ognlBefore(), after);
 
 		assertThat(line(d, "- `" + EXTRACTED + "` —")).contains("NEW 227").doesNotContain("moved");
@@ -378,11 +399,9 @@ class ProfileDiffTest {
 	void hedgesAMoveThatOnlyPartlyExplainsTheNewPath() {
 		// called from invokeMethod and shares its leaf, but the leaf samples invokeMethod
 		// lost cover only a third of the new path: hedge, don't assert a move
-		ProfileSummary after = withSamples(790,
-				List.of(path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L),
-						Map.of(CHM_GET, 75L, "java.lang.Math.log:1", 152L)),
-						path(INVOKE, 160, 790, Map.of("ognl.Ognl.getValue", 160L),
-								Map.of(CHM_GET, 60L, INVOKE + ":120", 100L))));
+		ProfileSummary after = withSamples(790, List.of(
+				path(EXTRACTED, 227, 790, Map.of(INVOKE, 227L), Map.of(CHM_GET, 75L, "java.lang.Math.log", 152L)),
+				path(INVOKE, 160, 790, Map.of("ognl.Ognl.getValue", 160L), Map.of(CHM_GET, 60L, INVOKE, 100L))));
 		String d = ProfileDiff.diff(ognlBefore(), after);
 
 		assertThat(line(d, "- `" + EXTRACTED + "` —")).contains("NEW 227")

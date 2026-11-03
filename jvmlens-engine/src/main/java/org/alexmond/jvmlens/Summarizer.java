@@ -591,8 +591,7 @@ public final class Summarizer {
 		private ProfileSummary toSummary(String source) {
 			return new ProfileSummary(source, this.execSamples, this.allocByType.size(), this.oldObjects, this.gcPauses,
 					this.gcPauseNanos / 1_000_000,
-					this.lineage.attach(ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu"), this.leafByApp,
-							this::withLines),
+					this.lineage.attach(ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu")),
 					ranked(this.cpuByLeaf, this.execSamples, leafLineTeasers(), "cpu"),
 					ranked(this.allocBySite, this.allocBytes, allocTypeTeasers(), "memory"),
 					ranked(Teasers.foldExcludedTypes(this.allocByType, this.scope.excludePackages()), this.allocBytes,
