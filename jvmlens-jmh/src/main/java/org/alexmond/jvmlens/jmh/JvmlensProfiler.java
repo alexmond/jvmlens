@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -19,6 +20,7 @@ import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.profile.ExternalProfiler;
 import org.openjdk.jmh.profile.ProfilerException;
 import org.openjdk.jmh.results.BenchmarkResult;
+import org.openjdk.jmh.results.IterationResult;
 import org.openjdk.jmh.results.Result;
 
 import org.alexmond.jvmlens.ProfileDiff;
@@ -102,6 +104,20 @@ public class JvmlensProfiler implements ExternalProfiler {
 	 * (#100).
 	 */
 	private boolean socketIo;
+
+	/** The benchmark whose forks are being counted (JMH passes the same params). */
+	private BenchmarkParams trialParams;
+
+	/**
+	 * {@code afterTrial} calls so far for {@link #trialParams}, warmup forks included.
+	 */
+	private int forkCalls;
+
+	/** Iterations of the measured forks so far — merged for the one final verdict. */
+	private final List<IterationResult> measuredIterations = new ArrayList<>();
+
+	/** How many measured forks the current summary merges (#191). */
+	private int measuredForks = 1;
 
 	/** No-arg form: {@code -prof org.alexmond.jvmlens.jmh.JvmlensProfiler}. */
 	public JvmlensProfiler() throws IOException {
@@ -212,9 +228,59 @@ public class JvmlensProfiler implements ExternalProfiler {
 		// nothing to do before the fork starts — JFR is armed via addJVMOptions
 	}
 
+	/**
+	 * JMH calls this once per fork, warmup forks first, on a profiler instance created
+	 * for this one benchmark ({@code Runner.runSeparate}); it keeps only the measured
+	 * forks. So a warmup fork is skipped with a label, measured forks accumulate, and the
+	 * one summary / diff / measured verdict comes after the last measured fork, over all
+	 * of them with the real fork count (#191).
+	 */
 	@Override
 	public Collection<? extends Result> afterTrial(BenchmarkResult result, long pid, File stdOut, File stdErr) {
+		BenchmarkParams params = result.getParams();
+		if (!params.equals(this.trialParams)) {
+			this.trialParams = params;
+			this.forkCalls = 0;
+			this.measuredIterations.clear();
+		}
+		int index = this.forkCalls;
+		this.forkCalls = index + 1;
+		int warmupForks = params.getWarmupForks();
+		if (index < warmupForks) {
+			System.out.printf(Locale.ROOT,
+					"%njvmlens: warmup fork %d/%d — not profiled, not counted (JMH discards it)%n", index + 1,
+					warmupForks);
+			deleteRecording();
+			return Collections.<Result>emptyList();
+		}
+		int fork = index - warmupForks + 1;
+		this.measuredIterations.addAll(result.getIterationResults());
+		if (fork < params.getForks()) {
+			System.out.printf(Locale.ROOT,
+					"%njvmlens: fork %d/%d measured — one summary and verdict after fork %d/%d, over all measured "
+							+ "forks%n",
+					fork, params.getForks(), params.getForks(), params.getForks());
+			deleteRecording();
+			return Collections.<Result>emptyList();
+		}
+		summarize(new BenchmarkResult(params, new ArrayList<>(this.measuredIterations)), fork);
+		return Collections.<Result>emptyList();
+	}
+
+	/**
+	 * The one summary for this benchmark: {@code result} is every measured fork's
+	 * iterations merged (as JMH's own final figure is), {@code forks} how many there
+	 * were. The sampled sections come from the last fork's recording.
+	 */
+	private void summarize(BenchmarkResult result, int forks) {
 		Result<?> norm = result.getSecondaryResults().get("gc.alloc.rate.norm");
+		this.measuredForks = forks;
+		if (forks > 1) {
+			System.out.printf(Locale.ROOT,
+					"%n> jvmlens over %d measured forks: measured figures merge all %d; sampled sections are fork "
+							+ "%d/%d's recording.%n",
+					forks, forks, forks, forks);
+		}
 		try {
 			Scope scope = Scope.of(this.appPackages, List.of());
 			if (this.baseline != null) {
@@ -236,7 +302,15 @@ public class JvmlensProfiler implements ExternalProfiler {
 		finally {
 			retainRecording(result, norm);
 		}
-		return Collections.<Result>emptyList();
+	}
+
+	private void deleteRecording() {
+		try {
+			Files.deleteIfExists(this.jfr);
+		}
+		catch (IOException ignored) {
+			// best-effort cleanup; the next fork's JFR dump overwrites it anyway
+		}
 	}
 
 	/**
@@ -276,7 +350,7 @@ public class JvmlensProfiler implements ExternalProfiler {
 		if (primary == null || base.tput == null) {
 			return "";
 		}
-		int forks = Math.min(result.getParams().getForks(), base.forks);
+		int forks = Math.min(this.measuredForks, base.forks);
 		return throughputVerdict(base.tput, base.tputErr, primary.getScore(), errOrZero(primary), forks, base.tputUnit,
 				topHotPathShift(before, after)) + "\n";
 	}
@@ -293,7 +367,7 @@ public class JvmlensProfiler implements ExternalProfiler {
 			return "> Measured allocation A/B unavailable — re-run the baseline with `-prof gc` so the next "
 					+ "diff can gate on exact bytes/op (#104).\n\n";
 		}
-		int forks = Math.min(result.getParams().getForks(), base.forks);
+		int forks = Math.min(this.measuredForks, base.forks);
 		return allocVerdict(base.bop, base.bopErr, norm.getScore(), errOrZero(norm), forks, sampledPct) + "\n";
 	}
 
@@ -463,7 +537,10 @@ public class JvmlensProfiler implements ExternalProfiler {
 	/**
 	 * Read a kept recording's {@code <jfr>.bop} sidecar (space-separated
 	 * {@code key=value} pairs, written by {@link #sidecar}), or {@code null} if
-	 * missing/unreadable.
+	 * missing/unreadable. The fork count is {@code mforks} (measured forks merged into
+	 * the figures); a pre-#191 sidecar only has {@code forks}, the <em>configured</em>
+	 * count, but was rewritten by every fork — its figures are one fork's, so it counts
+	 * as n=1.
 	 */
 	static Measured readMeasured(Path jfr) {
 		try {
@@ -474,7 +551,7 @@ public class JvmlensProfiler implements ExternalProfiler {
 					kv.put(tok.substring(0, eq), tok.substring(eq + 1));
 				}
 			}
-			return new Measured(kv.get("benchmark"), (int) num(kv.get("forks"), 1), boxed(kv.get("bop")),
+			return new Measured(kv.get("benchmark"), (int) num(kv.get("mforks"), 1), boxed(kv.get("bop")),
 					num(kv.get("boperr"), 0), boxed(kv.get("tput")), num(kv.get("tputerr"), 0), kv.get("tputunit"));
 		}
 		catch (IOException | RuntimeException ignored) {
@@ -546,7 +623,7 @@ public class JvmlensProfiler implements ExternalProfiler {
 			if (this.keep != null) {
 				Files.move(this.jfr, this.keep, StandardCopyOption.REPLACE_EXISTING);
 				System.out.println("jvmlens: recording kept at " + this.keep);
-				Files.writeString(Path.of(this.keep + ".bop"), sidecar(result, norm));
+				Files.writeString(Path.of(this.keep + ".bop"), sidecar(result, norm, this.measuredForks));
 			}
 			else {
 				Files.deleteIfExists(this.jfr);
@@ -561,13 +638,13 @@ public class JvmlensProfiler implements ExternalProfiler {
 	 * The {@code key=value} sidecar line for {@link #retainRecording} /
 	 * {@link #readMeasured}.
 	 */
-	private static String sidecar(BenchmarkResult result, Result<?> norm) {
+	private static String sidecar(BenchmarkResult result, Result<?> norm, int forks) {
 		StringBuilder b = new StringBuilder();
 		String bench = result.getParams().getBenchmark();
 		if (bench != null) {
 			b.append("benchmark=").append(bench).append(' ');
 		}
-		b.append("forks=").append(result.getParams().getForks());
+		b.append("mforks=").append(forks);
 		Result<?> primary = result.getPrimaryResult();
 		if (primary != null) {
 			b.append(" tput=").append(primary.getScore()).append(" tputerr=").append(errOrZero(primary));

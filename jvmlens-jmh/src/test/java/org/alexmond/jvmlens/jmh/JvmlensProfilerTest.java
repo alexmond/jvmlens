@@ -6,6 +6,7 @@ import java.util.Collection;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.profile.ProfilerException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,7 +160,7 @@ class JvmlensProfilerTest {
 		// match by name instead of comparing every method against one stale baseline.
 		Path jfr = tmp.resolve("before.jfr");
 		Files.writeString(Path.of(jfr + ".bop"),
-				"benchmark=com.acme.FeatureBenchmark.sprigPipeline forks=3 tput=0.191 tputerr=0.01 "
+				"benchmark=com.acme.FeatureBenchmark.sprigPipeline mforks=3 tput=0.191 tputerr=0.01 "
 						+ "tputunit=ops/us bop=3488.0 boperr=2.1");
 		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(jfr);
 		assertThat(m).isNotNull();
@@ -168,6 +169,61 @@ class JvmlensProfilerTest {
 		assertThat(m.tput).isEqualTo(0.191);
 		assertThat(m.bop).isEqualTo(3488.0);
 		assertThat(m.tputUnit).isEqualTo("ops/us");
+	}
+
+	@Test
+	void warmupForkIsNotCountedAndOneVerdictCoversTheMeasuredForks(@TempDir Path tmp) throws Exception {
+		// #191: @Fork(value = 1, warmups = 1) run with -f 2 → JMH calls afterTrial three
+		// times (warmup fork + 2 measured forks). The warmup fork must not get a verdict,
+		// and the one verdict must be over both measured forks with the real n, not three
+		// verdicts each labelled n=2.
+		Path recording = tmp.resolve("rec.jfr");
+		ForkFixtures.record(recording);
+		Path base = tmp.resolve("base.jfr");
+		Files.copy(recording, base);
+		Files.writeString(Path.of(base + ".bop"),
+				"benchmark=" + ForkFixtures.BENCH + " mforks=2 tput=221.6 tputerr=10.0 tputunit=ns/op");
+		JvmlensProfiler p = new JvmlensProfiler("baseline=" + base);
+		BenchmarkParams params = ForkFixtures.params(2, 1);
+		String out = ForkFixtures.captureOut(() -> {
+			ForkFixtures.fork(p, recording, params, 227.0); // warmup fork
+			ForkFixtures.fork(p, recording, params, 270.0); // measured fork 1
+			ForkFixtures.fork(p, recording, params, 190.0); // measured fork 2
+		});
+		assertThat(out).contains("warmup fork 1/1").contains("not counted");
+		assertThat(out.split("Measured throughput A/B", -1)).hasSize(2);
+		// the verdict's after-side is JMH's aggregate over both measured forks: 230 ns/op
+		assertThat(out).contains("221.6000 ns/op → 230.0000 ns/op").contains("n=2 fork(s) each");
+		assertThat(out).doesNotContain("227.0000").doesNotContain("270.0000").doesNotContain("190.0000");
+	}
+
+	@Test
+	void keepWritesTheAggregatedMeasuredForksNotTheWarmupOrLastFork(@TempDir Path tmp) throws Exception {
+		// #191: the kept sidecar must carry the measured-fork aggregate and its real n.
+		Path recording = tmp.resolve("rec.jfr");
+		ForkFixtures.record(recording);
+		Path keep = tmp.resolve("kept.jfr");
+		JvmlensProfiler p = new JvmlensProfiler("keep=" + keep);
+		BenchmarkParams params = ForkFixtures.params(2, 1);
+		ForkFixtures.captureOut(() -> {
+			ForkFixtures.fork(p, recording, params, 500.0); // warmup fork
+			ForkFixtures.fork(p, recording, params, 270.0);
+			ForkFixtures.fork(p, recording, params, 190.0);
+		});
+		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(keep);
+		assertThat(m).isNotNull();
+		assertThat(m.forks).isEqualTo(2);
+		assertThat(m.tput).isCloseTo(230.0, org.assertj.core.data.Offset.offset(1e-6));
+		assertThat(Files.exists(keep)).isTrue();
+	}
+
+	@Test
+	void aLegacySidecarCountsAsOneFork(@TempDir Path tmp) throws Exception {
+		// #191: pre-fix sidecars were rewritten by every fork, so their numbers are the
+		// last fork's alone whatever `forks=` says — never claim more than n=1 for them.
+		Path jfr = tmp.resolve("legacy.jfr");
+		Files.writeString(Path.of(jfr + ".bop"), "benchmark=com.acme.B.m forks=2 tput=1.0 tputerr=0.1");
+		assertThat(JvmlensProfiler.readMeasured(jfr).forks).isEqualTo(1);
 	}
 
 	@Test

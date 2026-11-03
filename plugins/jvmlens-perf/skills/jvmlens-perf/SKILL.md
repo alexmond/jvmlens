@@ -71,6 +71,10 @@ Pick the capture that matches what you're optimizing:
   exact bytes/op with a significance call (SIGNIFICANT only when |Δ| exceeds the combined error
   band *and* the confidence intervals don't overlap), and warns on a single fork (use `-f 2`+ so
   cross-fork variance is real). So a sampled per-method swing can't be mistaken for the real win.
+  The profiler prints **one** summary/diff and verdict per benchmark, after the last measured
+  fork: warmup forks are skipped (`warmup fork 1/1 — not profiled, not counted`), the measured
+  figures merge all measured forks like JMH's own score, and `n=` is the real merged fork count.
+  A baseline kept by jvmlens ≤0.3.1 holds one fork's numbers and counts as `n=1` — re-record it.
   It also prints a **dispersion verdict**: a genuine structural allocation removal collapses the
   cross-fork **variance band** (the removed allocation *was* the noise) — `±17,200 → ±35 /op,
   variance collapsed ~500×` is a strong real-win signal the mean alone can't give; and when
