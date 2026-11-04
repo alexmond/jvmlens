@@ -1,9 +1,11 @@
 package org.alexmond.jvmlens;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import org.alexmond.jvmlens.ProfileSummary.Lineage;
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +49,23 @@ class PerfGateTest {
 		PerfGate.Result nh = PerfGate.evaluate(before, after, "new-hotpath-pp < 20");
 		assertThat(nh.passed()).isFalse();
 		assertThat(nh.report()).contains("NEW `com.acme.B`");
+	}
+
+	@Test
+	void aRecognisedMoveStillCountsAsANewHotPathButSaysSo() {
+		// #190: an extract-method move is annotated, not exempted — the gate stays
+		// conservative, but its failure names the move
+		String leaf = "java.util.HashMap.get";
+		ProfileSummary before = summary(0, 0, List.of(new Ranked("com.acme.A.run", 0.60, 600, null,
+				new Lineage(Map.of(), Map.of(leaf, 400L, "com.acme.A.run", 200L)))));
+		ProfileSummary after = summary(0, 0, List.of(
+				new Ranked("com.acme.A.helper", 0.40, 400, null,
+						new Lineage(Map.of("com.acme.A.run", 400L), Map.of(leaf, 400L))),
+				new Ranked("com.acme.A.run", 0.20, 200, null, new Lineage(Map.of(), Map.of("com.acme.A.run", 200L)))));
+		PerfGate.Result r = PerfGate.evaluate(before, after, "new-hotpath-pp < 20");
+		assertThat(r.passed()).isFalse();
+		assertThat(r.report()).contains("NEW `com.acme.A.helper`")
+			.contains("moved from `com.acme.A.run` — still counted here");
 	}
 
 	@Test

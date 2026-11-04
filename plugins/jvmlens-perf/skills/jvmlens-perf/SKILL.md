@@ -189,7 +189,11 @@ Useful flags:
    - **Extract-method refactors:** the diff also prints an **"Allocation by type (rollup)"** block
      that *sums extracted helpers* (`GoFmt.* — 7.6 GB → 5.8 GB [3 methods]`), so a win split across
      a new helper row reads as one net change instead of a misleading per-method `−52%` next to a
-     `NEW` row. It also caveats a sampled allocation Δ in the 5–15% noise band.
+     `NEW` row. It also caveats a sampled allocation Δ in the 5–15% noise band. On the **CPU**
+     side, a `NEW` hot path called from a caller that lost samples under the same callee is annotated
+     `(moved from <caller>: same callee <frame> … — frames shifted, not new work)` and the caller
+     row `(N moved into <new>)`; a weaker match says `possibly moved`. A bare `NEW` with no such
+     note is new work (a shared callee alone is not a move). `new-hotpath-pp` still counts a move.
    - **Don't misread a ▲ CPU row as a regression:** a hot-path row whose absolute samples rose
      while the **total** exec samples *fell*, stayed *~flat*, or **outpaced a modestly-rising total**
      (its share climbed) is hedged `(possible sampling redistribution …)`; under a fixed-duration

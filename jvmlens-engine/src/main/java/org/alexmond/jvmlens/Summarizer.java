@@ -422,6 +422,8 @@ public final class Summarizer {
 
 		private final ViaFrames via = new ViaFrames();
 
+		private final PathLineage lineage = new PathLineage();
+
 		private final HarnessShare harness = new HarnessShare();
 
 		private final ScopeCoverage coverage;
@@ -543,6 +545,7 @@ public final class Summarizer {
 			if (app != null) {
 				this.cpuByApp.merge(app, 1L, Long::sum);
 				this.via.add(app, e.getStackTrace(), this.scope);
+				this.lineage.add(app, e.getStackTrace(), this.scope);
 				if (leaf != null) {
 					this.leafByApp.computeIfAbsent(app, (k) -> new HashMap<>()).merge(leaf, 1L, Long::sum);
 				}
@@ -587,7 +590,8 @@ public final class Summarizer {
 
 		private ProfileSummary toSummary(String source) {
 			return new ProfileSummary(source, this.execSamples, this.allocByType.size(), this.oldObjects, this.gcPauses,
-					this.gcPauseNanos / 1_000_000, ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu"),
+					this.gcPauseNanos / 1_000_000,
+					this.lineage.attach(ranked(this.cpuByApp, this.execSamples, leafTeasers(), "cpu")),
 					ranked(this.cpuByLeaf, this.execSamples, leafLineTeasers(), "cpu"),
 					ranked(this.allocBySite, this.allocBytes, allocTypeTeasers(), "memory"),
 					ranked(Teasers.foldExcludedTypes(this.allocByType, this.scope.excludePackages()), this.allocBytes,

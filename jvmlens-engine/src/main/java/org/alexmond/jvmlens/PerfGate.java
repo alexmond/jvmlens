@@ -118,6 +118,15 @@ public final class PerfGate {
 				? ("NEW `" + worst.name() + "` " + fmt(worst.share() * 100) + "% share, "
 						+ fmt(ofBaseline(worst.count(), before.execSamples())) + "% of the baseline total")
 				: "no new hot path";
+		// a recognised move still counts — the match is sampled evidence, and a gate
+		// that waved it through would hide a real regression shaped like a refactor
+		// (#190). Say so, so a refactor's failure is not a mystery.
+		HotPathMoves.Move move = (worst != null)
+				? HotPathMoves.find(before.hotPaths(), after.hotPaths()).get(worst.name()) : null;
+		if (move != null) {
+			detail += "; the diff reads it as " + (move.confident() ? "" : "possibly ") + "moved from `" + move.from()
+					+ "` — still counted here";
+		}
 		return new Eval(worstPp < threshold, detail + " (limit " + fmt(threshold) + "%)");
 	}
 

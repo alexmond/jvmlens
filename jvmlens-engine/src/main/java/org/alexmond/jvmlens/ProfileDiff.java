@@ -98,17 +98,19 @@ public final class ProfileDiff {
 		md.append('\n');
 		perOpTotals(md, before, after, opsBefore, opsAfter);
 		section(md, "Hot paths", "samples", CPU, before.hotPaths(), after.hotPaths(),
-				redistributionNote(before.execSamples(), after.execSamples(), "samples", true));
+				redistributionNote(before.execSamples(), after.execSamples(), "samples", true),
+				HotPathMoves.notes(before.hotPaths(), after.hotPaths()));
 		flatExecSampleCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
 		disproportionateShiftCaveat(md, before.execSamples(), after.execSamples(), before.hotPaths(), after.hotPaths());
 		section(md, "Allocation sites", "bytes", MEMORY, before.allocSites(), after.allocSites(),
-				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc", false));
+				redistributionNote(before.allocBytes(), after.allocBytes(), "alloc", false), Map.of());
 		lowAllocSampleNote(md, before.allocSamples(), after.allocSamples(),
 				before.allocBytes() > 0 || after.allocBytes() > 0);
 		allocTypeRollup(md, before.allocSites(), after.allocSites());
-		section(md, "Lock contention", "ms", "locks", before.locks(), after.locks(), null);
+		section(md, "Lock contention", "ms", "locks", before.locks(), after.locks(), null, Map.of());
 		for (String key : sectionKeys(before, after)) {
-			section(md, key, unit(before, after, key), key, sectionRows(before, key), sectionRows(after, key), null);
+			section(md, key, unit(before, after, key), key, sectionRows(before, key), sectionRows(after, key), null,
+					Map.of());
 		}
 		return md.toString();
 	}
@@ -355,14 +357,18 @@ public final class ProfileDiff {
 	}
 
 	private static void section(StringBuilder md, String title, String unit, String category, List<Ranked> before,
-			List<Ranked> after, RowNote note) {
+			List<Ranked> after, RowNote note, Map<String, String> rowNotes) {
 		Map<String, Long> bc = counts(before);
 		Map<String, Long> ac = counts(after);
 		Map<String, Double> bs = shares(before);
 		Map<String, Double> as = shares(after);
 		List<String[]> lines = new ArrayList<>();
 		for (String name : candidates(before, after, category)) {
-			lines.add(line(name, bc.get(name), ac.get(name), share(bs, name), share(as, name), unit, note));
+			String[] row = line(name, bc.get(name), ac.get(name), share(bs, name), share(as, name), unit, note);
+			if (row != null && rowNotes.containsKey(name)) {
+				row[1] += rowNotes.get(name);
+			}
+			lines.add(row);
 		}
 		lines.removeIf((row) -> row == null);
 		lines.sort((x, y) -> Double.compare(Double.parseDouble(y[0]), Double.parseDouble(x[0])));

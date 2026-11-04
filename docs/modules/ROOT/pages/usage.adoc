@@ -77,6 +77,27 @@ falls, a `NEW` callee appears) — which can read like a regression at a glance.
 line (e.g. `GoFmt.* — 7.6 GB → 5.8 GB (▼ 24%) [2 methods]`); it shows only types with ≥2
 contributing methods and a real net change.
 
+The **CPU** hot paths get the same treatment per row. When a `NEW` hot path is called from a
+path that shrank, and the samples the caller lost under some callee are the ones the new path
+spends under that same callee, the row says the work **moved** instead of reading as a new cost:
+
+----
+- `demo.Svc.lookup` — NEW 531 (91% share)  (moved from `demo.Svc.invoke`: same callee `java.util.concurrent.ConcurrentHashMap.get`, −512 under the caller — frames shifted, not new work)
+- `demo.Svc.invoke` — 544 → 27 (▼ 95%) [share 94%→5%]  (512 moved into `demo.Svc.lookup`)
+----
+
+Both are needed: the caller must be the new path's nearest application caller in most of its
+samples, *and* the samples the caller lost under one callee must cover at least half of the new
+path. Callees are counted inclusively rather than by leaf, because the sampled leaf of an inlined
+chain changes with each JIT compile (`Integer.equals` in one run, `HashMap.getNode` in the next),
+while the `HashMap.get` call around it does not. A shared callee alone links nothing —
+`HashMap.get` is everyone's callee — so a new path that the shrinking method does not call stays
+plain `NEW`. A weaker match (a quarter or more,
+counting the callee's own time against time the caller lost) is hedged
+`(possibly moved from …)`. The rows, counts and ranking never change; `new-hotpath-pp` still
+counts a moved path (its failure line names the move), because the match is sampled evidence and
+a gate must not wave through a real regression shaped like a refactor.
+
 ==== Cross-run / cross-JDK diffs (`--ops`)
 
 Diffing two recordings from **different JVMs** (or any two runs of different throughput) makes
