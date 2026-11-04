@@ -6,7 +6,7 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 
 @Component
-@Command(name = "jvmlens", mixinStandardHelpOptions = true, version = "jvmlens 0.1.0",
+@Command(name = "jvmlens", mixinStandardHelpOptions = true, versionProvider = JvmlensVersion.class,
 		description = "Turn JVM runtime evidence into a compact, LLM-ready diagnosis.",
 		subcommands = { AnalyzeCommand.class, ProfileCommand.class, BenchCommand.class, WatchCommand.class,
 				TrendCommand.class, ControlCommand.class, McpServerCommand.class })

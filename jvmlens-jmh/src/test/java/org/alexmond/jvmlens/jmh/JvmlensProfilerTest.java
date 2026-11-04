@@ -102,6 +102,36 @@ class JvmlensProfilerTest {
 	}
 
 	@Test
+	void measuredAbVerdictSaysNoAllocationWhenBothSidesAreUnderTheFloor() {
+		// #192: a non-allocating benchmark read 0 B/op → 0 B/op (Δ +20.1%, noise band
+		// ±84.1%) — a percentage of 0.002 B/op is noise, not signal.
+		String v = JvmlensProfiler.allocVerdict(0.0020, 0.0008, 0.0024, 0.0010, 2, 0.0);
+		assertThat(v).contains("Measured allocation A/B [exact]")
+			.contains("no allocation on either side")
+			.contains("0.002 B/op → 0.002 B/op")
+			.contains("n=2 fork(s) each")
+			.doesNotContain("Δ")
+			.doesNotContain("noise band")
+			.doesNotContain("SIGNIFICANT")
+			.doesNotContain("significant");
+	}
+
+	@Test
+	void measuredAbVerdictReportsANewAllocationFromZeroAsAnAbsoluteDelta() {
+		// #192 look-alike: one side ~0, the other real — a new allocation must still
+		// show, as an absolute Δ (a relative Δ from ~0 is meaningless).
+		String v = JvmlensProfiler.allocVerdict(0.002, 0.001, 512, 4, 2, 40.0);
+		assertThat(v).contains("0.002 B/op → 512 B/op")
+			.contains("new allocation")
+			.contains("Δ +512 B/op")
+			.contains("**SIGNIFICANT**")
+			.doesNotContain("noise band")
+			.doesNotContain("no allocation on either side");
+		String removed = JvmlensProfiler.allocVerdict(2048, 900, 0.001, 0.001, 1, -40.0);
+		assertThat(removed).contains("allocation removed").contains("Δ -2.0 KB/op").contains("single fork understates");
+	}
+
+	@Test
 	void measuredAbVerdictWarnsOnASingleFork() {
 		String v = JvmlensProfiler.allocVerdict(1_000_000, 0, 980_000, 0, 1, -2.0);
 		assertThat(v).contains("single fork understates");

@@ -63,6 +63,17 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- VersionTest checks the version option against the pom's version, not against the
+                 build-info file the reader itself reads. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <jvmlens.expectedVersion>${project.version}</jvmlens.expectedVersion>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <!-- The CLI is thin command wiring over the engine; the strict line gate lives in
                  jvmlens-engine. Here we hold a rot-guard floor, excluding the transport/bootstrap
                  front-ends (verified by end-to-end/handshake tests, not unit coverage). -->
