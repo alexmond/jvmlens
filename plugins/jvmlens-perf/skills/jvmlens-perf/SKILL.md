@@ -248,8 +248,10 @@ and jvmlens to find *what* to fix.
 - **JMH names every fork's file `profile.jfr`** (in per-benchmark dirs), so a diff header can
   read `profile.jfr → profile.jfr` — keep the before/after dirs distinct and remember which is
   which. (`analyze` also accepts a **directory** and merges all per-fork `.jfr` under it.)
-- The recorder's own sink (`file null`) is filtered out of External I/O — so an "I/O" line on a
-  pure CPU/alloc microbenchmark would be a jvmlens bug, not your code. Samples taken inside
+- The recorder's own sink (`file null`) is filtered out of External I/O, and so are the JVM's
+  own reads — class bytes off the class path (the benchmark jar) and a JDK class reading its
+  config (`conf/net.properties`) — so an "I/O" line on a pure CPU/alloc microbenchmark would be
+  a jvmlens bug, not your code. A resource your code reads out of a jar still shows. Samples taken inside
   JFR's own start-up instrumentation are dropped too (on JDK 24+ they showed as gigabytes of
   phantom `jdk.internal.classfile` allocation).
 - **Lambda rows read `Foo$$Lambda`** — the per-JVM address is stripped so the same lambda

@@ -89,6 +89,13 @@ public class JvmlensProfiler implements ExternalProfiler {
 	 */
 	private static final double HOT_SHIFT_PP = 0.10;
 
+	/**
+	 * Below this many bytes/op a side counts as not allocating: a relative Δ between two
+	 * such values is noise (0.002 → 0.0024 B/op read as +20%), and a relative Δ from one
+	 * is meaningless (#192).
+	 */
+	private static final double ALLOC_FLOOR_BYTES = 1.0;
+
 	private final Path jfr;
 
 	private List<String> appPackages = List.of();
@@ -464,6 +471,9 @@ public class JvmlensProfiler implements ExternalProfiler {
 	 * measured Δ (#104). Pure.
 	 */
 	static String allocVerdict(double bMean, double bErr, double aMean, double aErr, int forks, double sampledPct) {
+		if (bMean < ALLOC_FLOOR_BYTES || aMean < ALLOC_FLOOR_BYTES) {
+			return floorVerdict(bMean, bErr, aMean, aErr, forks);
+		}
 		double measuredPct = (bMean != 0) ? 100.0 * (aMean - bMean) / bMean : 0;
 		double band = (bMean != 0 && aMean != 0) ? 100.0 * (bErr / bMean + aErr / aMean) : 0;
 		boolean ciOverlap = !(aMean + aErr < bMean - bErr || aMean - aErr > bMean + bErr);
@@ -485,6 +495,39 @@ public class JvmlensProfiler implements ExternalProfiler {
 		}
 		b.append('\n').append(dispersionNote(bMean, bErr, aMean, aErr, measuredPct));
 		return b.toString();
+	}
+
+	/**
+	 * The allocation A/B verdict when a side is under {@value #ALLOC_FLOOR_BYTES} B/op
+	 * (#192). Both under: no allocation to compare, so no Δ and no significance call. One
+	 * under: a new (or removed) allocation, stated as an absolute Δ — a relative Δ from
+	 * ~0 is meaningless — and SIGNIFICANT only if the confidence intervals don't overlap.
+	 * Pure.
+	 */
+	private static String floorVerdict(double bMean, double bErr, double aMean, double aErr, int forks) {
+		StringBuilder b = new StringBuilder("> **Measured allocation A/B [exact]**: ");
+		b.append(fineBytesPerOp(bMean)).append("/op → ").append(fineBytesPerOp(aMean)).append("/op ");
+		if (bMean < ALLOC_FLOOR_BYTES && aMean < ALLOC_FLOOR_BYTES) {
+			b.append(String.format(Locale.ROOT,
+					"(n=%d fork(s) each) → no allocation on either side (both under %.0f B/op), nothing to compare.\n",
+					forks, ALLOC_FLOOR_BYTES));
+			return b.toString();
+		}
+		boolean ciOverlap = !(aMean + aErr < bMean - bErr || aMean - aErr > bMean + bErr);
+		double delta = aMean - bMean;
+		b.append(String.format(Locale.ROOT,
+				"(%s — Δ %s%s/op, n=%d fork(s) each; a relative Δ from ~0 is not meaningful) → **%s**.",
+				(delta > 0) ? "new allocation" : "allocation removed", (delta > 0) ? "+" : "-",
+				humanBytesPerOp(Math.abs(delta)), forks, ciOverlap ? "NOT significant" : "SIGNIFICANT"));
+		if (forks < 2) {
+			b.append(" ⚠ a single fork understates cross-fork variance — re-run with `-f 2`+ for a real band.");
+		}
+		return b.append('\n').toString();
+	}
+
+	/** {@link #humanBytesPerOp}, but a sub-byte value keeps its decimals (#192). */
+	private static String fineBytesPerOp(double bytes) {
+		return (bytes < ALLOC_FLOOR_BYTES) ? String.format(Locale.ROOT, "%.3f B", bytes) : humanBytesPerOp(bytes);
 	}
 
 	/**

@@ -501,6 +501,9 @@ public final class Summarizer {
 		}
 
 		private void addFileIo(RecordedEvent e) {
+			if (BootstrapIo.isBootstrap(e)) {
+				return; // class loading / JDK config — not the workload's I/O (#192)
+			}
 			String path = e.hasField("path") ? Teasers.safe(e.getString("path")) : "unknown";
 			addIo("file " + path, e, "bytesRead", "bytesWritten");
 		}

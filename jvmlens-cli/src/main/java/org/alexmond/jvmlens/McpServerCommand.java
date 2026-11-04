@@ -57,7 +57,7 @@ public class McpServerCommand implements Callable<Integer> {
 	public Integer call() throws Exception {
 		StdioServerTransportProvider transport = new StdioServerTransportProvider();
 		McpSyncServer server = McpServer.sync(transport)
-			.serverInfo("jvmlens", "0.1.0")
+			.serverInfo("jvmlens", JvmlensVersion.get())
 			.capabilities(ServerCapabilities.builder().tools(true).build())
 			.tools(tool("overview", "Event counts, the heuristic cause, and which drill-down tools to use next.",
 					ProfileTools::overview),

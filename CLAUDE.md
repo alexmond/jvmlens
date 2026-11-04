@@ -196,6 +196,8 @@ run `/evolving-claude-md:compact` to graduate stable lessons and move old entrie
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-11-03 — **bootstrap-io-filter** — file I/O is dropped by *origin*, never size (`BootstrapIo`): a JDK class-loader `loadClass`/`findClass`/`defineClass` frame anywhere on the stack, or a `java.`/`jdk.`/`sun.` `<clinit>` with only JDK frames above it (config reads like `conf/net.properties`). Why: a JMH A/B from two differently named jars showed `main.jar GONE` / `pr.jar NEW`. Matching jars by name was rejected — it would still rank class loading as I/O. App reads of jar resources stay. #192.
+
 - 2026-11-03 — **jmh-fork-aggregation** — JMH calls `afterTrial` once per fork, warmup forks first, on a per-benchmark profiler instance. `JvmlensProfiler` now skips warmup forks with a label, merges measured forks' iterations, and prints one summary + verdict after the last fork; the sidecar key is `mforks=` (merged count). A legacy `forks=`-only sidecar counts as n=1. Why: each fork rewrote the sidecar and printed a verdict labelled with the configured count — a warmup fork's number shown as n=2. #191.
 
 - 2026-11-03 — **moved-hot-path** — a NEW CPU row is annotated `moved from A` only when A is its nearest app caller in ≥50% of samples AND A lost, under one callee frame, samples covering ≥50% of it (`HotPathMoves`; unrendered `Ranked.lineage`). ≥25% → `possibly moved`; `new-hotpath-pp` still counts it. Callees are inclusive, not leaves: an inlined chain's sampled leaf flips per JIT compile (CI failed on JDK 21). Why: a shared callee alone links nothing. #190.

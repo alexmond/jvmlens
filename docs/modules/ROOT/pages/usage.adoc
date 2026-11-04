@@ -244,7 +244,10 @@ disagrees with the **measured** one (JIT elision / sampling redistribution). Use
 cross-fork variance is real — a single fork badly understates it. The verdict's `n=` is the number
 of measured forks both sides really merged; a `keep=` sidecar from jvmlens 0.3.1 or earlier held
 only its last fork's numbers, so it counts as `n=1` — re-record the baseline. This gates the optimize loop on
-*measured* significance instead of a sampled delta that may be a phantom.
+*measured* significance instead of a sampled delta that may be a phantom. Below 1 B/op a side
+counts as not allocating: when both are under it the verdict says `no allocation on either side`
+with no Δ (a percentage of 0.002 B/op is noise); when only one is, it reports a `new allocation`
+or `allocation removed` as an absolute Δ in bytes/op, since a relative Δ from ~0 means nothing.
 
 The same verdict adds a **dispersion** line: a genuine structural allocation removal doesn't just
 lower the mean, it eliminates the GC-sampling variance that *was* that allocation, so the cross-fork
