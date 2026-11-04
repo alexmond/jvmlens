@@ -196,6 +196,13 @@ correlation); pass `socketio=true` to keep them. If the run also enables JMH's G
 jvmlens's *sampled* per-site bytes, so the measured rate and the attribution sit together. The
 plugin runs in JMH's host process and reuses the same engine as `analyze`.
 
+The plugin prints **one** summary per benchmark, after the last measured fork. A JMH **warmup
+fork** (`@Fork(warmups = …)` or `-wf`) is thrown away by JMH, so jvmlens skips it too and says
+so (`jvmlens: warmup fork 1/1 — not profiled, not counted`). Earlier measured forks print a
+one-line `fork 1/2 measured` note. The measured figures (and the measured A/B verdicts below)
+merge every measured fork, the same way JMH's own final score does, and state the real fork
+count. The sampled sections come from the last fork's recording, and the header says so.
+
 For a before→after **diff entirely inside JMH** — no separate `analyze` — keep the fork's
 recording with `keep=<path>` (so it can seed the next run's baseline) and diff against a prior
 one with `baseline=<prev.jfr>` (the profiler prints the change report instead of the summary):
@@ -213,7 +220,9 @@ allocation A/B verdict** above the sampled diff — JMH's *exact* `gc.alloc.rate
 with a significance call (the change is `SIGNIFICANT` only if the relative Δ exceeds the combined
 noise band **and** the confidence intervals don't overlap), and a ⚠ when the **sampled** total Δ
 disagrees with the **measured** one (JIT elision / sampling redistribution). Use `-f 2`+ so the
-cross-fork variance is real — a single fork badly understates it. This gates the optimize loop on
+cross-fork variance is real — a single fork badly understates it. The verdict's `n=` is the number
+of measured forks both sides really merged; a `keep=` sidecar from jvmlens 0.3.1 or earlier held
+only its last fork's numbers, so it counts as `n=1` — re-record the baseline. This gates the optimize loop on
 *measured* significance instead of a sampled delta that may be a phantom.
 
 The same verdict adds a **dispersion** line: a genuine structural allocation removal doesn't just
