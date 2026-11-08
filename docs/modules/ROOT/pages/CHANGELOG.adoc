@@ -1,5 +1,29 @@
 = Changelog
 
+== 0.3.2
+
+Fixes from an A/B of a real JMH benchmark suite: JMH verdicts that count only measured forks,
+diffs that recognise a refactor, and three small output fixes.
+
+=== Fixes
+
+* **JMH verdicts skip warmup forks** — `JvmlensProfiler` summarized every fork, warmup
+  included, and labelled each verdict with a wrong `n`. Warmup forks are now skipped, the
+  measured forks are merged into one verdict with the real fork count, and a `keep=` baseline
+  records how many forks it holds (an older baseline counts as one) (`#191`).
+* **An extract-method refactor reads as a move, not a NEW hot path** — a NEW CPU row whose
+  caller lost the same work is annotated `moved from <caller>` (or `possibly moved`) instead
+  of standing alone as a new hot path. Annotate-only: the gate still counts it, and a
+  `new-hotpath-pp` failure names the move (`#190`).
+* **No Δ% on zero allocation** — when both sides allocate under 1 B/op the allocation A/B
+  says "no allocation on either side" instead of a meaningless percentage; a side going from
+  ~0 to real allocation is still reported, with an absolute B/op change (`#192`).
+* **Class loading is not application I/O** — classpath-jar reads and the JDK's own config
+  reads are dropped from External I/O, so runs from differently named jars no longer diff as
+  GONE + NEW file rows (`#192`).
+* **`--version` reports the real version** — it printed `jvmlens 0.1.0`; the CLI and the MCP
+  server now read the build version (`#192`).
+
 == 0.3.1
 
 Field findings from profiling real projects: diffs and gates that hold up across runs, summaries

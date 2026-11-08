@@ -21,7 +21,7 @@ trend jar; `jvmlens-agent` is the `-javaagent`). Pull a pinned release, or grab 
 
 ```bash
 # (a) Maven Central — pinned release (set VER to the latest release)
-VER=0.3.1; mkdir -p tools
+VER=0.3.2; mkdir -p tools
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-cli/$VER/jvmlens-cli-$VER.jar"     -o tools/jvmlens.jar
 curl -fsSL "https://repo1.maven.org/maven2/org/alexmond/jvmlens-agent/$VER/jvmlens-agent-$VER.jar" -o tools/jvmlens-agent.jar
 # (b) or download the rolling pre-release jars

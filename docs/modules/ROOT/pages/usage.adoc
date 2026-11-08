@@ -379,6 +379,9 @@ call-paths).
 The `io` and `pinning` sections appear in the `full` report whenever the recording carries
 those events. `io` aggregates `jdk.SocketRead`/`jdk.SocketWrite` (by remote `host:port`) and
 `jdk.FileRead`/`jdk.FileWrite` (by path), ranked by blocked time with a bytes/op teaser.
+File reads made by class loading (classpath jars) or by a JDK class initializer reading the
+JDK's own config (`net.properties`) are dropped, so two runs from differently named jars do not
+diff as an I/O change; the application's own file and resource reads stay.
 `pinning` aggregates `jdk.VirtualThreadPinned` by site, surfacing the `pinnedReason`
 (`MONITOR` / `NATIVE_METHOD` on JDK 24+) — the carrier-pinning that silently caps virtual-thread throughput.
 
