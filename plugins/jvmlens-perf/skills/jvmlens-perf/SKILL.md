@@ -89,7 +89,12 @@ Pick the capture that matches what you're optimizing:
   *flat*, it says so — **a CPU-share shift is not a speedup** (don't ship a "57% faster" claim the
   ops/s doesn't support). Note the inline `baseline=` matches **one** benchmark method — record a
   *per-benchmark* baseline; a baseline JFR for a different method is detected and the verdict
-  skipped with a warning, not silently wrong.
+  skipped with a warning, not silently wrong. The same for a different `@Param` value or mode
+  (`⚠ Baseline mismatch … a different @Param value or JMH mode`): keep one baseline per variant.
+  A baseline kept by ≤0.3.2 prints `could not be checked` (method name only) — re-keep it.
+  `error band unavailable … no significance call` means JMH had ≤2 measured iterations on that
+  side, so there is no band: it is **not** a result either way — re-run the named side with more
+  `-i`/`-f` before claiming a win.
 - **A non-JMH app / library (no benchmark module) — `bench`:** don't hand-roll a warm-loop
   driver. Point `bench` at any `main(String[])`; it runs a warmup→timed loop, captures the JFR
   over **only** the timed phase, and summarizes:

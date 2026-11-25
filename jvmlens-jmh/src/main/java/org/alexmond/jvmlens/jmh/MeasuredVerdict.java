@@ -1,6 +1,9 @@
 package org.alexmond.jvmlens.jmh;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -59,7 +62,10 @@ final class MeasuredVerdict {
 	 * multi-method footgun (#112 finding 2): if the kept baseline was recorded for a
 	 * <em>different</em> benchmark method than this trial, the per-method comparison
 	 * would be nonsense, so it warns and skips the measured verdicts rather than emitting
-	 * confident wrong numbers.
+	 * confident wrong numbers. The same holds for another {@code @Param} value or JMH
+	 * mode of the same method, matched on {@code BenchmarkParams.id()} (#207); a baseline
+	 * kept before the id was stored is still compared, with a note that it went
+	 * unchecked.
 	 */
 	static String measuredHead(Path baseline, int measuredForks, Result<?> norm, BenchmarkResult result,
 			ProfileSummary before, ProfileSummary after, double sampledPct) {
@@ -77,7 +83,19 @@ final class MeasuredVerdict {
 							+ "below.\n\n",
 					simpleName(base.benchmark), simpleName(current));
 		}
-		return throughputHead(result, base, measuredForks, before, after)
+		String id = result.getParams().id();
+		if (base.id != null && !base.id.equals(id)) {
+			return String.format(Locale.ROOT,
+					"> ⚠ Baseline mismatch — the kept baseline is for `%s`, this trial is `%s`: a different "
+							+ "`@Param` value or JMH mode. Keep a baseline per variant. Skipping the measured A/B to "
+							+ "avoid confident wrong numbers (#207). Sampled diff below.\n\n",
+					base.id, id);
+		}
+		String unchecked = (base.id != null) ? ""
+				: "> ⚠ The kept baseline has no `@Param`/mode identity (kept before #207), so its `@Param` values "
+						+ "and mode could not be checked against this trial — matched by method name only. Re-keep "
+						+ "it with `keep=` to check them.\n";
+		return unchecked + throughputHead(result, base, measuredForks, before, after)
 				+ allocHead(norm, result, base, measuredForks, sampledPct);
 	}
 
@@ -92,8 +110,8 @@ final class MeasuredVerdict {
 			return "";
 		}
 		int forks = Math.min(measuredForks, base.forks);
-		return throughputVerdict(base.tput, base.tputErr, primary.getScore(), errOrZero(primary), forks, base.tputUnit,
-				topHotPathShift(before, after)) + "\n";
+		return throughputVerdict(base.tput, base.tputErr, primary.getScore(), primary.getScoreError(), forks,
+				base.tputUnit, topHotPathShift(before, after)) + "\n";
 	}
 
 	/**
@@ -110,7 +128,7 @@ final class MeasuredVerdict {
 					+ "diff can gate on exact bytes/op (#104).\n\n";
 		}
 		int forks = Math.min(measuredForks, base.forks);
-		return allocVerdict(base.bop, base.bopErr, norm.getScore(), errOrZero(norm), forks, sampledPct) + "\n";
+		return allocVerdict(base.bop, base.bopErr, norm.getScore(), norm.getScoreError(), forks, sampledPct) + "\n";
 	}
 
 	/**
@@ -130,6 +148,12 @@ final class MeasuredVerdict {
 		String u = (unit == null || unit.isBlank()) ? "" : " " + unit;
 		StringBuilder b = new StringBuilder("> **Measured throughput A/B [exact]**: ");
 		b.append(humanScore(bMean)).append(u).append(" → ").append(humanScore(aMean)).append(u);
+		String unknown = unknownBand(bErr, aErr);
+		if (!unknown.isEmpty()) {
+			return b.append(String.format(Locale.ROOT, " (Δ %+.1f%%, n=%d fork(s) each) ", pct, forks))
+				.append(unknown)
+				.toString();
+		}
 		b.append(String.format(Locale.ROOT, " (Δ %+.1f%%, n=%d fork(s) each, noise band ±%.1f%%) → **%s**.", pct, forks,
 				band, significant ? "SIGNIFICANT" : "NOT significant"));
 		if (forks < 2) {
@@ -215,6 +239,12 @@ final class MeasuredVerdict {
 		boolean significant = Math.abs(measuredPct) > band && !ciOverlap;
 		StringBuilder b = new StringBuilder("> **Measured allocation A/B [exact]**: ");
 		b.append(humanBytesPerOp(bMean)).append("/op → ").append(humanBytesPerOp(aMean)).append("/op ");
+		String unknown = unknownBand(bErr, aErr);
+		if (!unknown.isEmpty()) {
+			return b.append(String.format(Locale.ROOT, "(Δ %+.1f%%, n=%d fork(s) each) ", measuredPct, forks))
+				.append(unknown)
+				.toString();
+		}
 		b.append(String.format(Locale.ROOT, "(Δ %+.1f%%, n=%d fork(s) each, noise band ±%.1f%%) → **%s**.", measuredPct,
 				forks, band, significant ? "SIGNIFICANT" : "NOT significant"));
 		if (forks < 2) {
@@ -250,10 +280,16 @@ final class MeasuredVerdict {
 		}
 		boolean ciOverlap = !(aMean + aErr < bMean - bErr || aMean - aErr > bMean + bErr);
 		double delta = aMean - bMean;
-		b.append(String.format(Locale.ROOT,
-				"(%s — Δ %s%s/op, n=%d fork(s) each; a relative Δ from ~0 is not meaningful) → **%s**.",
+		b.append(String.format(Locale.ROOT, "(%s — Δ %s%s/op, n=%d fork(s) each",
 				(delta > 0) ? "new allocation" : "allocation removed", (delta > 0) ? "+" : "-",
-				humanBytesPerOp(Math.abs(delta)), forks, ciOverlap ? "NOT significant" : "SIGNIFICANT"));
+				humanBytesPerOp(Math.abs(delta)), forks));
+		String unknown = unknownBand(bErr, aErr);
+		if (!unknown.isEmpty()) {
+			return b.append(") ").append(unknown).toString();
+		}
+		b.append("; a relative Δ from ~0 is not meaningful) → **")
+			.append(ciOverlap ? "NOT significant" : "SIGNIFICANT")
+			.append("**.");
 		if (forks < 2) {
 			b.append(" ⚠ a single fork understates cross-fork variance — re-run with `-f 2`+ for a real band.");
 		}
@@ -278,7 +314,7 @@ final class MeasuredVerdict {
 	 * term). Pure.
 	 */
 	static String dispersionNote(double bMean, double bErr, double aMean, double aErr, double measuredPct) {
-		if (bMean <= 0 || aMean <= 0 || bErr <= 0) {
+		if (bMean <= 0 || aMean <= 0 || bErr <= 0 || Double.isNaN(aErr)) {
 			return "";
 		}
 		double collapse = (aErr > 0) ? bErr / aErr : Double.POSITIVE_INFINITY;
@@ -307,9 +343,23 @@ final class MeasuredVerdict {
 		return b.append('\n').toString();
 	}
 
-	private static double errOrZero(Result<?> norm) {
-		double err = norm.getScoreError();
-		return Double.isNaN(err) ? 0.0 : err;
+	/**
+	 * The verdict's tail when JMH reported no score error for a side ({@code NaN}: it
+	 * computes none from 2 or fewer measured iterations), or {@code ""} when both bands
+	 * are known. A missing band is unknown, not zero — a zero band called any change
+	 * SIGNIFICANT on the runs with the least data — so there is no significance call
+	 * either way, and nothing that would lean on one (#207). Names the side to re-run.
+	 */
+	static String unknownBand(double bErr, double aErr) {
+		boolean b = Double.isNaN(bErr);
+		boolean a = Double.isNaN(aErr);
+		if (!b && !a) {
+			return "";
+		}
+		String side = (b && a) ? "on both sides" : (b ? "on the baseline" : "on this run");
+		String rerun = (b && a) ? "both" : (b ? "the baseline (`keep=`)" : "this run");
+		return "→ error band unavailable " + side + " (JMH computes none from 2 or fewer measured iterations), "
+				+ "so no significance call. Re-run " + rerun + " with more iterations (`-i`) or forks (`-f`).\n";
 	}
 
 	/**
@@ -318,7 +368,10 @@ final class MeasuredVerdict {
 	 * missing/unreadable. The fork count is {@code mforks} (measured forks merged into
 	 * the figures); a pre-#191 sidecar only has {@code forks}, the <em>configured</em>
 	 * count, but was rewritten by every fork — its figures are one fork's, so it counts
-	 * as n=1.
+	 * as n=1. An error term reads as {@code NaN} (unknown) when it is {@code nan},
+	 * absent, or unparsable — and when it is {@code 0} in a sidecar without an
+	 * {@code id}: before #207 the writer turned JMH's missing error into {@code 0}, so a
+	 * legacy zero cannot be told from a missing band (a re-keep restores the real one).
 	 */
 	static Measured readMeasured(Path jfr) {
 		try {
@@ -329,8 +382,10 @@ final class MeasuredVerdict {
 					kv.put(tok.substring(0, eq), tok.substring(eq + 1));
 				}
 			}
-			return new Measured(kv.get("benchmark"), (int) num(kv.get("mforks"), 1), boxed(kv.get("bop")),
-					num(kv.get("boperr"), 0), boxed(kv.get("tput")), num(kv.get("tputerr"), 0), kv.get("tputunit"));
+			String id = (kv.get("id") != null) ? URLDecoder.decode(kv.get("id"), StandardCharsets.UTF_8) : null;
+			return new Measured(kv.get("benchmark"), id, (int) num(kv.get("mforks"), 1), boxed(kv.get("bop")),
+					error(kv.get("boperr"), id == null), boxed(kv.get("tput")), error(kv.get("tputerr"), id == null),
+					kv.get("tputunit"));
 		}
 		catch (IOException | RuntimeException ignored) {
 			return null; // missing/unreadable sidecar — fall back to the no-baseline note
@@ -345,6 +400,12 @@ final class MeasuredVerdict {
 		catch (NumberFormatException | NullPointerException ignored) {
 			return fallback;
 		}
+	}
+
+	/** A sidecar error term: see {@link #readMeasured} for when it is unknown. */
+	private static double error(String s, boolean legacy) {
+		double v = num(s, Double.NaN);
+		return (legacy && v == 0.0) ? Double.NaN : v;
 	}
 
 	private static Double boxed(String s) {
@@ -393,23 +454,32 @@ final class MeasuredVerdict {
 	 * The {@code key=value} sidecar line for {@code JvmlensProfiler}'s {@code keep=} /
 	 * {@link #readMeasured}.
 	 */
+	/**
+	 * A score error for the sidecar: JMH's missing ({@code NaN}) error is {@code nan}.
+	 */
+	private static String error(Result<?> r) {
+		double err = r.getScoreError();
+		return Double.isNaN(err) ? "nan" : Double.toString(err);
+	}
+
 	static String sidecar(BenchmarkResult result, Result<?> norm, int forks) {
 		StringBuilder b = new StringBuilder();
 		String bench = result.getParams().getBenchmark();
 		if (bench != null) {
 			b.append("benchmark=").append(bench).append(' ');
 		}
-		b.append("mforks=").append(forks);
+		b.append("id=").append(URLEncoder.encode(result.getParams().id(), StandardCharsets.UTF_8));
+		b.append(" mforks=").append(forks);
 		Result<?> primary = result.getPrimaryResult();
 		if (primary != null) {
-			b.append(" tput=").append(primary.getScore()).append(" tputerr=").append(errOrZero(primary));
+			b.append(" tput=").append(primary.getScore()).append(" tputerr=").append(error(primary));
 			String unit = primary.getScoreUnit();
 			if (unit != null && !unit.isBlank()) {
 				b.append(" tputunit=").append(unit);
 			}
 		}
 		if (norm != null) {
-			b.append(" bop=").append(norm.getScore()).append(" boperr=").append(errOrZero(norm));
+			b.append(" bop=").append(norm.getScore()).append(" boperr=").append(error(norm));
 		}
 		return b.toString();
 	}
@@ -424,6 +494,9 @@ final class MeasuredVerdict {
 
 		final String benchmark;
 
+		/** {@code BenchmarkParams.id()} — method, mode and params; null before #207. */
+		final String id;
+
 		final int forks;
 
 		final Double bop;
@@ -436,8 +509,10 @@ final class MeasuredVerdict {
 
 		final String tputUnit;
 
-		Measured(String benchmark, int forks, Double bop, double bopErr, Double tput, double tputErr, String tputUnit) {
+		Measured(String benchmark, String id, int forks, Double bop, double bopErr, Double tput, double tputErr,
+				String tputUnit) {
 			this.benchmark = benchmark;
+			this.id = id;
 			this.forks = forks;
 			this.bop = bop;
 			this.bopErr = bopErr;
