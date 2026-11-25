@@ -224,6 +224,25 @@ one-line `fork 1/2 measured` note. The measured figures (and the measured A/B ve
 merge every measured fork, the same way JMH's own final score does, and state the real fork
 count. The sampled sections come from the last fork's recording, and the header says so.
 
+To keep the report — for a CI artifact, or to hand to an agent later — add `out=<dir>`. Each
+benchmark's report (the summary, or the change report when `baseline=` is set) is also written to
+`<dir>/<benchmark>-<mode>[-<param>-<value>…].md`, the same per-benchmark name JMH's own JFR and
+async profilers use, so several benchmarks and every `@Param` combination in one run each get their
+own file. `out=` always names a **directory** (it is created if missing): JMH starts a fresh
+profiler per benchmark, so a single file would be overwritten by the next one.
+
+[source,bash]
+----
+... -prof "org.alexmond.jvmlens.jmh.JvmlensProfiler:appPackage=com.example;out=target/jvmlens"
+# jvmlens: report written to target/jvmlens/com.example.MyBench.run-AverageTime-size-100.md
+----
+
+A path that cannot be a directory (an existing file, or a parent you cannot write) fails when JMH
+starts, before any benchmark runs. A write that fails *after* a benchmark ran prints
+`jvmlens: ⚠ could not write the report to …` and the run carries on — the report is still in the
+output above it. If the recording cannot be summarized, the file holds that error, so an earlier
+run's report never survives looking current.
+
 For a before→after **diff entirely inside JMH** — no separate `analyze` — keep the fork's
 recording with `keep=<path>` (so it can seed the next run's baseline) and diff against a prior
 one with `baseline=<prev.jfr>` (the profiler prints the change report instead of the summary):

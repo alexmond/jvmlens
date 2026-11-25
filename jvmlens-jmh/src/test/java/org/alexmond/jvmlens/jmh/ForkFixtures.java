@@ -52,11 +52,22 @@ final class ForkFixtures {
 	}
 
 	static BenchmarkParams params(int forks, int warmupForks) {
+		return params(forks, warmupForks, new WorkloadParams());
+	}
+
+	/** One {@code @Param} combination of {@link #BENCH}: {@code key=value}. */
+	static BenchmarkParams params(int forks, int warmupForks, String key, String value) {
+		WorkloadParams workload = new WorkloadParams();
+		workload.put(key, value, 0);
+		return params(forks, warmupForks, workload);
+	}
+
+	private static BenchmarkParams params(int forks, int warmupForks, WorkloadParams workload) {
 		IterationParams warmup = new IterationParams(IterationType.WARMUP, 1, TimeValue.seconds(1), 1);
 		IterationParams measure = new IterationParams(IterationType.MEASUREMENT, 2, TimeValue.seconds(1), 1);
 		return new BenchmarkParams(BENCH, BENCH + "_jmhTest", false, 1, new int[] { 1 }, List.of(), forks, warmupForks,
-				warmup, measure, Mode.AverageTime, new WorkloadParams(), TimeUnit.NANOSECONDS, 1, "java", List.of(),
-				"25", "vm", "1", "1.37", TimeValue.minutes(10));
+				warmup, measure, Mode.AverageTime, workload, TimeUnit.NANOSECONDS, 1, "java", List.of(), "25", "vm",
+				"1", "1.37", TimeValue.minutes(10));
 	}
 
 	/**

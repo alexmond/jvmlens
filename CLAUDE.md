@@ -196,6 +196,8 @@ run `/evolving-claude-md:compact` to graduate stable lessons and move old entrie
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-11-24 — **jmh-out** — `JvmlensProfiler` `out=` is always a directory: `<dir>/<BenchmarkParams.id()>.md` (JMH's own profiler naming). Why: JMH builds a fresh profiler per benchmark and `@Param` combo with the same options, so a file path would be overwritten. A bad path is a `ProfilerException` in the constructor (JMH builds it before any benchmark); a late write failure only warns. A failed summarize writes its error, so no stale report survives. `ReportOut`, #199.
+
 - 2026-11-03 — **bootstrap-io-filter** — file I/O is dropped by *origin*, never size (`BootstrapIo`): a JDK class-loader `loadClass`/`findClass`/`defineClass` frame anywhere on the stack, or a `java.`/`jdk.`/`sun.` `<clinit>` with only JDK frames above it (config reads like `conf/net.properties`). Why: a JMH A/B from two differently named jars showed `main.jar GONE` / `pr.jar NEW`. Matching jars by name was rejected — it would still rank class loading as I/O. App reads of jar resources stay. #192.
 
 - 2026-11-03 — **jmh-fork-aggregation** — JMH calls `afterTrial` once per fork, warmup forks first, on a per-benchmark profiler instance. `JvmlensProfiler` now skips warmup forks with a label, merges measured forks' iterations, and prints one summary + verdict after the last fork; the sidecar key is `mforks=` (merged count). A legacy `forks=`-only sidecar counts as n=1. Why: each fork rewrote the sidecar and printed a verdict labelled with the configured count — a warmup fork's number shown as n=2. #191.
