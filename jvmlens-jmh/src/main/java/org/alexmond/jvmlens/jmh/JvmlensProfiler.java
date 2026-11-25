@@ -46,10 +46,12 @@ import org.alexmond.jvmlens.Summarizer;
  * instead of the plain summary, so {@code run → "what changed vs last run"} happens in
  * one JMH command; field-finding #50 item 2), and {@code socketio} (default {@code false}
  * — drops socket I/O events, which on a JMH fork are just the harness control socket; set
- * {@code socketio=true} to keep them; field-finding #100). An <em>unknown</em> option key
- * is a hard error (a {@link ProfilerException} with a did-you-mean suggestion) rather
- * than a silent no-op — a misspelled {@code appPackage} that produced an unscoped summary
- * used to cost a whole capture before you noticed (field-finding #53 item 6).
+ * {@code socketio=true} to keep them; field-finding #100), and {@code out} (a directory;
+ * each benchmark's printed report is also written to {@code OUT/BenchmarkParams.id().md}
+ * — see {@link ReportOut}; #199). An <em>unknown</em> option key is a hard error (a
+ * {@link ProfilerException} with a did-you-mean suggestion) rather than a silent no-op —
+ * a misspelled {@code appPackage} that produced an unscoped summary used to cost a whole
+ * capture before you noticed (field-finding #53 item 6).
  *
  * <p>
  * When the run also enables JMH's GC profiler ({@code -prof gc}), the summary is headed
@@ -69,7 +71,8 @@ import org.alexmond.jvmlens.Summarizer;
 public class JvmlensProfiler implements ExternalProfiler {
 
 	/** Recognized option keys, used for the did-you-mean suggestion on a typo. */
-	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report", "keep", "baseline", "socketio");
+	private static final List<String> KNOWN_KEYS = List.of("appPackage", "report", "keep", "baseline", "socketio",
+			"out");
 
 	/**
 	 * The cross-fork error band must shrink by at least this factor to call it a variance
@@ -111,6 +114,9 @@ public class JvmlensProfiler implements ExternalProfiler {
 	 * (#100).
 	 */
 	private boolean socketIo;
+
+	/** Where {@code out=} writes each benchmark's report, or {@code null} (#199). */
+	private ReportOut out;
 
 	/** The benchmark whose forks are being counted (JMH passes the same params). */
 	private BenchmarkParams trialParams;
@@ -170,6 +176,9 @@ public class JvmlensProfiler implements ExternalProfiler {
 			}
 			case "baseline" -> {
 				this.baseline = Path.of(value);
+			}
+			case "out" -> {
+				this.out = ReportOut.of(value);
 			}
 			case "socketio" -> {
 				this.socketIo = "true".equalsIgnoreCase(value) || "on".equalsIgnoreCase(value);
@@ -282,32 +291,43 @@ public class JvmlensProfiler implements ExternalProfiler {
 	private void summarize(BenchmarkResult result, int forks) {
 		Result<?> norm = result.getSecondaryResults().get("gc.alloc.rate.norm");
 		this.measuredForks = forks;
-		if (forks > 1) {
-			System.out.printf(Locale.ROOT,
-					"%n> jvmlens over %d measured forks: measured figures merge all %d; sampled sections are fork "
-							+ "%d/%d's recording.%n",
-					forks, forks, forks, forks);
-		}
 		try {
-			Scope scope = Scope.of(this.appPackages, List.of());
-			if (this.baseline != null) {
-				ProfileSummary before = RankLimits.full(() -> Summarizer.analyze(this.baseline, scope));
-				ProfileSummary after = RankLimits.full(() -> Summarizer.analyze(this.jfr, scope));
-				double sampledPct = (before.allocBytes() > 0)
-						? 100.0 * (after.allocBytes() - before.allocBytes()) / before.allocBytes() : 0;
-				System.out.println(
-						"\n" + measuredHead(norm, result, before, after, sampledPct) + ProfileDiff.diff(before, after));
+			String text = report(result, norm, forks);
+			System.out.println(text);
+			if (this.out != null) {
+				this.out.write(result.getParams(), text + System.lineSeparator());
 			}
-			else {
-				System.out.println("\n" + jmhAllocNote(result)
-						+ Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report));
-			}
-		}
-		catch (IOException ex) {
-			System.out.println("jvmlens: could not summarize the benchmark recording: " + ex.getMessage());
 		}
 		finally {
 			retainRecording(result, norm);
+		}
+	}
+
+	/**
+	 * The markdown {@link #summarize} prints (and {@code out=} writes): the multi-fork
+	 * preface, then the summary or the {@code baseline=} change report — or the reason
+	 * there is none, so a failed run never leaves an earlier report looking current.
+	 */
+	private String report(BenchmarkResult result, Result<?> norm, int forks) {
+		String preface = (forks > 1) ? String.format(Locale.ROOT,
+				"%n> jvmlens over %d measured forks: measured figures merge all %d; sampled sections are fork "
+						+ "%d/%d's recording.%n",
+				forks, forks, forks, forks) : "";
+		try {
+			Scope scope = Scope.of(this.appPackages, List.of());
+			if (this.baseline == null) {
+				return preface + "\n" + jmhAllocNote(result)
+						+ Summarizer.summarize(this.jfr, Summarizer.Format.MARKDOWN, scope, this.report);
+			}
+			ProfileSummary before = RankLimits.full(() -> Summarizer.analyze(this.baseline, scope));
+			ProfileSummary after = RankLimits.full(() -> Summarizer.analyze(this.jfr, scope));
+			double sampledPct = (before.allocBytes() > 0)
+					? 100.0 * (after.allocBytes() - before.allocBytes()) / before.allocBytes() : 0;
+			return preface + "\n" + measuredHead(norm, result, before, after, sampledPct)
+					+ ProfileDiff.diff(before, after);
+		}
+		catch (IOException ex) {
+			return preface + "jvmlens: could not summarize the benchmark recording: " + ex.getMessage();
 		}
 	}
 

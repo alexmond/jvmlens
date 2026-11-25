@@ -3,6 +3,8 @@ package org.alexmond.jvmlens.jmh;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -266,6 +268,80 @@ class JvmlensProfilerTest {
 		assertThat(m.tput).isNull();
 		assertThat(m.bop).isNull();
 		assertThat(m.benchmark).isEqualTo("com.acme.B.m");
+	}
+
+	@Test
+	void outWritesThePrintedReportOneFilePerBenchmarkAndCreatesMissingDirs(@TempDir Path tmp) throws Exception {
+		// #199: JMH builds a fresh profiler per benchmark and per @Param combination,
+		// all with the same `out=`. Each must land in its own file holding exactly the
+		// text printed, the multi-fork preface included; a missing directory is created.
+		Path recording = tmp.resolve("rec.jfr");
+		ForkFixtures.record(recording);
+		Path dir = tmp.resolve("target/jvmlens");
+		String out = ForkFixtures.captureOut(() -> {
+			for (String size : List.of("10", "100")) {
+				JvmlensProfiler p = new JvmlensProfiler("out=" + dir);
+				BenchmarkParams params = ForkFixtures.params(2, 0, "size", size);
+				ForkFixtures.fork(p, recording, params, 270.0);
+				ForkFixtures.fork(p, recording, params, 190.0);
+			}
+		});
+		List<Path> files;
+		try (Stream<Path> s = Files.list(dir)) {
+			files = s.sorted().toList();
+		}
+		assertThat(files).hasSize(2);
+		assertThat(files.get(0).getFileName().toString()).startsWith(ForkFixtures.BENCH).endsWith("-size-10.md");
+		assertThat(files.get(1).getFileName().toString()).endsWith("-size-100.md");
+		for (Path f : files) {
+			String text = Files.readString(f);
+			assertThat(text).contains("jvmlens over 2 measured forks").contains("JVM profile summary");
+			assertThat(out).contains(text).contains("report written to " + f);
+		}
+	}
+
+	@Test
+	void outHardErrorsUpFrontWhenItCannotBeADirectory(@TempDir Path tmp) throws Exception {
+		// #199: JMH constructs the profiler before any benchmark runs, so a bad `out=`
+		// fails there, like an unknown option, not after a long run.
+		Path file = tmp.resolve("report.md");
+		Files.writeString(file, "x");
+		assertThatThrownBy(() -> new JvmlensProfiler("out=" + file)).isInstanceOf(ProfilerException.class)
+			.hasMessageContaining("not a directory");
+		assertThatThrownBy(() -> new JvmlensProfiler("out=" + file.resolve("sub")))
+			.isInstanceOf(ProfilerException.class)
+			.hasMessageContaining("cannot create");
+		assertThatThrownBy(() -> new JvmlensProfiler("out=")).isInstanceOf(ProfilerException.class)
+			.hasMessageContaining("out=");
+	}
+
+	@Test
+	void outWriteFailureAfterTheRunWarnsAndDoesNotThrow(@TempDir Path tmp) throws Exception {
+		// #199: a write that fails after the benchmark ran must not abort the JMH run;
+		// the report is still on stdout and the failure is said out loud.
+		Path recording = tmp.resolve("rec.jfr");
+		ForkFixtures.record(recording);
+		Path dir = tmp.resolve("gone");
+		JvmlensProfiler p = new JvmlensProfiler("out=" + dir);
+		Files.delete(dir);
+		Files.writeString(dir, "now a file");
+		String out = ForkFixtures.captureOut(() -> ForkFixtures.fork(p, recording, ForkFixtures.params(1, 0), 200.0));
+		assertThat(out).contains("JVM profile summary").contains("could not write").contains(dir.toString());
+	}
+
+	@Test
+	void outReplacesAStaleReportWhenTheRecordingCannotBeSummarized(@TempDir Path tmp) throws Exception {
+		// #199: last run's report must not survive a failed run looking like a result.
+		Path garbage = tmp.resolve("bad.jfr");
+		Files.writeString(garbage, "not a recording");
+		Path dir = tmp.resolve("reports");
+		JvmlensProfiler p = new JvmlensProfiler("out=" + dir);
+		BenchmarkParams params = ForkFixtures.params(1, 0);
+		Path report = dir.resolve(params.id() + ".md");
+		Files.writeString(report, "# JVM profile summary from last week");
+		String out = ForkFixtures.captureOut(() -> ForkFixtures.fork(p, garbage, params, 200.0));
+		assertThat(Files.readString(report)).doesNotContain("last week").contains("could not summarize");
+		assertThat(out).contains("could not summarize");
 	}
 
 }

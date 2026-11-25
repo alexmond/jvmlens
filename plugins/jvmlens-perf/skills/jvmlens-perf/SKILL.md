@@ -75,6 +75,11 @@ Pick the capture that matches what you're optimizing:
   fork: warmup forks are skipped (`warmup fork 1/1 — not profiled, not counted`), the measured
   figures merge all measured forks like JMH's own score, and `n=` is the real merged fork count.
   A baseline kept by jvmlens ≤0.3.1 holds one fork's numbers and counts as `n=1` — re-record it.
+  Add `out=target/jvmlens` to also write each benchmark's printed report (summary or diff) to
+  `target/jvmlens/<benchmark>-<mode>[-<param>-<value>…].md` — one file per benchmark and per
+  `@Param` combination; `out=` is always a directory (created if missing). Read those files
+  instead of scraping the JMH log. A bad `out=` path fails at JMH start-up; a late write failure
+  only warns.
   It also prints a **dispersion verdict**: a genuine structural allocation removal collapses the
   cross-fork **variance band** (the removed allocation *was* the noise) — `±17,200 → ±35 /op,
   variance collapsed ~500×` is a strong real-win signal the mean alone can't give; and when
