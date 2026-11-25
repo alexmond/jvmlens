@@ -1,9 +1,13 @@
 package org.alexmond.jvmlens.agent;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import jdk.jfr.Configuration;
 import jdk.jfr.Recording;
@@ -102,6 +106,58 @@ class JvmlensAgentTest {
 			recording.close();
 			Files.deleteIfExists(out);
 			Files.deleteIfExists(history);
+		}
+	}
+
+	@Test
+	void summaryFileIsNeverObservedEmptyWhileRewritten() throws Exception {
+		// #195: the summary used to be rewritten in place (truncate, then write), so a
+		// reader -- or a JVM exit -- landing between the two saw an empty file. Each
+		// rewrite must replace the file whole: a concurrent reader only ever sees a
+		// complete summary.
+		Recording recording = new Recording(Configuration.getConfiguration("profile"));
+		recording.start();
+		Path dir = Files.createTempDirectory("jvmlens-agent-test");
+		Path out = dir.resolve("agent.md");
+		AtomicBoolean stop = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+		AtomicReference<String> torn = new AtomicReference<>();
+		Thread reader = new Thread(() -> {
+			while (!stop.get() && torn.get() == null) {
+				try {
+					String seen = Files.readString(out);
+					reads.incrementAndGet();
+					if (!seen.startsWith("# JVM profile summary")) {
+						torn.set(seen);
+					}
+				}
+				catch (IOException ex) {
+					// the file exists from the first snapshot on: a rename never hides it
+					torn.set("unreadable: " + ex);
+				}
+			}
+		}, "summary-reader");
+		try {
+			JvmlensAgent.snapshot(recording, out, Scope.defaults());
+			reader.start();
+			for (int i = 0; i < 15 && torn.get() == null; i++) {
+				JvmlensAgent.snapshot(recording, out, Scope.defaults());
+			}
+			stop.set(true);
+			reader.join(5_000);
+			assertThat(reads.get()).as("the reader actually raced the writer").isPositive();
+			assertThat(torn.get()).as("a concurrent reader saw a torn summary").isNull();
+			assertThat(Files.readString(out)).startsWith("# JVM profile summary");
+		}
+		finally {
+			stop.set(true);
+			recording.close();
+			try (var files = Files.list(dir)) {
+				for (Path f : files.toList()) {
+					Files.deleteIfExists(f);
+				}
+			}
+			Files.deleteIfExists(dir);
 		}
 	}
 

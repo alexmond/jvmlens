@@ -384,7 +384,7 @@ public final class JvmlensAgent {
 			summary = "> **triggered**: " + triggerNote + "\n\n" + summary;
 		}
 		String snapshots = SnapshotStore.render();
-		Files.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
+		AtomicFiles.writeString(out, snapshots.isEmpty() ? summary : summary + "\n" + snapshots);
 	}
 
 	/** Append one compact JSONL trend sample for the run, when {@code history} is set. */

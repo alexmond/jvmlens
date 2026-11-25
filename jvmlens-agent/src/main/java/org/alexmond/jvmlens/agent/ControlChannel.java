@@ -79,7 +79,7 @@ public final class ControlChannel {
 	 */
 	private void writeStatus() throws IOException {
 		Path status = this.file.resolveSibling(this.file.getFileName() + ".status");
-		Files.writeString(status, this.control.status() + System.lineSeparator());
+		AtomicFiles.writeString(status, this.control.status() + System.lineSeparator());
 	}
 
 }

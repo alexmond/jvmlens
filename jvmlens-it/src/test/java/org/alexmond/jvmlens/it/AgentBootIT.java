@@ -70,7 +70,11 @@ class AgentBootIT {
 			.contains("JVMLENS-IT-READY");
 		assertThat(host.exitValue()).as("clean exit\n%s", log).isZero();
 		// the db dimension actually captured SQL from the Hibernate/Flyway traffic
-		assertThat(Files.readString(summary, StandardCharsets.UTF_8)).containsIgnoringCase("SQL");
+		// (#195: an empty file here was the agent's in-place rewrite caught by the exit)
+		String written = Files.readString(summary, StandardCharsets.UTF_8);
+		assertThat(written)
+			.as("agent summary (%d bytes) must carry the db section\nhost log:\n%s", Files.size(summary), log)
+			.containsIgnoringCase("SQL");
 	}
 
 }
