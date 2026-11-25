@@ -90,7 +90,7 @@ class JvmlensProfilerTest {
 		// unchanged
 		// (782,881 ± 17,200 → 780,083 ± 19,854 across 4 forks) → NOT significant + a
 		// disagree note.
-		String v = JvmlensProfiler.allocVerdict(782_881, 17_200, 780_083, 19_854, 4, -10.0);
+		String v = MeasuredVerdict.allocVerdict(782_881, 17_200, 780_083, 19_854, 4, -10.0);
 		assertThat(v).contains("NOT significant")
 			.contains("sampled")
 			.contains("disagrees")
@@ -99,7 +99,7 @@ class JvmlensProfilerTest {
 
 	@Test
 	void measuredAbVerdictCallsARealDropSignificant() {
-		String v = JvmlensProfiler.allocVerdict(1_000_000, 20_000, 700_000, 20_000, 4, -30.0);
+		String v = MeasuredVerdict.allocVerdict(1_000_000, 20_000, 700_000, 20_000, 4, -30.0);
 		assertThat(v).contains("SIGNIFICANT").doesNotContain("NOT significant").doesNotContain("disagrees");
 	}
 
@@ -107,7 +107,7 @@ class JvmlensProfilerTest {
 	void measuredAbVerdictSaysNoAllocationWhenBothSidesAreUnderTheFloor() {
 		// #192: a non-allocating benchmark read 0 B/op → 0 B/op (Δ +20.1%, noise band
 		// ±84.1%) — a percentage of 0.002 B/op is noise, not signal.
-		String v = JvmlensProfiler.allocVerdict(0.0020, 0.0008, 0.0024, 0.0010, 2, 0.0);
+		String v = MeasuredVerdict.allocVerdict(0.0020, 0.0008, 0.0024, 0.0010, 2, 0.0);
 		assertThat(v).contains("Measured allocation A/B [exact]")
 			.contains("no allocation on either side")
 			.contains("0.002 B/op → 0.002 B/op")
@@ -122,20 +122,20 @@ class JvmlensProfilerTest {
 	void measuredAbVerdictReportsANewAllocationFromZeroAsAnAbsoluteDelta() {
 		// #192 look-alike: one side ~0, the other real — a new allocation must still
 		// show, as an absolute Δ (a relative Δ from ~0 is meaningless).
-		String v = JvmlensProfiler.allocVerdict(0.002, 0.001, 512, 4, 2, 40.0);
+		String v = MeasuredVerdict.allocVerdict(0.002, 0.001, 512, 4, 2, 40.0);
 		assertThat(v).contains("0.002 B/op → 512 B/op")
 			.contains("new allocation")
 			.contains("Δ +512 B/op")
 			.contains("**SIGNIFICANT**")
 			.doesNotContain("noise band")
 			.doesNotContain("no allocation on either side");
-		String removed = JvmlensProfiler.allocVerdict(2048, 900, 0.001, 0.001, 1, -40.0);
+		String removed = MeasuredVerdict.allocVerdict(2048, 900, 0.001, 0.001, 1, -40.0);
 		assertThat(removed).contains("allocation removed").contains("Δ -2.0 KB/op").contains("single fork understates");
 	}
 
 	@Test
 	void measuredAbVerdictWarnsOnASingleFork() {
-		String v = JvmlensProfiler.allocVerdict(1_000_000, 0, 980_000, 0, 1, -2.0);
+		String v = MeasuredVerdict.allocVerdict(1_000_000, 0, 980_000, 0, 1, -2.0);
 		assertThat(v).contains("single fork understates");
 	}
 
@@ -144,7 +144,7 @@ class JvmlensProfilerTest {
 		// #110 finding 1, the round-3 real win: 782,881 ±17,200 → 644,082 ±35 (band
 		// collapsed ~500×, now near-deterministic) → both the collapse and the STOP
 		// signal.
-		String v = JvmlensProfiler.allocVerdict(782_881, 17_200, 644_082, 35, 4, -7.0);
+		String v = MeasuredVerdict.allocVerdict(782_881, 17_200, 644_082, 35, 4, -7.0);
 		assertThat(v).contains("variance collapsed")
 			.contains("near-deterministic")
 			.contains("pivot off allocation")
@@ -154,14 +154,14 @@ class JvmlensProfilerTest {
 	@Test
 	void dispersionNoteSilentWhenTheBandDidNotCollapse() {
 		// #110: the round-2 phantom — band flat (±17,200 → ±19,854), nothing to say.
-		String v = JvmlensProfiler.dispersionNote(782_881, 17_200, 780_083, 19_854, -10.0);
+		String v = MeasuredVerdict.dispersionNote(782_881, 17_200, 780_083, 19_854, -10.0);
 		assertThat(v).isEmpty();
 	}
 
 	@Test
 	void dispersionNoteSilentForASingleFork() {
 		// a single fork has no error term (err=0) → no before-band to compare.
-		assertThat(JvmlensProfiler.dispersionNote(1_000_000, 0, 700_000, 0, -30.0)).isEmpty();
+		assertThat(MeasuredVerdict.dispersionNote(1_000_000, 0, 700_000, 0, -30.0)).isEmpty();
 	}
 
 	@Test
@@ -169,7 +169,7 @@ class JvmlensProfilerTest {
 		// #112 finding 1, the near-miss: throughput flat (0.191 → 0.198, within noise)
 		// but a
 		// sampled hot-path share collapsed 37%→18% — a CPU-share shift is NOT a speedup.
-		String v = JvmlensProfiler.throughputVerdict(0.191, 0.010, 0.198, 0.010, 3, "ops/us",
+		String v = MeasuredVerdict.throughputVerdict(0.191, 0.010, 0.198, 0.010, 3, "ops/us",
 				"Executor.executeArguments 37%→18%");
 		assertThat(v).contains("Measured throughput A/B")
 			.contains("NOT significant")
@@ -181,7 +181,7 @@ class JvmlensProfilerTest {
 
 	@Test
 	void throughputVerdictCallsARealSpeedupSignificantWithNoHotShareCaveat() {
-		String v = JvmlensProfiler.throughputVerdict(0.10, 0.002, 0.20, 0.002, 4, "ops/us", "Foo.bar 50%→90%");
+		String v = MeasuredVerdict.throughputVerdict(0.10, 0.002, 0.20, 0.002, 4, "ops/us", "Foo.bar 50%→90%");
 		assertThat(v).contains("SIGNIFICANT").doesNotContain("NOT significant").doesNotContain("not a speedup");
 	}
 
@@ -194,7 +194,7 @@ class JvmlensProfilerTest {
 		Files.writeString(Path.of(jfr + ".bop"),
 				"benchmark=com.acme.FeatureBenchmark.sprigPipeline mforks=3 tput=0.191 tputerr=0.01 "
 						+ "tputunit=ops/us bop=3488.0 boperr=2.1");
-		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(jfr);
+		MeasuredVerdict.Measured m = MeasuredVerdict.readMeasured(jfr);
 		assertThat(m).isNotNull();
 		assertThat(m.benchmark).isEqualTo("com.acme.FeatureBenchmark.sprigPipeline");
 		assertThat(m.forks).isEqualTo(3);
@@ -242,7 +242,7 @@ class JvmlensProfilerTest {
 			ForkFixtures.fork(p, recording, params, 270.0);
 			ForkFixtures.fork(p, recording, params, 190.0);
 		});
-		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(keep);
+		MeasuredVerdict.Measured m = MeasuredVerdict.readMeasured(keep);
 		assertThat(m).isNotNull();
 		assertThat(m.forks).isEqualTo(2);
 		assertThat(m.tput).isCloseTo(230.0, org.assertj.core.data.Offset.offset(1e-6));
@@ -255,16 +255,16 @@ class JvmlensProfilerTest {
 		// last fork's alone whatever `forks=` says — never claim more than n=1 for them.
 		Path jfr = tmp.resolve("legacy.jfr");
 		Files.writeString(Path.of(jfr + ".bop"), "benchmark=com.acme.B.m forks=2 tput=1.0 tputerr=0.1");
-		assertThat(JvmlensProfiler.readMeasured(jfr).forks).isEqualTo(1);
+		assertThat(MeasuredVerdict.readMeasured(jfr).forks).isEqualTo(1);
 	}
 
 	@Test
 	void readMeasuredToleratesAMissingSidecarAndAbsentKeys(@TempDir Path tmp) throws Exception {
-		assertThat(JvmlensProfiler.readMeasured(tmp.resolve("nope.jfr"))).isNull();
+		assertThat(MeasuredVerdict.readMeasured(tmp.resolve("nope.jfr"))).isNull();
 		Path jfr = tmp.resolve("partial.jfr");
 		Files.writeString(Path.of(jfr + ".bop"), "benchmark=com.acme.B.m forks=2"); // no
 																					// tput/bop
-		JvmlensProfiler.Measured m = JvmlensProfiler.readMeasured(jfr);
+		MeasuredVerdict.Measured m = MeasuredVerdict.readMeasured(jfr);
 		assertThat(m.tput).isNull();
 		assertThat(m.bop).isNull();
 		assertThat(m.benchmark).isEqualTo("com.acme.B.m");
