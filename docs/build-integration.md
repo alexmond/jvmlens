@@ -136,8 +136,8 @@ From docs, javadoc and issue trackers — see Sources.
   a benchmark or baseline is missing.
 - What is missing in jvmlens to fit: the profiler only prints to stdout (no report file), no
   `gate=` to fail the build, and its baseline is a `.jfr` — too big to commit, unlike OGNL's
-  JSON. A small committable baseline (summary JSON + JMH scores) is what would let jvmlens match
-  OGNL's setup.
+  JSON. A small committable baseline is what would let jvmlens match OGNL's setup. The #200 design
+  (PR #206) proposes the JMH scores and error bands in one text file, deferring hot paths.
 
 ## Options for jvmlens
 
