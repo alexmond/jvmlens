@@ -1,16 +1,22 @@
 package org.alexmond.jvmlens.agent;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIOException;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -99,6 +105,85 @@ class AtomicFilesTest {
 		}
 		finally {
 			Files.setPosixFilePermissions(sub, PosixFilePermissions.fromString("rwx------"));
+		}
+	}
+
+	@Test
+	void replacesALinkPlantedAtTheTargetInsteadOfWritingThroughIt(@TempDir Path dir) throws Exception {
+		// another local user plants the summary path itself as a link before the agent
+		// starts: the rename must replace the link, never write into what it points at
+		assumePosix();
+		Path victim = Files.writeString(Files.createDirectory(dir.resolve("other")).resolve("victim"), "untouched");
+		Path target = Files.createSymbolicLink(dir.resolve("agent.md"), victim);
+
+		AtomicFiles.writeString(target, "new summary");
+
+		assertThat(Files.readString(victim)).isEqualTo("untouched");
+		assertThat(Files.isSymbolicLink(target)).isFalse();
+		assertThat(Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)).isTrue();
+		assertThat(Files.readString(target)).isEqualTo("new summary");
+	}
+
+	@Test
+	void theFallbackRefusesToWriteThroughALinkAtTheTarget(@TempDir Path dir) throws Exception {
+		// a read-only directory closes the rename route; the in-place fallback must still
+		// not follow a link planted at the target, and says so instead of writing
+		assumePosix();
+		Path victim = Files.writeString(Files.createDirectory(dir.resolve("other")).resolve("victim"), "untouched");
+		Path sub = Files.createDirectory(dir.resolve("ro"));
+		Path target = Files.createSymbolicLink(sub.resolve("agent.md"), victim);
+		Files.setPosixFilePermissions(sub, PosixFilePermissions.fromString("r-x------"));
+		try {
+			assumeFalse(Files.isWritable(sub), "running as a user that ignores directory permissions");
+
+			assertThatIOException().isThrownBy(() -> AtomicFiles.writeString(target, "new summary"))
+				.withMessageContaining("symbolic link");
+
+			assertThat(Files.readString(victim)).isEqualTo("untouched");
+		}
+		finally {
+			Files.setPosixFilePermissions(sub, PosixFilePermissions.fromString("rwx------"));
+		}
+	}
+
+	@Test
+	void aPrivateTargetsNewContentIsNeverInAWiderFile(@TempDir Path dir) throws Exception {
+		// the temp file must already be as private as the target when content goes in
+		assumePosix();
+		Path target = Files.writeString(dir.resolve("agent.md"), "old summary");
+		Set<PosixFilePermission> owner = PosixFilePermissions.fromString("rw-------");
+		Files.setPosixFilePermissions(target, owner);
+		List<Set<PosixFilePermission>> seen = new ArrayList<>();
+
+		AtomicFiles.writeString(target, "new summary", (Path tmp) -> seen.add(permissions(tmp)));
+
+		assertThat(seen).containsExactly(owner);
+		assertThat(Files.getPosixFilePermissions(target)).isEqualTo(owner);
+		assertThat(Files.readString(target)).isEqualTo("new summary");
+	}
+
+	@Test
+	void aTargetWiderThanTheUmaskIsWidenedBeforeContentGoesIn(@TempDir Path dir) throws Exception {
+		// the umask can narrow the creation attribute; the temp is widened back to the
+		// target's permissions before writing, so the rename does not narrow the summary
+		assumePosix();
+		Path target = Files.writeString(dir.resolve("agent.md"), "old summary");
+		Set<PosixFilePermission> groupWritable = PosixFilePermissions.fromString("rw-rw----");
+		Files.setPosixFilePermissions(target, groupWritable);
+		List<Set<PosixFilePermission>> seen = new ArrayList<>();
+
+		AtomicFiles.writeString(target, "new summary", (Path tmp) -> seen.add(permissions(tmp)));
+
+		assertThat(seen).containsExactly(groupWritable);
+		assertThat(Files.getPosixFilePermissions(target)).isEqualTo(groupWritable);
+	}
+
+	private static Set<PosixFilePermission> permissions(Path file) {
+		try {
+			return Files.getPosixFilePermissions(file);
+		}
+		catch (IOException ex) {
+			throw new UncheckedIOException(ex);
 		}
 	}
 
