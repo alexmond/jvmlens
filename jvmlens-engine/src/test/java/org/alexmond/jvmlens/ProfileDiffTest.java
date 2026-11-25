@@ -15,11 +15,16 @@ import org.alexmond.jvmlens.ProfileSummary.Lineage;
 import org.alexmond.jvmlens.ProfileSummary.Ranked;
 import org.alexmond.jvmlens.ProfileSummary.Section;
 import org.alexmond.jvmlens.moveapp.Caller;
-import org.alexmond.jvmlens.moveapp.Scanner;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProfileDiffTest {
+
+	/** Rounds per unit of work in the end-to-end move tests. */
+	private static final int ROUNDS = 50_000;
+
+	/** The fewest execution samples a move-test recording must hold to be judged. */
+	private static final long MIN_SAMPLES = 50;
 
 	private static ProfileSummary summary(long gcMs, long allocBytes, List<Ranked> hotPaths, List<Ranked> allocSites) {
 		return new ProfileSummary("rec.jfr", 1000, 1, 0, 0, gcMs, hotPaths, List.of(), allocSites, List.of(), List.of(),
@@ -418,15 +423,16 @@ class ProfileDiffTest {
 
 	@Test
 	void aRealExtractMethodRefactorReadsAsAMove() throws Exception {
-		// #190 end to end: the same Caller.invoke, recorded with its map lookups inline
-		// and then extracted into Caller.find
+		// #190 end to end: the same Caller.invoke, built with its map lookups inline and
+		// then extracted into Caller.find — one build per side (#211)
 		Map<Integer, Integer> map = bigMap();
-		ProfileSummary before = analyzeMoveApp(() -> Caller.invoke(map, 50_000, Caller.INLINE));
-		ProfileSummary after = analyzeMoveApp(() -> Caller.invoke(map, 50_000, Caller.EXTRACTED));
+		ProfileSummary before = analyzeMoveApp(MoveAppBuild.load(Caller.INLINE, map, ROUNDS, "Caller.invoke"));
+		ProfileSummary after = analyzeMoveApp(MoveAppBuild.load(Caller.EXTRACTED, map, ROUNDS, "Caller.invoke"));
 		String d = ProfileDiff.diff(before, after);
 
 		assertThat(line(d, "- `org.alexmond.jvmlens.moveapp.Caller.find` —")).contains("NEW")
-			.contains("moved from `org.alexmond.jvmlens.moveapp.Caller.invoke`");
+			.contains("moved from `org.alexmond.jvmlens.moveapp.Caller.invoke`")
+			.doesNotContain("possibly");
 	}
 
 	@Test
@@ -434,9 +440,9 @@ class ProfileDiffTest {
 		// look-alike end to end: Caller.invoke stops doing lookups, and an unrelated
 		// Scanner.scan starts doing the same ones — same JDK leaves, no call link
 		Map<Integer, Integer> map = bigMap();
-		ProfileSummary before = analyzeMoveApp(() -> Caller.invoke(map, 50_000, Caller.INLINE));
+		ProfileSummary before = analyzeMoveApp(MoveAppBuild.load(Caller.INLINE, map, ROUNDS, "Caller.invoke"));
 		ProfileSummary after = analyzeMoveApp(
-				() -> Caller.invoke(map, 50_000, Caller.NONE) + Scanner.scan(map, 50_000));
+				MoveAppBuild.load(Caller.NONE, map, ROUNDS, "Caller.invoke", "Scanner.scan"));
 		String d = ProfileDiff.diff(before, after);
 
 		assertThat(line(d, "- `org.alexmond.jvmlens.moveapp.Scanner.scan` —")).contains("NEW").doesNotContain("moved");
@@ -454,6 +460,8 @@ class ProfileDiffTest {
 		Recording recording = new Recording();
 		recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(10));
 		recording.start();
+		// a fixed window, not a fixed amount of work: at a 10 ms period it holds ~150
+		// samples however fast the runner is
 		long end = System.nanoTime() + 1_500_000_000L;
 		long sink = 0;
 		while (System.nanoTime() < end) {
@@ -466,7 +474,12 @@ class ProfileDiffTest {
 			recording.close();
 			assertThat(sink).isNotEqualTo(Long.MIN_VALUE);
 			Scope scope = Scope.of(List.of("org.alexmond.jvmlens.moveapp"), List.of());
-			return RankLimits.full(() -> Summarizer.analyze(List.of(file), scope, "x", 0L));
+			ProfileSummary s = RankLimits.full(() -> Summarizer.analyze(List.of(file), scope, "x", 0L));
+			// judge the move rule only on a recording big enough to carry it; a starved
+			// sampler fails here, by name, not as a wrong verdict below
+			assertThat(s.execSamples()).as("under-sampled recording (n=%d, need >= %d)", s.execSamples(), MIN_SAMPLES)
+				.isGreaterThanOrEqualTo(MIN_SAMPLES);
+			return s;
 		}
 		finally {
 			Files.deleteIfExists(file);
