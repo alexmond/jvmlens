@@ -284,7 +284,20 @@ throughput is *flat*, it says so explicitly (`the sampled hot-path share moved (
 37%→18%) but throughput is flat — a CPU-share shift is not a speedup; the win is in allocation/GC`).
 Because the inline `baseline=` matches a single benchmark method, a baseline JFR recorded for a
 *different* method is detected and the measured verdict is **skipped with a warning** rather than
-emitting confident wrong numbers — record a per-benchmark baseline.
+emitting confident wrong numbers — record a per-benchmark baseline. The same goes for the same
+method with a different `@Param` value or JMH mode: `keep=` stores JMH's benchmark id
+(`BenchmarkParams.id()` — method, mode and params) in the sidecar, and a different id prints
+`⚠ Baseline mismatch … a different @Param value or JMH mode` and skips the measured verdicts. A
+baseline kept by jvmlens 0.3.2 or earlier has no id: it is still compared by method name, under a
+`⚠ … could not be checked` line — re-keep it to check params and mode.
+
+JMH reports no score error when a side has 2 or fewer measured iterations in total (one fork of
+two iterations, say). jvmlens treats that band as **unknown, not zero**: the verdict shows the Δ
+and `error band unavailable on the baseline / this run / both sides … so no significance call`,
+never `SIGNIFICANT` or `NOT significant`, and adds none of the notes that lean on a band (flat
+throughput, sampled disagreement, dispersion). Re-run the named side with more iterations (`-i`)
+or forks (`-f`). `keep=` writes such a band as `nan`. Sidecars from 0.3.2 or earlier wrote it as
+`0`, so a `0` error in a sidecar without an id is read as unknown too.
 
 The CPU hot-path diff applies the same redistribution hedge as allocation: a `▲` row whose absolute
 samples rose while the total *fell*, rose while the total stayed *~flat*, or **outpaced a
