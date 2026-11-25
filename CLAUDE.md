@@ -196,6 +196,8 @@ run `/evolving-claude-md:compact` to graduate stable lessons and move old entrie
 
 ### Decisions & Learnings (Recent — last 14 days)
 
+- 2026-11-25 — **jit-shared-variant** — the end-to-end move tests load one `moveapp` build per side (`MoveAppBuild` class loader, variant a `static final`). A runtime mode switch put both variants in one method's compiled code: C2 merged the identical lookups under the inline branch's scope, so extracted runs showed `find` at 3–99% (flaky, often only `possibly`). Not under-sampling: totals were ~100–170. A wall-time capture stays; a sample floor fails by name. #211.
+
 - 2026-11-03 — **bootstrap-io-filter** — file I/O is dropped by *origin*, never size (`BootstrapIo`): a JDK class-loader `loadClass`/`findClass`/`defineClass` frame anywhere on the stack, or a `java.`/`jdk.`/`sun.` `<clinit>` with only JDK frames above it (config reads like `conf/net.properties`). Why: a JMH A/B from two differently named jars showed `main.jar GONE` / `pr.jar NEW`. Matching jars by name was rejected — it would still rank class loading as I/O. App reads of jar resources stay. #192.
 
 - 2026-11-03 — **jmh-fork-aggregation** — JMH calls `afterTrial` once per fork, warmup forks first, on a per-benchmark profiler instance. `JvmlensProfiler` now skips warmup forks with a label, merges measured forks' iterations, and prints one summary + verdict after the last fork; the sidecar key is `mforks=` (merged count). A legacy `forks=`-only sidecar counts as n=1. Why: each fork rewrote the sidecar and printed a verdict labelled with the configured count — a warmup fork's number shown as n=2. #191.
